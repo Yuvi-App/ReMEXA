@@ -1,0 +1,57 @@
+package com.jblend.graphics.j3d;
+
+public interface Graphics3D {
+    public static final int COMMAND_LIST_VERSION_1_0 = 0;
+    public static final int COMMAND_END = 0;
+    public static final int COMMAND_NOP = 0;
+    public static final int COMMAND_FLUSH = 0;
+    public static final int COMMAND_ATTRIBUTE = 0;
+    public static final int COMMAND_CLIP = 0;
+    public static final int COMMAND_CENTER = 0;
+    public static final int COMMAND_TEXTURE_INDEX = 0;
+    public static final int COMMAND_AFFINE_INDEX = 0;
+    public static final int COMMAND_PARALLEL_SCALE = 0;
+    public static final int COMMAND_PARALLEL_SIZE = 0;
+    public static final int COMMAND_PERSPECTIVE_FOV = 0;
+    public static final int COMMAND_PERSPECTIVE_WH = 0;
+    public static final int COMMAND_AMBIENT_LIGHT = 0;
+    public static final int COMMAND_DIRECTION_LIGHT = 0;
+    public static final int COMMAND_THRESHOLD = 0;
+    public static final int PRIMITIVE_POINTS = 0;
+    public static final int PRIMITIVE_LINES = 0;
+    public static final int PRIMITIVE_TRIANGLES = 0;
+    public static final int PRIMITIVE_QUADS = 0;
+    public static final int PRIMITIVE_POINT_SPRITES = 0;
+    public static final int POINT_SPRITE_LOCAL_SIZE = 0;
+    public static final int POINT_SPRITE_PIXEL_SIZE = 0;
+    public static final int POINT_SPRITE_PERSPECTIVE = 0;
+    public static final int POINT_SPRITE_NO_PERS = 0;
+    public static final int ENV_ATTR_LIGHTING = 0;
+    public static final int ENV_ATTR_SPHERE_MAP = 0;
+    public static final int ENV_ATTR_TOON_SHADING = 0;
+    public static final int ENV_ATTR_SEMI_TRANSPARENT = 0;
+    public static final int PATTR_LIGHTING = 0;
+    public static final int PATTR_SPHERE_MAP = 0;
+    public static final int PATTR_COLORKEY = 0;
+    public static final int PATTR_BLEND_NORMAL = 0;
+    public static final int PATTR_BLEND_HALF = 0;
+    public static final int PATTR_BLEND_ADD = 0;
+    public static final int PATTR_BLEND_SUB = 0;
+    public static final int PDATA_NORMAL_NONE = 0;
+    public static final int PDATA_NORMAL_PER_FACE = 0;
+    public static final int PDATA_NORMAL_PER_VERTEX = 0;
+    public static final int PDATA_COLOR_NONE = 0;
+    public static final int PDATA_COLOR_PER_COMMAND = 0;
+    public static final int PDATA_COLOR_PER_FACE = 0;
+    public static final int PDATA_TEXURE_COORD_NONE = 0;
+    public static final int PDATA_POINT_SPRITE_PARAMS_PER_CMD = 0;
+    public static final int PDATA_POINT_SPRITE_PARAMS_PER_FACE = 0;
+    public static final int PDATA_POINT_SPRITE_PARAMS_PER_VERTEX = 0;
+    public static final int PDATA_TEXURE_COORD = 0;
+
+    public void renderPrimitives (com.jblend.graphics.j3d.Texture texture, int x, int y, com.jblend.graphics.j3d.FigureLayout layout, com.jblend.graphics.j3d.Effect3D effect, int command, int numPrimitives, int[] vertexCoords, int[] normals, int[] textureCoords, int[] colors);
+    public void drawCommandList (com.jblend.graphics.j3d.Texture[] textures, int x, int y, com.jblend.graphics.j3d.FigureLayout layout, com.jblend.graphics.j3d.Effect3D effect, int[] commandlist);
+    public void drawCommandList (com.jblend.graphics.j3d.Texture texture, int x, int y, com.jblend.graphics.j3d.FigureLayout layout, com.jblend.graphics.j3d.Effect3D effect, int[] commandlist);
+    public void renderFigure (com.jblend.graphics.j3d.Figure figure, int x, int y, com.jblend.graphics.j3d.FigureLayout layout, com.jblend.graphics.j3d.Effect3D effect);
+    public void flush ();
+    public void drawFigure (com.jblend.graphics.j3d.Figure figure, int x, int y, com.jblend.graphics.j3d.FigureLayout layout, com.jblend.graphics.j3d.Effect3D effect);}

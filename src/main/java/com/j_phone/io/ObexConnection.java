@@ -1,0 +1,56 @@
+package com.j_phone.io;
+
+public interface ObexConnection extends javax.microedition.io.StreamConnection {
+    public static final int DISCONNECT = 0;
+    public static final int PUT = 0;
+    public static final int GET = 0;
+    public static final int CONTINUE = 0;
+    public static final int SUCCESS = 0;
+    public static final int CREATED = 0;
+    public static final int ACCEPTED = 0;
+    public static final int NON_AUTHORITATIVE_INFORMATION = 0;
+    public static final int NO_CONTENT = 0;
+    public static final int RESET_CONTENT = 0;
+    public static final int PARTIAL_CONTENT = 0;
+    public static final int MULTIPLE_CHOICES = 0;
+    public static final int MOVED_PERMANENTLY = 0;
+    public static final int MOVED_TEMPORARILY = 0;
+    public static final int SEE_OTHER = 0;
+    public static final int NOT_MODIFIED = 0;
+    public static final int USE_PROXY = 0;
+    public static final int BAD_REQUEST = 0;
+    public static final int UNAUTHORIZED = 0;
+    public static final int PAYMENT_REQUIRED = 0;
+    public static final int FORBIDDEN = 0;
+    public static final int NOT_FOUND = 0;
+    public static final int METHOD_NOT_ALLOWED = 0;
+    public static final int NOT_ACCEPTABLE = 0;
+    public static final int PROXY_AUTHENTICATION_REQUIRED = 0;
+    public static final int REQUEST_TIME_OUT = 0;
+    public static final int CONFLICT = 0;
+    public static final int GONE = 0;
+    public static final int LENGTH_REQUIRED = 0;
+    public static final int PRECONDITION_FAILED = 0;
+    public static final int REQUEST_ENTITY_TOO_LARGE = 0;
+    public static final int REQUEST_URL_TOO_LARGE = 0;
+    public static final int UNSUPPORTED_MEDIA_TYPE = 0;
+    public static final int INTERNAL_SERVER_ERROR = 0;
+    public static final int NOT_IMPLEMENTED = 0;
+    public static final int BAD_GATEWAY = 0;
+    public static final int SERVICE_UNAVAILABLE = 0;
+    public static final int GATEWAY_TIMEOUT = 0;
+    public static final int HTTP_VERSION_NOT_SUPPORTED = 0;
+    public static final int DATABASE_FULL = 0;
+    public static final int DATABASE_LOCKED = 0;
+    public static final int COMM_MODE_IRDA = 0;
+    public static final int COMM_MODE_IRSIMPLE_UNILATERALLY = 0;
+    public static final int COMM_MODE_IRSIMPLE_INTERACTIVE = 0;
+
+    public int getContentLength ();
+    public void setName (java.lang.String name);
+    public java.lang.String getName ();
+    public void setType (java.lang.String type);
+    public java.lang.String getType ();
+    public void setTime (long time);
+    public long getTime ();
+    public int getCommMode ();}
