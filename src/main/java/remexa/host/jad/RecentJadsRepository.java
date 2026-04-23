@@ -9,7 +9,7 @@ import remexa.settings.RemexaPreferences;
 public final class RecentJadsRepository {
     private static final int LIMIT = 10;
     private static final String FORMAT_VERSION_KEY = "format.version";
-    private static final int CURRENT_FORMAT_VERSION = 2;
+    private static final int CURRENT_FORMAT_VERSION = 3;
 
     public List<RecentJadEntry> load() {
         var entries = new ArrayList<RecentJadEntry>();
