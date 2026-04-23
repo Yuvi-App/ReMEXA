@@ -12,6 +12,7 @@ public final class RemexaPreferences {
     public static final String SHOW_HOST_DETAILS_KEY = "showHostDetails";
     public static final String FONT_TYPE_KEY = "fontType";
     public static final String JSKY_PHONE_TYPE_KEY = "jskyPhoneType";
+    public static final String HOST_SCALE_KEY = "hostScale";
     public static final String LOG_ENABLED_PREFIX = "enabled.";
     public static final String RECENT_ENTRY_PREFIX = "entry.";
 

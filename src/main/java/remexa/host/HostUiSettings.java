@@ -38,4 +38,17 @@ public final class HostUiSettings {
         var resolved = jskyPhoneType == null ? LaunchConfig.JskyPhoneType.GENERIC : jskyPhoneType;
         RemexaPreferences.ui().put(RemexaPreferences.JSKY_PHONE_TYPE_KEY, resolved.id());
     }
+
+    public static int hostScale() {
+        return LaunchConfig.normalizeHostScale(
+                RemexaPreferences.ui().get(RemexaPreferences.HOST_SCALE_KEY, "3")
+        );
+    }
+
+    public static void setHostScale(int hostScale) {
+        RemexaPreferences.ui().putInt(
+                RemexaPreferences.HOST_SCALE_KEY,
+                LaunchConfig.clampHostScale(hostScale)
+        );
+    }
 }

@@ -5,6 +5,9 @@ import java.util.Locale;
 public final class LaunchConfig {
     public static final String FONT_TYPE_PROPERTY = "remexa.fontType";
     public static final String JSKY_PHONE_TYPE_PROPERTY = "remexa.jskyPhoneType";
+    public static final String HOST_SCALE_PROPERTY = "remexa.hostScale";
+    public static final int MIN_HOST_SCALE = 1;
+    public static final int MAX_HOST_SCALE = 5;
 
     private LaunchConfig() {
     }
@@ -113,5 +116,46 @@ public final class LaunchConfig {
     public static void applyJskyPhoneType(JskyPhoneType jskyPhoneType) {
         var resolved = jskyPhoneType == null ? JskyPhoneType.GENERIC : jskyPhoneType;
         System.setProperty(JSKY_PHONE_TYPE_PROPERTY, resolved.id());
+    }
+
+    public static Integer parseHostScale(String candidate) {
+        if (candidate == null) {
+            return null;
+        }
+        var normalized = candidate.trim().toLowerCase(Locale.ROOT);
+        if (normalized.endsWith("x")) {
+            normalized = normalized.substring(0, normalized.length() - 1).trim();
+        }
+        if (normalized.isEmpty()) {
+            return null;
+        }
+        try {
+            var parsed = Integer.parseInt(normalized);
+            return isSupportedHostScale(parsed) ? parsed : null;
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
+    public static int normalizeHostScale(String candidate) {
+        var parsed = parseHostScale(candidate);
+        return parsed == null ? 3 : parsed;
+    }
+
+    public static int resolveConfiguredHostScale() {
+        return normalizeHostScale(System.getProperty(HOST_SCALE_PROPERTY, "3"));
+    }
+
+    public static void applyHostScale(Integer hostScale) {
+        var resolved = hostScale == null ? 3 : clampHostScale(hostScale);
+        System.setProperty(HOST_SCALE_PROPERTY, Integer.toString(resolved));
+    }
+
+    public static int clampHostScale(int hostScale) {
+        return Math.max(MIN_HOST_SCALE, Math.min(MAX_HOST_SCALE, hostScale));
+    }
+
+    public static boolean isSupportedHostScale(int hostScale) {
+        return hostScale >= MIN_HOST_SCALE && hostScale <= MAX_HOST_SCALE;
     }
 }

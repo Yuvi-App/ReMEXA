@@ -43,7 +43,6 @@ import remexa.probes.LogEvent;
 
 public final class JadFrame extends JFrame {
     private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm:ss").withZone(ZoneId.systemDefault());
-    private static final int DISPLAY_SCALE = 3;
     private static final int SOFT_KEY_BAR_HEIGHT = 28;
 
     private final JTextArea detailsArea = new JTextArea();
@@ -59,12 +58,14 @@ public final class JadFrame extends JFrame {
     private final boolean showHostDetails;
     private final Timer refreshTimer;
     private final AtomicBoolean disposed = new AtomicBoolean();
+    private final int hostScale;
     private Runnable closeHandler;
 
     public JadFrame(JadDescriptor descriptor, LaunchProfile launchProfile, boolean showHostDetails) {
         super(descriptor.title() + " - ReMEXA");
         this.launchProfile = launchProfile;
         this.showHostDetails = showHostDetails;
+        this.hostScale = LaunchConfig.resolveConfiguredHostScale();
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
         setLayout(new BorderLayout());
         renderSurface.setBackground(new Color(22, 24, 29));
@@ -350,15 +351,15 @@ public final class JadFrame extends JFrame {
         return lines;
     }
 
-    private static int scaledWidth(DisplayMetrics displayMetrics) {
-        return displayMetrics.width() * DISPLAY_SCALE;
+    private int scaledWidth(DisplayMetrics displayMetrics) {
+        return displayMetrics.width() * hostScale;
     }
 
-    private static int scaledHeight(DisplayMetrics displayMetrics) {
-        return displayMetrics.height() * DISPLAY_SCALE;
+    private int scaledHeight(DisplayMetrics displayMetrics) {
+        return displayMetrics.height() * hostScale;
     }
 
-    private static Dimension minimumWindowSize(DisplayMetrics displayMetrics, boolean showHostDetails) {
+    private Dimension minimumWindowSize(DisplayMetrics displayMetrics, boolean showHostDetails) {
         if (showHostDetails) {
             return new Dimension(Math.max(620, scaledWidth(displayMetrics) + 280), 520 + SOFT_KEY_BAR_HEIGHT);
         }

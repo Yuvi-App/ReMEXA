@@ -191,6 +191,27 @@ public final class LauncherFrame extends JFrame {
         }
         settingsMenu.add(jskyPhoneMenu);
         settingsMenu.addSeparator();
+        var hostScaleMenu = new JMenu("Host Scale");
+        styleMenu(hostScaleMenu);
+        var hostScaleGroup = new ButtonGroup();
+        for (int scale = LaunchConfig.MIN_HOST_SCALE; scale <= LaunchConfig.MAX_HOST_SCALE; scale++) {
+            var hostScale = scale;
+            var scaleItem = new JRadioButtonMenuItem(hostScale + "x", HostUiSettings.hostScale() == hostScale);
+            styleMenuItem(scaleItem);
+            hostScaleGroup.add(scaleItem);
+            scaleItem.addActionListener(event -> {
+                HostUiSettings.setHostScale(hostScale);
+                LaunchConfig.applyHostScale(hostScale);
+                DebugLog.log(
+                        LogCategory.FRONTEND,
+                        LauncherFrame.class.getName(),
+                        "Host scale set to " + hostScale + "x"
+                );
+            });
+            hostScaleMenu.add(scaleItem);
+        }
+        settingsMenu.add(hostScaleMenu);
+        settingsMenu.addSeparator();
         var debugMenu = new JMenu("Debug Categories");
         styleMenu(debugMenu);
         for (var category : LogCategory.values()) {
