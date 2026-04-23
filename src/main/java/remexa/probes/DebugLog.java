@@ -21,6 +21,9 @@ public final class DebugLog {
     }
 
     public static void log(LogCategory category, String source, String message) {
+        if (!LogSettings.isEnabled(category)) {
+            return;
+        }
         var event = new LogEvent(Instant.now(), category, source, message);
         LOGGER.log(System.Logger.Level.INFO, format(event));
         for (var listener : LISTENERS) {
