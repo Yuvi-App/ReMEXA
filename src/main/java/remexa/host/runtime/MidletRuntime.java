@@ -173,6 +173,55 @@ public final class MidletRuntime {
         contextFor(displayable).ifPresent(context -> context.surfaceFor(displayable).drawFrameBuffer(tx, ty));
     }
 
+    public static javax.microedition.lcdui.Graphics beginAmuseVirtualGraphics(Displayable displayable) {
+        var context = contextFor(displayable).orElse(CURRENT_CONTEXT.get());
+        if (context == null) {
+            return null;
+        }
+        return context.surfaceFor(displayable).beginVirtualPaint();
+    }
+
+    public static void createAmuseFrameBuffer(Displayable displayable, int width, int height) {
+        contextFor(displayable).ifPresent(context -> context.surfaceFor(displayable).createFrameBuffer(width, height));
+    }
+
+    public static void amuseCopyArea(Displayable displayable, int sx, int sy, int width, int height, int tx, int ty) {
+        contextFor(displayable).ifPresent(context -> context.surfaceFor(displayable).copyArea(sx, sy, width, height, tx, ty));
+    }
+
+    public static void amuseScroll(Displayable displayable, int dx, int dy) {
+        contextFor(displayable).ifPresent(context -> context.surfaceFor(displayable).copyFullScreen(dx, dy));
+    }
+
+    public static void amuseFlush(Displayable displayable, int tx, int ty) {
+        contextFor(displayable).ifPresent(context -> context.surfaceFor(displayable).presentFrameBuffer(tx, ty));
+    }
+
+    public static void amuseDrawPattern(
+            Displayable displayable,
+            int[] palette,
+            byte[] pattern,
+            boolean transparent,
+            boolean toFrameBuffer,
+            int x,
+            int y,
+            int rotation,
+            boolean upsideDown,
+            boolean rightsideLeft
+    ) {
+        contextFor(displayable).ifPresent(context -> context.surfaceFor(displayable).drawIndexedPattern(
+                palette,
+                pattern,
+                transparent,
+                toFrameBuffer,
+                x,
+                y,
+                rotation,
+                upsideDown,
+                rightsideLeft
+        ));
+    }
+
     public static InputStream openResource(String resourceName) {
         ensureThreadActive();
         var normalizedName = resourceName == null ? "" : resourceName.startsWith("/") ? resourceName.substring(1) : resourceName;

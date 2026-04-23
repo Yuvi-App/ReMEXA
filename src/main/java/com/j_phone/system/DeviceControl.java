@@ -1,26 +1,26 @@
 package com.j_phone.system;
 
 public class DeviceControl {
-    public static final int BATTERY = 0;
-    public static final int FIELD_INTENSITY = 0;
-    public static final int KEY_STATE = 0;
-    public static final int VIBRATION = 0;
-    public static final int BACK_LIGHT = 0;
-    public static final int EIGHT_DIRECTIONS = 0;
-    public static final int FLIP_STATE = 0;
-    public static final int MEMORY_CARD = 0;
-    public static final int SPEAKER_STATE = 0;
-    public static final int ENHANCED_KEY_STATE = 0;
+    public static final int BATTERY = 1;
+    public static final int FIELD_INTENSITY = 2;
+    public static final int KEY_STATE = 3;
+    public static final int VIBRATION = 4;
+    public static final int BACK_LIGHT = 5;
+    public static final int EIGHT_DIRECTIONS = 6;
+    public static final int FLIP_STATE = 7;
+    public static final int MEMORY_CARD = 8;
+    public static final int SPEAKER_STATE = 9;
+    public static final int ENHANCED_KEY_STATE = 10;
     public static final int FLIP_OPENED = 0;
-    public static final int FLIP_CLOSED = 0;
+    public static final int FLIP_CLOSED = 1;
     public static final int MEMORY_CARD_OFF = 0;
-    public static final int MEMORY_CARD_WRITABLE = 0;
-    public static final int MEMORY_CARD_WRITE_PROTECTED = 0;
-    public static final int MEMORY_CARD_READ_ONLY = 0;
+    public static final int MEMORY_CARD_WRITABLE = 1;
+    public static final int MEMORY_CARD_WRITE_PROTECTED = 2;
+    public static final int MEMORY_CARD_READ_ONLY = 3;
     public static final int NEW_ARRIVAL_STATE_CALL = 0;
     public static final int NEW_ARRIVAL_STATE_MAIL = 0;
-    public static final int SPEAKER_INTERNAL = 0;
-    public static final int SPEAKER_EXTERNAL = 0;
+    public static final int SPEAKER_INTERNAL = 1;
+    public static final int SPEAKER_EXTERNAL = 2;
     public static final int RAB_GPRS = 0;
     public static final int RAB_R99 = 0;
     public static final int RAB_HSDPA_C6 = 0;
@@ -28,9 +28,10 @@ public class DeviceControl {
     public static final int RAB_NULL = 0;
     public static final int RAB_MEASUREMENT = 0;
     public static final int RAB_INDEFINITE = 0;
-    public static final int STYLE_PORTRAIT = 1;
-    public static final int STYLE_LANDSCAPE = 2;
+    public static final int STYLE_PORTRAIT = 0;
+    public static final int STYLE_LANDSCAPE = 1;
     private static final com.j_phone.system.DeviceControl DEFAULT = new com.j_phone.system.DeviceControl();
+    private final java.util.BitSet activeDevices = new java.util.BitSet();
 
     public static final com.j_phone.system.DeviceControl getDefaultDeviceControl () {
         remexa.probes.SdkStubSupport.log("com.j_phone.system.DeviceControl", "getDefaultDeviceControl");
@@ -40,19 +41,27 @@ public class DeviceControl {
     public int getDeviceState (int deviceNo) {
         remexa.probes.SdkStubSupport.log("com.j_phone.system.DeviceControl", "getDeviceState", deviceNo);
         remexa.host.runtime.MidletRuntime.ensureThreadActive();
-        if (deviceNo == 3) {
-            return remexa.host.runtime.MidletRuntime.currentDeviceKeyState();
-        }
-        return 0;
+        return switch (deviceNo) {
+            case KEY_STATE -> remexa.host.runtime.MidletRuntime.currentDeviceKeyState();
+            case ENHANCED_KEY_STATE -> remexa.host.runtime.MidletRuntime.currentDeviceKeyState();
+            case FLIP_STATE -> FLIP_OPENED;
+            case MEMORY_CARD -> MEMORY_CARD_OFF;
+            case SPEAKER_STATE -> SPEAKER_INTERNAL;
+            case BATTERY, FIELD_INTENSITY -> 0;
+            default -> throw new IllegalArgumentException("Unsupported device state: " + deviceNo);
+        };
     }
 
     public boolean isDeviceActive (int deviceNo) {
         remexa.probes.SdkStubSupport.log("com.j_phone.system.DeviceControl", "isDeviceActive", deviceNo);
-        return false;
+        validateActiveDevice(deviceNo);
+        return activeDevices.get(deviceNo);
     }
 
     public boolean setDeviceActive (int deviceNo, boolean active) {
         remexa.probes.SdkStubSupport.log("com.j_phone.system.DeviceControl", "setDeviceActive", deviceNo, active);
+        validateActiveDevice(deviceNo);
+        activeDevices.set(deviceNo, active);
         return true;
     }
 
@@ -157,5 +166,11 @@ public class DeviceControl {
 
     public static void setStyleChangedListener (com.j_phone.system.StyleChangedListener listener) {
         remexa.probes.SdkStubSupport.log("com.j_phone.system.DeviceControl", "setStyleChangedListener", listener);
+    }
+
+    private static void validateActiveDevice(int deviceNo) {
+        if (deviceNo != VIBRATION && deviceNo != BACK_LIGHT && deviceNo != EIGHT_DIRECTIONS) {
+            throw new IllegalArgumentException("Unsupported active device: " + deviceNo);
+        }
     }
 }

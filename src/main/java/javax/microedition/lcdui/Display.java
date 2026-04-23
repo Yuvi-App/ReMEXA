@@ -26,6 +26,7 @@ public final class Display {
         current = next;
         MidletRuntime.bindDisplayable(midlet, next);
         MidletRuntime.setCurrentDisplayable(midlet, next);
+        initializeDisplayable(next);
         SdkStubSupport.log(Display.class.getName(), "setCurrent", midlet, next == null ? null : next.getTitle());
     }
 
@@ -33,6 +34,7 @@ public final class Display {
         current = next;
         MidletRuntime.bindDisplayable(midlet, next);
         MidletRuntime.setCurrentDisplayable(midlet, next);
+        initializeDisplayable(next);
         SdkStubSupport.log(Display.class.getName(), "setCurrent", alert, next);
     }
 
@@ -46,5 +48,15 @@ public final class Display {
 
     DisplayMetrics displayMetrics() {
         return MidletRuntime.getDisplayMetrics(midlet);
+    }
+
+    private static void initializeDisplayable(Displayable displayable) {
+        if (displayable instanceof com.j_phone.amuse.ACanvas aCanvas) {
+            aCanvas.attachHostGraphics();
+            return;
+        }
+        if (displayable instanceof Canvas canvas) {
+            canvas.repaint();
+        }
     }
 }

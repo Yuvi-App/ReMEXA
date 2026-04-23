@@ -37,6 +37,11 @@ public final class DisplaySurfaceState {
         return new javax.microedition.lcdui.Graphics(virtualImage.createGraphics(), virtualImage.getWidth(), virtualImage.getHeight());
     }
 
+    public synchronized javax.microedition.lcdui.Graphics beginVirtualPaint() {
+        ensureVirtualSurface();
+        return new javax.microedition.lcdui.Graphics(virtualImage.createGraphics(), virtualImage.getWidth(), virtualImage.getHeight());
+    }
+
     public synchronized void createFrameBuffer(int width, int height) {
         frameBuffer = createSurface(width, height);
     }
@@ -92,6 +97,58 @@ public final class DisplaySurfaceState {
         }
     }
 
+    public synchronized void presentFrameBuffer(int tx, int ty) {
+        clear(displayImage);
+        var source = frameBuffer == null ? virtualImage : frameBuffer;
+        if (source == null) {
+            return;
+        }
+        var graphics = displayImage.createGraphics();
+        try {
+            graphics.drawImage(source, tx, ty, null);
+        } finally {
+            graphics.dispose();
+        }
+    }
+
+    public synchronized void drawIndexedPattern(
+            int[] palette,
+            byte[] pattern,
+            boolean transparent,
+            boolean toFrameBuffer,
+            int x,
+            int y,
+            int rotation,
+            boolean upsideDown,
+            boolean rightsideLeft
+    ) {
+        if (pattern == null || pattern.length != 64) {
+            return;
+        }
+        var target = toFrameBuffer ? ensureFrameBuffer() : ensureVirtualSurfaceAndGet();
+        var normalizedRotation = Math.floorMod(rotation, 4);
+        for (int py = 0; py < 8; py++) {
+            for (int px = 0; px < 8; px++) {
+                var sampleX = rightsideLeft ? 7 - px : px;
+                var sampleY = upsideDown ? 7 - py : py;
+                var paletteIndex = pattern[sampleY * 8 + sampleX] & 0xFF;
+                if (transparent && paletteIndex == 0) {
+                    continue;
+                }
+                var argb = resolvePaletteColor(palette, paletteIndex, transparent);
+                if (((argb >>> 24) & 0xFF) == 0) {
+                    continue;
+                }
+                var drawX = x + rotateX(px, py, normalizedRotation);
+                var drawY = y + rotateY(px, py, normalizedRotation);
+                if (drawX < 0 || drawY < 0 || drawX >= target.getWidth() || drawY >= target.getHeight()) {
+                    continue;
+                }
+                target.setRGB(drawX, drawY, argb);
+            }
+        }
+    }
+
     public synchronized BufferedImage currentFrameSnapshot() {
         return copyOf(displayImage);
     }
@@ -102,6 +159,18 @@ public final class DisplaySurfaceState {
                 || virtualImage.getHeight() != displayMetrics.height()) {
             virtualImage = createSurface(displayMetrics.width(), displayMetrics.height());
         }
+    }
+
+    private BufferedImage ensureVirtualSurfaceAndGet() {
+        ensureVirtualSurface();
+        return virtualImage;
+    }
+
+    private BufferedImage ensureFrameBuffer() {
+        if (frameBuffer == null) {
+            frameBuffer = createSurface(displayMetrics.width(), displayMetrics.height());
+        }
+        return frameBuffer;
     }
 
     private static BufferedImage createSurface(int width, int height) {
@@ -127,5 +196,40 @@ public final class DisplaySurfaceState {
         } finally {
             graphics.dispose();
         }
+    }
+
+    private static int resolvePaletteColor(int[] palette, int paletteIndex, boolean transparent) {
+        int color;
+        if (palette != null && paletteIndex >= 0 && paletteIndex < palette.length) {
+            color = palette[paletteIndex];
+        } else {
+            var shade = paletteIndex & 0xFF;
+            color = 0xFF000000 | (shade << 16) | (shade << 8) | shade;
+        }
+        if ((color >>> 24) == 0) {
+            if (transparent && paletteIndex == 0) {
+                return 0;
+            }
+            color |= 0xFF000000;
+        }
+        return color;
+    }
+
+    private static int rotateX(int x, int y, int rotation) {
+        return switch (rotation) {
+            case 1 -> 7 - y;
+            case 2 -> 7 - x;
+            case 3 -> y;
+            default -> x;
+        };
+    }
+
+    private static int rotateY(int x, int y, int rotation) {
+        return switch (rotation) {
+            case 1 -> x;
+            case 2 -> 7 - y;
+            case 3 -> 7 - x;
+            default -> y;
+        };
     }
 }

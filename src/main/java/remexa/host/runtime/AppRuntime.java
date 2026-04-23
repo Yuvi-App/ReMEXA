@@ -146,6 +146,36 @@ public final class AppRuntime {
             }
         }
 
+        var stubbornThreads = appThreads.stream()
+                .filter(Thread::isAlive)
+                .toList();
+
+        for (var thread : stubbornThreads) {
+            DebugLog.log(
+                    LogCategory.HOST,
+                    AppRuntime.class.getName(),
+                    "Force-stopping app thread " + thread.getName()
+            );
+            try {
+                forceStopThread(thread);
+            } catch (UnsupportedOperationException | SecurityException exception) {
+                DebugLog.log(
+                        LogCategory.HOST,
+                        AppRuntime.class.getName(),
+                        "Failed to force-stop app thread " + thread.getName() + ": " + exception.getMessage()
+                );
+            }
+        }
+
+        for (var thread : stubbornThreads) {
+            try {
+                thread.join(500L);
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
+
         for (var thread : appThreads) {
             if (!thread.isAlive()) {
                 continue;
@@ -211,6 +241,11 @@ public final class AppRuntime {
                     "Failed to invoke MIDlet " + methodName + " for " + midlet.getClass().getName() + ": " + exception.getMessage()
             );
         }
+    }
+
+    @SuppressWarnings("removal")
+    private static void forceStopThread(Thread thread) {
+        thread.stop();
     }
 
 }

@@ -121,6 +121,7 @@ public final class JadFrame extends JFrame {
         super.dispose();
         if (shutdownTask != null) {
             var shutdownThread = new Thread(shutdownTask, "remexa-app-shutdown");
+            shutdownThread.setDaemon(true);
             shutdownThread.start();
         }
     }

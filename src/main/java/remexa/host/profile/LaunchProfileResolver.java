@@ -31,10 +31,26 @@ public final class LaunchProfileResolver {
 
     private static AppProfile resolveProfile(JadDescriptor descriptor) {
         var ocl = descriptor.property("MIDlet-OCL").orElse("");
-        if (ocl.startsWith("JSCL-")) {
-            return AppProfile.jsky(ocl, LaunchConfig.JskyPhoneType.resolveConfigured());
+        if (isJskyFamily(ocl)) {
+            return AppProfile.jsky(primaryOclToken(ocl), LaunchConfig.JskyPhoneType.resolveConfigured());
         }
         return AppProfile.generic();
+    }
+
+    private static boolean isJskyFamily(String ocl) {
+        if (ocl == null) {
+            return false;
+        }
+        var normalized = ocl.trim().toUpperCase(java.util.Locale.ROOT);
+        return normalized.startsWith("JSCL-") || normalized.startsWith("JOCL-");
+    }
+
+    private static String primaryOclToken(String ocl) {
+        if (ocl == null) {
+            return "";
+        }
+        var separator = ocl.indexOf(',');
+        return separator >= 0 ? ocl.substring(0, separator).trim() : ocl.trim();
     }
 
     private static Optional<DisplayMetrics> resolveDisplayMetrics(JadDescriptor descriptor, AppProfile profile) {
