@@ -14,6 +14,7 @@ import java.awt.RenderingHints;
 import java.awt.datatransfer.DataFlavor;
 import java.io.File;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
@@ -214,17 +215,38 @@ public final class LauncherFrame extends JFrame {
         settingsMenu.addSeparator();
         var debugMenu = new JMenu("Debug Categories");
         styleMenu(debugMenu);
+        var categoryItems = new ArrayList<JCheckBoxMenuItem>();
+        var toggleAllLogsItem = new JMenuItem();
+        styleMenuItem(toggleAllLogsItem);
+        toggleAllLogsItem.addActionListener(event -> {
+            boolean enable = !LogSettings.areAllEnabled();
+            LogSettings.setAllEnabled(enable);
+            updateToggleAllLogsItem(toggleAllLogsItem);
+            for (var categoryItem : categoryItems) {
+                categoryItem.setSelected(enable);
+            }
+            DebugLog.log(
+                    LogCategory.FRONTEND,
+                    LauncherFrame.class.getName(),
+                    "All debug logs set to " + enable
+            );
+        });
+        updateToggleAllLogsItem(toggleAllLogsItem);
+        debugMenu.add(toggleAllLogsItem);
+        debugMenu.addSeparator();
         for (var category : LogCategory.values()) {
             var categoryItem = new JCheckBoxMenuItem(category.name().replace('_', ' '), LogSettings.isEnabled(category));
             styleMenuItem(categoryItem);
             categoryItem.addActionListener(event -> {
                 LogSettings.setEnabled(category, categoryItem.isSelected());
+                updateToggleAllLogsItem(toggleAllLogsItem);
                 DebugLog.log(
                         LogCategory.FRONTEND,
                         LauncherFrame.class.getName(),
                         "Debug category " + category + " set to " + categoryItem.isSelected()
                 );
             });
+            categoryItems.add(categoryItem);
             debugMenu.add(categoryItem);
         }
         settingsMenu.add(debugMenu);
@@ -280,6 +302,10 @@ public final class LauncherFrame extends JFrame {
 
         UIManager.put("PopupMenu.background", POPUP_BACKGROUND);
         UIManager.put("PopupMenu.border", BorderFactory.createLineBorder(POPUP_BORDER, 1));
+    }
+
+    private void updateToggleAllLogsItem(JMenuItem item) {
+        item.setText(LogSettings.areAllEnabled() ? "Disable All Debug Logs" : "Enable All Debug Logs");
     }
 
     private final class JadTransferHandler extends TransferHandler {

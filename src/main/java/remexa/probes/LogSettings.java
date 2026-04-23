@@ -16,6 +16,21 @@ public final class LogSettings {
         RemexaPreferences.log().putBoolean(key(category), enabled);
     }
 
+    public static boolean areAllEnabled() {
+        for (var category : LogCategory.values()) {
+            if (!isEnabled(category)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public static void setAllEnabled(boolean enabled) {
+        for (var category : LogCategory.values()) {
+            setEnabled(category, enabled);
+        }
+    }
+
     public static Map<LogCategory, Boolean> loadAll() {
         var values = new EnumMap<LogCategory, Boolean>(LogCategory.class);
         for (var category : LogCategory.values()) {

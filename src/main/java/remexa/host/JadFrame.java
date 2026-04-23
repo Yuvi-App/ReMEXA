@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import javax.swing.BorderFactory;
+import javax.swing.JButton;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
@@ -40,6 +41,7 @@ import remexa.host.runtime.MidletRuntime;
 import remexa.probes.DebugLog;
 import remexa.probes.LogCategory;
 import remexa.probes.LogEvent;
+import remexa.probes.LogSettings;
 
 public final class JadFrame extends JFrame {
     private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm:ss").withZone(ZoneId.systemDefault());
@@ -49,6 +51,7 @@ public final class JadFrame extends JFrame {
     private final JTextArea logArea = new JTextArea();
     private final JLabel statusLabel = new JLabel("Idle");
     private final JLabel renderInfoLabel = new JLabel();
+    private final JButton logToggleButton = new JButton();
     private final JLabel leftSoftKeyLabel = new JLabel();
     private final JLabel rightSoftKeyLabel = new JLabel();
     private final JPanel softKeyBar = new JPanel(new GridLayout(1, 2, 0, 0));
@@ -86,6 +89,9 @@ public final class JadFrame extends JFrame {
         refreshSoftKeyLabels();
         refreshTimer = new Timer(33, event -> {
             refreshSoftKeyLabels();
+            if (showHostDetails) {
+                refreshLogToggleButton();
+            }
             renderSurface.repaint();
         });
         refreshTimer.start();
@@ -172,7 +178,12 @@ public final class JadFrame extends JFrame {
         renderPanel.add(new JLabel("Legacy display host groundwork is active. SDK calls and display transitions will appear in the log."), BorderLayout.NORTH);
 
         var displayHostPanel = new JPanel(new BorderLayout(0, 8));
-        displayHostPanel.add(renderInfoLabel, BorderLayout.NORTH);
+        var displayHeader = new JPanel(new BorderLayout(8, 0));
+        displayHeader.setOpaque(false);
+        configureLogToggleButton();
+        displayHeader.add(renderInfoLabel, BorderLayout.CENTER);
+        displayHeader.add(logToggleButton, BorderLayout.EAST);
+        displayHostPanel.add(displayHeader, BorderLayout.NORTH);
         displayHostPanel.add(renderSurface, BorderLayout.CENTER);
 
         var detailsPanel = new JPanel(new BorderLayout(0, 8));
@@ -188,6 +199,32 @@ public final class JadFrame extends JFrame {
         footerPanel.add(createSoftKeyBar(), BorderLayout.CENTER);
         footerPanel.add(statusLabel, BorderLayout.SOUTH);
         add(footerPanel, BorderLayout.SOUTH);
+    }
+
+    private void configureLogToggleButton() {
+        logToggleButton.setFocusable(false);
+        logToggleButton.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        logToggleButton.addActionListener(event -> toggleAllLogs());
+        refreshLogToggleButton();
+    }
+
+    private void toggleAllLogs() {
+        boolean enable = !LogSettings.areAllEnabled();
+        LogSettings.setAllEnabled(enable);
+        refreshLogToggleButton();
+        DebugLog.log(
+                LogCategory.HOST,
+                JadFrame.class.getName(),
+                "All debug logs set to " + enable
+        );
+    }
+
+    private void refreshLogToggleButton() {
+        boolean allEnabled = LogSettings.areAllEnabled();
+        logToggleButton.setText(allEnabled ? "Disable All Logs" : "Enable All Logs");
+        logToggleButton.setToolTipText(allEnabled
+                ? "Turn every debug category off"
+                : "Turn every debug category on");
     }
 
     private void buildGameOnlyLayout() {

@@ -191,25 +191,25 @@ public abstract class Canvas extends Displayable {
         if (pressedKeys.contains((int) '9')) {
             state |= 0x0200;
         }
-        if (pressedKeys.contains((int) '8')) {
+        if (pressedKeys.contains((int) '8') || containsAnyKey(KEYCODE_DOWN, DOWN)) {
             state |= 0x0100;
         }
         if (pressedKeys.contains((int) '7')) {
             state |= 0x0080;
         }
-        if (pressedKeys.contains((int) '6')) {
+        if (pressedKeys.contains((int) '6') || containsAnyKey(KEYCODE_RIGHT, RIGHT)) {
             state |= 0x0040;
         }
-        if (pressedKeys.contains((int) '5')) {
+        if (pressedKeys.contains((int) '5') || containsAnyKey(KEYCODE_FIRE, (int) '\n', FIRE)) {
             state |= 0x0020;
         }
-        if (pressedKeys.contains((int) '4')) {
+        if (pressedKeys.contains((int) '4') || containsAnyKey(KEYCODE_LEFT, LEFT)) {
             state |= 0x0010;
         }
         if (pressedKeys.contains((int) '3')) {
             state |= 0x0008;
         }
-        if (pressedKeys.contains((int) '2')) {
+        if (pressedKeys.contains((int) '2') || containsAnyKey(KEYCODE_UP, UP)) {
             state |= 0x0004;
         }
         if (pressedKeys.contains((int) '1')) {

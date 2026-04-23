@@ -1,5 +1,6 @@
 package remexa.host.jad;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -7,9 +8,12 @@ import remexa.settings.RemexaPreferences;
 
 public final class RecentJadsRepository {
     private static final int LIMIT = 10;
+    private static final String FORMAT_VERSION_KEY = "format.version";
+    private static final int CURRENT_FORMAT_VERSION = 2;
 
     public List<RecentJadEntry> load() {
         var entries = new ArrayList<RecentJadEntry>();
+        var needsMigration = storedFormatVersion() < CURRENT_FORMAT_VERSION;
         for (int index = 0; index < LIMIT; index++) {
             var value = RemexaPreferences.recentJads().get(RemexaPreferences.RECENT_ENTRY_PREFIX + index, null);
             if (value == null || value.isBlank()) {
@@ -21,7 +25,11 @@ public final class RecentJadsRepository {
             }
             var title = value.substring(0, separator);
             var path = Path.of(value.substring(separator + 1));
-            entries.add(new RecentJadEntry(title, path));
+            var entry = new RecentJadEntry(title, path);
+            entries.add(needsMigration ? refresh(entry) : entry);
+        }
+        if (needsMigration) {
+            store(entries);
         }
         return List.copyOf(entries);
     }
@@ -33,6 +41,26 @@ public final class RecentJadsRepository {
         while (entries.size() > LIMIT) {
             entries.removeLast();
         }
+        store(entries);
+    }
+
+    private static RecentJadEntry refresh(RecentJadEntry entry) {
+        if (!Files.exists(entry.jadPath())) {
+            return entry;
+        }
+        try {
+            var descriptor = JadParser.parse(entry.jadPath());
+            var refreshedTitle = descriptor.title();
+            if (refreshedTitle == null || refreshedTitle.isBlank()) {
+                return entry;
+            }
+            return new RecentJadEntry(refreshedTitle, entry.jadPath());
+        } catch (Exception ignored) {
+            return entry;
+        }
+    }
+
+    private static void store(List<RecentJadEntry> entries) {
         for (int index = 0; index < LIMIT; index++) {
             var key = RemexaPreferences.RECENT_ENTRY_PREFIX + index;
             if (index < entries.size()) {
@@ -42,5 +70,10 @@ public final class RecentJadsRepository {
                 RemexaPreferences.recentJads().remove(key);
             }
         }
+        RemexaPreferences.recentJads().putInt(FORMAT_VERSION_KEY, CURRENT_FORMAT_VERSION);
+    }
+
+    private static int storedFormatVersion() {
+        return RemexaPreferences.recentJads().getInt(FORMAT_VERSION_KEY, 0);
     }
 }
