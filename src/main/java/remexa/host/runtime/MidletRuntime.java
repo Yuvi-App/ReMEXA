@@ -1,5 +1,6 @@
 package remexa.host.runtime;
 
+import com.j_phone.amuse.ACanvas;
 import com.jblend.graphics.sprite.SpriteCanvas;
 import java.awt.image.BufferedImage;
 import java.io.InputStream;
@@ -149,7 +150,7 @@ public final class MidletRuntime {
             return;
         }
         var surface = context.surfaceFor(canvas);
-        var graphics = surface.beginCanvasPaint(canvas instanceof SpriteCanvas);
+        var graphics = surface.beginCanvasPaint(canvas instanceof SpriteCanvas || canvas instanceof ACanvas);
         renderer.accept(graphics);
     }
 
