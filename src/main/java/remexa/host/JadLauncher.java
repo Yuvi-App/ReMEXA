@@ -8,6 +8,7 @@ import javax.swing.JOptionPane;
 import javax.swing.Timer;
 import remexa.host.HostUiSettings;
 import remexa.host.jad.JadDescriptor;
+import remexa.host.jad.JadIconLoader;
 import remexa.host.jad.JadParser;
 import remexa.host.jad.RecentJadsRepository;
 import remexa.host.profile.LaunchProfileResolver;
@@ -80,6 +81,7 @@ public final class JadLauncher {
     private void openFrame(JadDescriptor descriptor) throws LaunchException {
         var launchProfile = LaunchProfileResolver.resolve(descriptor);
         var frame = new JadFrame(descriptor, launchProfile, showHostDetails());
+        JadIconLoader.load(descriptor).ifPresent(frame::setAppIcon);
         var shutdownOnce = new AtomicBoolean();
         try {
             frame.showFrame();

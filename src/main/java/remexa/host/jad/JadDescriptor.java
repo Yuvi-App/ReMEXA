@@ -38,12 +38,22 @@ public record JadDescriptor(
                 .map(value -> sourcePath.getParent().resolve(value).normalize());
     }
 
+    public Optional<String> iconPath() {
+        return property("MIDlet-Icon")
+                .or(() -> midlets.stream()
+                        .map(MidletEntry::icon)
+                        .filter(icon -> icon != null && !icon.isBlank())
+                        .findFirst())
+                .filter(icon -> !icon.isBlank());
+    }
+
     public List<String> summaryLines() {
         var lines = new ArrayList<String>();
         lines.add("Title: " + title());
         property("MIDlet-Vendor").ifPresent(value -> lines.add("Vendor: " + value));
         property("MIDlet-Version").ifPresent(value -> lines.add("Version: " + value));
         property("MIDlet-Resident").ifPresent(value -> lines.add("Resident: " + value));
+        iconPath().ifPresent(value -> lines.add("Icon: " + value));
         resolveJarPath().ifPresent(value -> lines.add("Jar: " + value));
         entryClassName().ifPresent(value -> lines.add("Entry: " + value));
         return List.copyOf(lines);
