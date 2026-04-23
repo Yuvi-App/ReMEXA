@@ -1,26 +1,29 @@
+/*
+	This file is part of FreeJ2ME.
+
+	FreeJ2ME is free software: you can redistribute it and/or modify
+	it under the terms of the GNU General Public License as published by
+	the Free Software Foundation, either version 3 of the License, or
+	(at your option) any later version.
+
+	FreeJ2ME is distributed in the hope that it will be useful,
+	but WITHOUT ANY WARRANTY; without even the implied warranty of
+	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+	GNU General Public License for more details.
+
+	You should have received a copy of the GNU General Public License
+	along with FreeJ2ME.  If not, see http://www.gnu.org/licenses/
+*/
 package com.jblend.media.smaf.phrase;
 
-public class AudioPhrase extends com.jblend.media.smaf.phrase.PhraseBase {
-    protected AudioPhrase() {
-        remexa.probes.SdkStubSupport.log("com.jblend.media.smaf.phrase.AudioPhrase", "AudioPhrase");
+import java.io.IOException;
+
+public final class AudioPhrase extends PhraseBase {
+    public AudioPhrase(byte[] data) {
+        super(data);
     }
 
-    public AudioPhrase (java.lang.String url) throws java.io.IOException {
-        remexa.probes.SdkStubSupport.log("com.jblend.media.smaf.phrase.AudioPhrase", "AudioPhrase", url);
-    }
-
-    public AudioPhrase (byte[] data) {
-        remexa.probes.SdkStubSupport.log("com.jblend.media.smaf.phrase.AudioPhrase", "AudioPhrase", data);
-    }
-
-
-    public int getSize () {
-        remexa.probes.SdkStubSupport.log("com.jblend.media.smaf.phrase.AudioPhrase", "getSize");
-        return 0;
-    }
-
-    public int getUseTracks () {
-        remexa.probes.SdkStubSupport.log("com.jblend.media.smaf.phrase.AudioPhrase", "getUseTracks");
-        return 0;
+    public AudioPhrase(String url) throws IOException {
+        super(url);
     }
 }

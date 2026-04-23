@@ -60,6 +60,7 @@ public final class ReMEXA {
             command.add("-Dfile.encoding=" + configured);
             command.add("-Dnative.encoding=" + configured);
             command.add("-D" + ENCODING_BOOTSTRAPPED_PROPERTY + "=true");
+            appendRemexaSystemProperties(command);
             appendCurrentLaunchTarget(command);
             command.addAll(List.of(args));
 
@@ -87,6 +88,22 @@ public final class ReMEXA {
         command.add("-cp");
         command.add(System.getProperty("java.class.path"));
         command.add(ReMEXA.class.getName());
+    }
+
+    private static void appendRemexaSystemProperties(List<String> command) {
+        for (var propertyName : System.getProperties().stringPropertyNames()) {
+            if (!propertyName.startsWith("remexa.")) {
+                continue;
+            }
+            if (ENCODING_BOOTSTRAPPED_PROPERTY.equals(propertyName)) {
+                continue;
+            }
+            var value = System.getProperty(propertyName);
+            if (value == null) {
+                continue;
+            }
+            command.add("-D" + propertyName + "=" + value);
+        }
     }
 
     private static Path applicationPath() {

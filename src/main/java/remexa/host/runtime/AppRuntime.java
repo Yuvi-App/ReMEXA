@@ -96,6 +96,7 @@ public final class AppRuntime {
             MidletRuntime.detach(midlet);
         }
 
+        shutdownPhrasePlayer(result.classLoader());
         shutdownAppThreads(result.classLoader());
 
         if (result.classLoader() instanceof URLClassLoader urlClassLoader) {
@@ -151,6 +152,28 @@ public final class AppRuntime {
                     LogCategory.HOST,
                     AppRuntime.class.getName(),
                     "App thread still alive after interrupt: " + thread.getName()
+            );
+        }
+    }
+
+    private void shutdownPhrasePlayer(ClassLoader classLoader) {
+        if (classLoader == null) {
+            return;
+        }
+        try {
+            var phrasePlayerClass = classLoader.loadClass("com.jblend.media.smaf.phrase.PhrasePlayer");
+            var getPlayer = phrasePlayerClass.getMethod("getPlayer");
+            var player = getPlayer.invoke(null);
+            var kill = phrasePlayerClass.getMethod("kill");
+            kill.invoke(player);
+            DebugLog.log(LogCategory.HOST, AppRuntime.class.getName(), "Disposed phrase player during shutdown.");
+        } catch (ClassNotFoundException ignored) {
+            // This app did not use the phrase player classes.
+        } catch (ReflectiveOperationException exception) {
+            DebugLog.log(
+                    LogCategory.HOST,
+                    AppRuntime.class.getName(),
+                    "Failed to dispose phrase player during shutdown: " + exception.getMessage()
             );
         }
     }
