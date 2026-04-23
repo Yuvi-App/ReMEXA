@@ -90,7 +90,6 @@ public class Displayable {
                 break;
             }
         }
-
         return new Command[]{left, right};
     }
 

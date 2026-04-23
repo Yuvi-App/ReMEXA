@@ -8,6 +8,8 @@ import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
+import java.awt.FontMetrics;
+import java.awt.GridLayout;
 import java.awt.RenderingHints;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -25,6 +27,10 @@ import javax.swing.JComponent;
 import javax.swing.KeyStroke;
 import javax.swing.Timer;
 import javax.swing.SwingUtilities;
+import javax.swing.SwingConstants;
+import javax.swing.border.EmptyBorder;
+import javax.swing.border.MatteBorder;
+import javax.microedition.lcdui.Command;
 import remexa.host.input.HostKeyMapper;
 import remexa.host.jad.JadDescriptor;
 import remexa.host.profile.DisplayMetrics;
@@ -37,11 +43,15 @@ import remexa.probes.LogEvent;
 public final class JadFrame extends JFrame {
     private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm:ss").withZone(ZoneId.systemDefault());
     private static final int DISPLAY_SCALE = 3;
+    private static final int SOFT_KEY_BAR_HEIGHT = 28;
 
     private final JTextArea detailsArea = new JTextArea();
     private final JTextArea logArea = new JTextArea();
     private final JLabel statusLabel = new JLabel("Idle");
     private final JLabel renderInfoLabel = new JLabel();
+    private final JLabel leftSoftKeyLabel = new JLabel();
+    private final JLabel rightSoftKeyLabel = new JLabel();
+    private final JPanel softKeyBar = new JPanel(new GridLayout(1, 2, 0, 0));
     private final JPanel renderSurface = new RenderSurfacePanel();
     private final Consumer<LogEvent> listener = this::appendLog;
     private final LaunchProfile launchProfile;
@@ -71,7 +81,11 @@ public final class JadFrame extends JFrame {
         if (showHostDetails) {
             DebugLog.addListener(listener);
         }
-        refreshTimer = new Timer(33, event -> renderSurface.repaint());
+        refreshSoftKeyLabels();
+        refreshTimer = new Timer(33, event -> {
+            refreshSoftKeyLabels();
+            renderSurface.repaint();
+        });
         refreshTimer.start();
     }
 
@@ -158,10 +172,13 @@ public final class JadFrame extends JFrame {
         renderPanel.add(detailsPanel, BorderLayout.CENTER);
 
         var splitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, renderPanel, new JScrollPane(logArea));
-        splitPane.setResizeWeight(0.45);
+        splitPane.setResizeWeight(0.75);
 
         add(splitPane, BorderLayout.CENTER);
-        add(statusLabel, BorderLayout.SOUTH);
+        var footerPanel = new JPanel(new BorderLayout());
+        footerPanel.add(createSoftKeyBar(), BorderLayout.CENTER);
+        footerPanel.add(statusLabel, BorderLayout.SOUTH);
+        add(footerPanel, BorderLayout.SOUTH);
     }
 
     private void buildGameOnlyLayout() {
@@ -170,6 +187,76 @@ public final class JadFrame extends JFrame {
         gamePanel.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 0));
         gamePanel.add(renderSurface, BorderLayout.CENTER);
         add(gamePanel, BorderLayout.CENTER);
+        add(createSoftKeyBar(), BorderLayout.SOUTH);
+    }
+
+    private JPanel createSoftKeyBar() {
+        softKeyBar.setOpaque(true);
+        softKeyBar.setBackground(new Color(0xD7D8DB));
+        softKeyBar.setPreferredSize(new Dimension(10, SOFT_KEY_BAR_HEIGHT));
+        softKeyBar.setMinimumSize(new Dimension(10, SOFT_KEY_BAR_HEIGHT));
+        softKeyBar.setBorder(BorderFactory.createCompoundBorder(
+                new MatteBorder(1, 0, 0, 0, new Color(0xA9ABB0)),
+                new EmptyBorder(2, 4, 2, 4)
+        ));
+
+        leftSoftKeyLabel.setForeground(new Color(0x1F2229));
+        leftSoftKeyLabel.setFont(new Font(Font.MONOSPACED, Font.BOLD, 16));
+        leftSoftKeyLabel.setVerticalAlignment(SwingConstants.CENTER);
+        leftSoftKeyLabel.setBorder(new EmptyBorder(0, 4, 0, 4));
+
+        rightSoftKeyLabel.setForeground(new Color(0x1F2229));
+        rightSoftKeyLabel.setFont(new Font(Font.MONOSPACED, Font.BOLD, 16));
+        rightSoftKeyLabel.setVerticalAlignment(SwingConstants.CENTER);
+        rightSoftKeyLabel.setHorizontalAlignment(SwingConstants.RIGHT);
+        rightSoftKeyLabel.setBorder(new EmptyBorder(0, 4, 0, 4));
+
+        softKeyBar.removeAll();
+        softKeyBar.add(leftSoftKeyLabel);
+        softKeyBar.add(rightSoftKeyLabel);
+        return softKeyBar;
+    }
+
+    private void refreshSoftKeyLabels() {
+        var displayable = MidletRuntime.currentDisplayable();
+        var softKeys = displayable == null ? null : displayable.softKeyCommands();
+        updateSoftKeyLabel(leftSoftKeyLabel, softKeys == null ? null : softKeys[0], false);
+        updateSoftKeyLabel(rightSoftKeyLabel, softKeys == null ? null : softKeys[1], true);
+    }
+
+    private void updateSoftKeyLabel(JLabel label, Command command, boolean alignRight) {
+        var commandLabel = command == null || command.getLabel() == null || command.getLabel().isBlank()
+                ? ""
+                : command.getLabel().trim();
+        var text = clipLabel(label, commandLabel, alignRight);
+        if (!text.equals(label.getText())) {
+            label.setText(text);
+        }
+    }
+
+    private String clipLabel(JLabel label, String text, boolean alignRight) {
+        if (text == null || text.isEmpty()) {
+            return "";
+        }
+        FontMetrics metrics = label.getFontMetrics(label.getFont());
+        int availableWidth = softKeyBar.getWidth() > 0
+                ? softKeyBar.getWidth()
+                : Math.max(renderSurface.getPreferredSize().width, renderSurface.getWidth());
+        int maxWidth = Math.max(0, availableWidth / 2 - 16);
+        if (metrics.stringWidth(text) <= maxWidth) {
+            return text;
+        }
+        String ellipsis = "...";
+        int ellipsisWidth = metrics.stringWidth(ellipsis);
+        if (ellipsisWidth >= maxWidth) {
+            return "";
+        }
+
+        int end = text.length();
+        while (end > 0 && metrics.stringWidth(text.substring(0, end)) + ellipsisWidth > maxWidth) {
+            end--;
+        }
+        return end <= 0 ? "" : text.substring(0, end) + ellipsis;
     }
 
     private void installInputBindings() {
@@ -265,9 +352,9 @@ public final class JadFrame extends JFrame {
 
     private static Dimension minimumWindowSize(DisplayMetrics displayMetrics, boolean showHostDetails) {
         if (showHostDetails) {
-            return new Dimension(Math.max(620, scaledWidth(displayMetrics) + 280), 520);
+            return new Dimension(Math.max(620, scaledWidth(displayMetrics) + 280), 520 + SOFT_KEY_BAR_HEIGHT);
         }
-        return new Dimension(scaledWidth(displayMetrics), scaledHeight(displayMetrics));
+        return new Dimension(scaledWidth(displayMetrics), scaledHeight(displayMetrics) + SOFT_KEY_BAR_HEIGHT);
     }
 
     private static final class RenderSurfacePanel extends JPanel {
