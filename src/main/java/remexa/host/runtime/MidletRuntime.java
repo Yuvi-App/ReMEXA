@@ -354,9 +354,7 @@ public final class MidletRuntime {
             this.classLoader = classLoader;
             this.displayListener = displayListener;
             this.appStorageRoot = descriptor.sourcePath().getParent()
-                    .resolve(".remexa")
-                    .resolve("apps")
-                    .resolve(sanitize(descriptor.title()));
+                    .resolve(".remexa");
             this.displayMetrics = launchProfile.initialDisplay();
             if (displayListener != null) {
                 displayListener.accept(this.displayMetrics);
@@ -421,9 +419,6 @@ public final class MidletRuntime {
             }
         }
 
-        private static String sanitize(String value) {
-            return value.replaceAll("[^A-Za-z0-9._-]", "_");
-        }
     }
 
     private static final class AppShutdownError extends Error {
