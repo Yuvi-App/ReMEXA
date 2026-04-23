@@ -14,8 +14,6 @@
         <maven.compiler.release>24</maven.compiler.release>
         <toolchain.jdk.version>[24,)</toolchain.jdk.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <remexa.docsRoot>D:/Backup/Downloads/MEXA Api Docs</remexa.docsRoot>
-        <remexa.generatedSources>${project.basedir}/src/generated/java</remexa.generatedSources>
     </properties>
 
     <build>
@@ -32,53 +30,6 @@
                         </goals>
                         <configuration>
                             <useJdk>Never</useJdk>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
-
-            <plugin>
-                <groupId>org.codehaus.mojo</groupId>
-                <artifactId>exec-maven-plugin</artifactId>
-                <version>3.5.0</version>
-                <executions>
-                    <execution>
-                        <id>generate-sdk-stubs</id>
-                        <phase>generate-sources</phase>
-                        <goals>
-                            <goal>exec</goal>
-                        </goals>
-                        <configuration>
-                            <executable>java</executable>
-                            <forceJava>true</forceJava>
-                            <workingDirectory>${project.basedir}</workingDirectory>
-                            <arguments>
-                                <argument>${project.basedir}/src/tools/java/remexa/tools/sdkstub/JavadocStubGenerator.java</argument>
-                                <argument>--docs-root</argument>
-                                <argument>${remexa.docsRoot}</argument>
-                                <argument>--output-root</argument>
-                                <argument>${remexa.generatedSources}</argument>
-                            </arguments>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
-
-            <plugin>
-                <groupId>org.codehaus.mojo</groupId>
-                <artifactId>build-helper-maven-plugin</artifactId>
-                <version>3.6.0</version>
-                <executions>
-                    <execution>
-                        <id>add-generated-sources</id>
-                        <phase>generate-sources</phase>
-                        <goals>
-                            <goal>add-source</goal>
-                        </goals>
-                        <configuration>
-                            <sources>
-                                <source>${remexa.generatedSources}</source>
-                            </sources>
                         </configuration>
                     </execution>
                 </executions>

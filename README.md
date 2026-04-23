@@ -14,5 +14,4 @@ mvn -q -DskipTests package
 
 - `src/main/java/remexa/...`: host runtime, UI, logging, and project-owned code
 - `src/main/java/javax/...`: small MIDP compatibility layer for groundwork
-- `src/tools/java/remexa/tools/sdkstub/...`: Javadoc-to-stub generator
-- `src/java/...`:  legacy SDK apis
+- `src/main/java/com/...`: legacy SDK API surface and compatibility helpers
