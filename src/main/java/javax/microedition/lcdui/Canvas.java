@@ -61,23 +61,47 @@ public abstract class Canvas extends Displayable {
 
     public final int deviceKeyStateMask() {
         var state = 0;
-        if (containsAnyKey((int) '2', UP)) {
+        if (pressedKeys.contains(UP)) {
             state |= 0x1000;
         }
-        if (containsAnyKey((int) '4', LEFT)) {
+        if (pressedKeys.contains(LEFT)) {
             state |= 0x2000;
-            state |= 0x0010;
         }
-        if (containsAnyKey((int) '6', RIGHT)) {
+        if (pressedKeys.contains(RIGHT)) {
             state |= 0x4000;
-            state |= 0x0040;
         }
-        if (containsAnyKey((int) '8', DOWN)) {
+        if (pressedKeys.contains(DOWN)) {
             state |= 0x8000;
         }
-        if (containsAnyKey((int) '5', FIRE, (int) '\n')) {
+        if (containsAnyKey(FIRE, (int) '\n')) {
             state |= 0x10000;
+        }
+        if (pressedKeys.contains((int) '9')) {
+            state |= 0x0200;
+        }
+        if (pressedKeys.contains((int) '8')) {
+            state |= 0x0100;
+        }
+        if (pressedKeys.contains((int) '7')) {
+            state |= 0x0080;
+        }
+        if (pressedKeys.contains((int) '6')) {
+            state |= 0x0040;
+        }
+        if (pressedKeys.contains((int) '5')) {
             state |= 0x0020;
+        }
+        if (pressedKeys.contains((int) '4')) {
+            state |= 0x0010;
+        }
+        if (pressedKeys.contains((int) '3')) {
+            state |= 0x0008;
+        }
+        if (pressedKeys.contains((int) '2')) {
+            state |= 0x0004;
+        }
+        if (pressedKeys.contains((int) '1')) {
+            state |= 0x0002;
         }
         if (pressedKeys.contains((int) '*')) {
             state |= 0x0400;

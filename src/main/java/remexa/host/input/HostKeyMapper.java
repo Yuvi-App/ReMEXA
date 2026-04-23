@@ -1,6 +1,7 @@
 package remexa.host.input;
 
 import java.awt.event.KeyEvent;
+import javax.microedition.lcdui.Canvas;
 
 public final class HostKeyMapper {
     private HostKeyMapper() {
@@ -8,11 +9,11 @@ public final class HostKeyMapper {
 
     public static int toPhoneKeyCode(int awtKeyCode) {
         return switch (awtKeyCode) {
-            case KeyEvent.VK_UP, KeyEvent.VK_KP_UP -> '2';
-            case KeyEvent.VK_LEFT, KeyEvent.VK_KP_LEFT -> '4';
-            case KeyEvent.VK_RIGHT, KeyEvent.VK_KP_RIGHT -> '6';
-            case KeyEvent.VK_DOWN, KeyEvent.VK_KP_DOWN -> '8';
-            case KeyEvent.VK_ENTER -> '5';
+            case KeyEvent.VK_UP, KeyEvent.VK_KP_UP -> Canvas.UP;
+            case KeyEvent.VK_LEFT, KeyEvent.VK_KP_LEFT -> Canvas.LEFT;
+            case KeyEvent.VK_RIGHT, KeyEvent.VK_KP_RIGHT -> Canvas.RIGHT;
+            case KeyEvent.VK_DOWN, KeyEvent.VK_KP_DOWN -> Canvas.DOWN;
+            case KeyEvent.VK_ENTER -> Canvas.FIRE;
             case KeyEvent.VK_NUMPAD7 -> '1';
             case KeyEvent.VK_NUMPAD8 -> '2';
             case KeyEvent.VK_NUMPAD9 -> '3';
