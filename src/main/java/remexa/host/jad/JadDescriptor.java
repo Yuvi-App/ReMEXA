@@ -32,10 +32,34 @@ public record JadDescriptor(
     }
 
     public Optional<Path> resolveJarPath() {
-        return property("MIDlet-Jar-URL")
+        var configuredJar = property("MIDlet-Jar-URL")
                 .or(() -> property("Jar-URL"))
                 .or(() -> property("AppJar"))
                 .map(value -> sourcePath.getParent().resolve(value).normalize());
+        if (configuredJar.isPresent() && java.nio.file.Files.exists(configuredJar.get())) {
+            return configuredJar;
+        }
+
+        var siblingFallback = siblingJarPath();
+        if (siblingFallback.isPresent() && java.nio.file.Files.exists(siblingFallback.get())) {
+            return siblingFallback;
+        }
+
+        return configuredJar.isPresent() ? configuredJar : siblingFallback;
+    }
+
+    private Optional<Path> siblingJarPath() {
+        var fileName = sourcePath.getFileName();
+        if (fileName == null) {
+            return Optional.empty();
+        }
+
+        var jadName = fileName.toString();
+        var extensionIndex = jadName.lastIndexOf('.');
+        var jarName = extensionIndex >= 0
+                ? jadName.substring(0, extensionIndex) + ".jar"
+                : jadName + ".jar";
+        return Optional.of(sourcePath.getParent().resolve(jarName).normalize());
     }
 
     public Optional<String> iconPath() {
