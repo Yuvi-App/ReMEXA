@@ -1441,9 +1441,12 @@ public final class SMAFDecoder
                     }
                     else if (eventType == (byte) 0x34) // Pitch Bend event
                     {
-                        byte eventValue = (byte) (data[offset++] & 0xFF);
-                        int pitchBendValue = eventValue & 0x7F;
-                        int pitchBend = encodeCentered7PitchBend(pitchBendValue);
+                        int eventValue = data[offset++] & 0xFF;
+                        // SEQU pitch bend uses the full 8-bit lane with 0x80
+                        // as center. Masking it down to 7 bits recenters the
+                        // control around 0x40, so perfectly centered values
+                        // like 0x80 become a large downward bend.
+                        int pitchBend = encodeCentered8PitchBend(eventValue);
 
                         byte pitchBendLSB = (byte) (pitchBend & 0x7F);
                         byte pitchBendMSB = (byte) ((pitchBend >> 7) & 0x7F);
@@ -1655,6 +1658,12 @@ public final class SMAFDecoder
     {
         int centered = Math.max(0, Math.min(0x7F, value)) - 64;
         return Math.max(0, Math.min(0x3FFF, 0x2000 + (centered << 7)));
+    }
+
+    private static int encodeCentered8PitchBend(int value)
+    {
+        int centered = Math.max(0, Math.min(0xFF, value)) - 128;
+        return Math.max(0, Math.min(0x3FFF, 0x2000 + (centered << 6)));
     }
 
     public static List<DecodedChannelState> decodedChannelStates()
