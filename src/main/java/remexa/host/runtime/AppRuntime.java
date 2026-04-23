@@ -128,6 +128,8 @@ public final class AppRuntime {
                 .filter(thread -> thread.getContextClassLoader() == classLoader)
                 .toList();
 
+        installExpectedShutdownHandlers(appThreads);
+
         for (var thread : appThreads) {
             DebugLog.log(
                     LogCategory.HOST,
@@ -185,6 +187,25 @@ public final class AppRuntime {
                     AppRuntime.class.getName(),
                     "App thread still alive after interrupt: " + thread.getName()
             );
+        }
+    }
+
+    private void installExpectedShutdownHandlers(java.util.List<Thread> appThreads) {
+        for (var thread : appThreads) {
+            var previousHandler = thread.getUncaughtExceptionHandler();
+            thread.setUncaughtExceptionHandler((currentThread, throwable) -> {
+                if (MidletRuntime.isExpectedShutdownThrowable(throwable)) {
+                    return;
+                }
+                if (previousHandler != null) {
+                    previousHandler.uncaughtException(currentThread, throwable);
+                    return;
+                }
+                var threadGroup = currentThread.getThreadGroup();
+                if (threadGroup != null) {
+                    threadGroup.uncaughtException(currentThread, throwable);
+                }
+            });
         }
     }
 

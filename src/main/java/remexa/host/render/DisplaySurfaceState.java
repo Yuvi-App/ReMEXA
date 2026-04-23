@@ -11,6 +11,8 @@ public final class DisplaySurfaceState {
     private BufferedImage displayImage;
     private BufferedImage virtualImage;
     private BufferedImage frameBuffer;
+    private Graphics2D canvasGraphicsDelegate;
+    private javax.microedition.lcdui.Graphics canvasGraphics;
 
     public DisplaySurfaceState(DisplayMetrics displayMetrics) {
         this.displayMetrics = displayMetrics;
@@ -23,6 +25,7 @@ public final class DisplaySurfaceState {
     }
 
     public synchronized void updateDisplayMetrics(DisplayMetrics nextDisplayMetrics) {
+        disposeCanvasGraphics();
         displayMetrics = nextDisplayMetrics;
         displayImage = createSurface(nextDisplayMetrics.width(), nextDisplayMetrics.height());
         virtualImage = createSurface(nextDisplayMetrics.width(), nextDisplayMetrics.height());
@@ -30,8 +33,10 @@ public final class DisplaySurfaceState {
 
     public synchronized javax.microedition.lcdui.Graphics beginCanvasPaint(boolean spriteCanvas) {
         if (!spriteCanvas) {
-            clear(displayImage);
-            return new javax.microedition.lcdui.Graphics(displayImage.createGraphics(), displayImage.getWidth(), displayImage.getHeight());
+            ensureVirtualSurface();
+            ensureCanvasGraphics();
+            canvasGraphics.resetState();
+            return canvasGraphics;
         }
         ensureVirtualSurface();
         return new javax.microedition.lcdui.Graphics(virtualImage.createGraphics(), virtualImage.getWidth(), virtualImage.getHeight());
@@ -111,6 +116,17 @@ public final class DisplaySurfaceState {
         }
     }
 
+    public synchronized void presentCanvas() {
+        ensureVirtualSurface();
+        clear(displayImage);
+        var graphics = displayImage.createGraphics();
+        try {
+            graphics.drawImage(virtualImage, 0, 0, null);
+        } finally {
+            graphics.dispose();
+        }
+    }
+
     public synchronized void drawIndexedPattern(
             int[] palette,
             byte[] pattern,
@@ -172,6 +188,31 @@ public final class DisplaySurfaceState {
     private BufferedImage ensureVirtualSurfaceAndGet() {
         ensureVirtualSurface();
         return virtualImage;
+    }
+
+    private void ensureCanvasGraphics() {
+        if (canvasGraphics != null
+                && virtualImage != null
+                && virtualImage.getWidth() == displayMetrics.width()
+                && virtualImage.getHeight() == displayMetrics.height()) {
+            return;
+        }
+        disposeCanvasGraphics();
+        canvasGraphicsDelegate = virtualImage.createGraphics();
+        canvasGraphics = new javax.microedition.lcdui.Graphics(
+                canvasGraphicsDelegate,
+                virtualImage.getWidth(),
+                virtualImage.getHeight(),
+                false
+        );
+    }
+
+    private void disposeCanvasGraphics() {
+        canvasGraphics = null;
+        if (canvasGraphicsDelegate != null) {
+            canvasGraphicsDelegate.dispose();
+            canvasGraphicsDelegate = null;
+        }
     }
 
     private BufferedImage ensureFrameBuffer() {

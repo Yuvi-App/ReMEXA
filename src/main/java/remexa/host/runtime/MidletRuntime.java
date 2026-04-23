@@ -150,8 +150,24 @@ public final class MidletRuntime {
             return;
         }
         var surface = context.surfaceFor(canvas);
-        var graphics = surface.beginCanvasPaint(canvas instanceof SpriteCanvas || canvas instanceof ACanvas);
+        var spriteCanvas = canvas instanceof SpriteCanvas || canvas instanceof ACanvas;
+        var graphics = surface.beginCanvasPaint(spriteCanvas);
         renderer.accept(graphics);
+        if (!spriteCanvas) {
+            surface.presentCanvas();
+        }
+    }
+
+    public static void serviceCanvasRepaints(Canvas canvas) {
+        ensureThreadActive();
+        var context = contextFor(canvas).orElse(CURRENT_CONTEXT.get());
+        if (context == null) {
+            return;
+        }
+        if (canvas instanceof SpriteCanvas || canvas instanceof ACanvas) {
+            return;
+        }
+        context.surfaceFor(canvas).presentCanvas();
     }
 
     public static void createSpriteFrameBuffer(Displayable displayable, int width, int height) {
@@ -308,6 +324,10 @@ public final class MidletRuntime {
         if (Thread.currentThread().isInterrupted()) {
             throw new AppShutdownError();
         }
+    }
+
+    public static boolean isExpectedShutdownThrowable(Throwable throwable) {
+        return throwable instanceof AppShutdownError;
     }
 
     private static Optional<LaunchContext> contextFor(Displayable displayable) {

@@ -17,19 +17,24 @@ public class Graphics {
     private final Graphics2D delegate;
     private final int surfaceWidth;
     private final int surfaceHeight;
+    private final boolean disposable;
     private Font font = Font.getDefaultFont();
     private int argbColor = 0xFF000000;
     private int translateX;
     private int translateY;
 
     public Graphics(Graphics2D delegate, int surfaceWidth, int surfaceHeight) {
+        this(delegate, surfaceWidth, surfaceHeight, true);
+    }
+
+    public Graphics(Graphics2D delegate, int surfaceWidth, int surfaceHeight, boolean disposable) {
         this.delegate = delegate;
         this.surfaceWidth = surfaceWidth;
         this.surfaceHeight = surfaceHeight;
+        this.disposable = disposable;
         this.delegate.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
         this.delegate.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
-        this.delegate.setFont(font.awtFont());
-        this.delegate.setColor(new Color(argbColor, true));
+        resetState();
     }
 
     public void setColor(int rgb) {
@@ -159,7 +164,9 @@ public class Graphics {
     }
 
     public void dispose() {
-        delegate.dispose();
+        if (disposable) {
+            delegate.dispose();
+        }
     }
 
     public void translate(int x, int y) {
@@ -173,6 +180,16 @@ public class Graphics {
 
     public int getTranslateY() {
         return translateY;
+    }
+
+    public void resetState() {
+        font = Font.getDefaultFont();
+        argbColor = 0xFF000000;
+        translateX = 0;
+        translateY = 0;
+        delegate.setClip(0, 0, surfaceWidth, surfaceHeight);
+        delegate.setFont(font.awtFont());
+        delegate.setColor(new Color(argbColor, true));
     }
 
     private Rectangle clipBounds() {

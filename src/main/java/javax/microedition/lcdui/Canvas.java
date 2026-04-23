@@ -54,6 +54,7 @@ public abstract class Canvas extends Displayable {
     }
 
     public void serviceRepaints() {
+        MidletRuntime.serviceCanvasRepaints(this);
     }
 
     public int getGameAction(int keyCode) {
