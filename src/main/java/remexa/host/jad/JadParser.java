@@ -1,6 +1,7 @@
 package remexa.host.jad;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -24,7 +25,17 @@ public final class JadParser {
     }
 
     private static Map<String, String> parseProperties(Path path) throws IOException {
-        var content = Files.readString(path, detectCharset(path));
+        var bytes = Files.readAllBytes(path);
+        var utf8 = parseProperties(decode(bytes, StandardCharsets.UTF_8));
+        var shiftJis = parseProperties(decode(bytes, Charset.forName("Shift_JIS")));
+        return score(shiftJis) > score(utf8) ? shiftJis : utf8;
+    }
+
+    private static String decode(byte[] bytes, Charset charset) {
+        return charset.decode(ByteBuffer.wrap(bytes)).toString();
+    }
+
+    private static Map<String, String> parseProperties(String content) {
         var logicalLines = unfoldLines(content.lines().toList());
         var properties = new LinkedHashMap<String, String>();
         for (var line : logicalLines) {
@@ -35,20 +46,11 @@ public final class JadParser {
             if (separator < 0) {
                 continue;
             }
-            var key = line.substring(0, separator).trim();
+            var key = stripBom(line.substring(0, separator).trim());
             var value = line.substring(separator + 1).trim();
             properties.put(key, value);
         }
         return Map.copyOf(properties);
-    }
-
-    private static Charset detectCharset(Path path) throws IOException {
-        var bytes = Files.readAllBytes(path);
-        var utf8 = StandardCharsets.UTF_8.decode(java.nio.ByteBuffer.wrap(bytes)).toString();
-        if (!utf8.contains("\uFFFD")) {
-            return StandardCharsets.UTF_8;
-        }
-        return Charset.forName("Shift_JIS");
     }
 
     private static List<String> unfoldLines(List<String> lines) {
@@ -70,6 +72,13 @@ public final class JadParser {
         return result;
     }
 
+    private static String stripBom(String value) {
+        if (value != null && !value.isEmpty() && value.charAt(0) == '\uFEFF') {
+            return value.substring(1);
+        }
+        return value;
+    }
+
     private static List<MidletEntry> parseMidlets(Map<String, String> properties) {
         var entries = new ArrayList<MidletEntry>();
         for (var entry : properties.entrySet()) {
@@ -89,5 +98,39 @@ public final class JadParser {
         }
         entries.sort(java.util.Comparator.comparingInt(MidletEntry::index));
         return List.copyOf(entries);
+    }
+
+    private static int score(Map<String, String> properties) {
+        var score = 0;
+        if (properties.containsKey("MIDlet-1")) {
+            score += 20;
+        }
+        if (properties.containsKey("MIDlet-Name")) {
+            score += 10;
+        }
+        if (properties.containsKey("MIDlet-Jar-URL")) {
+            score += 10;
+        }
+        score += parseMidlets(properties).size() * 20;
+        score += scoreTextQuality(properties.get("MIDlet-Name"));
+        return score;
+    }
+
+    private static int scoreTextQuality(String value) {
+        if (value == null || value.isBlank()) {
+            return 0;
+        }
+        var score = 0;
+        for (int i = 0; i < value.length(); i++) {
+            char ch = value.charAt(i);
+            if ((ch >= '\u3040' && ch <= '\u30FF') || (ch >= '\uFF61' && ch <= '\uFF9F')) {
+                score += 2;
+            } else if (ch >= '\u0000' && ch <= '\u007F') {
+                score += 0;
+            } else if ((ch >= '\u00C0' && ch <= '\u024F') || (ch >= '\u0300' && ch <= '\u036F')) {
+                score -= 1;
+            }
+        }
+        return score;
     }
 }
