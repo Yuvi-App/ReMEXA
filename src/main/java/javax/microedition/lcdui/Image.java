@@ -4,6 +4,7 @@ import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
 import javax.imageio.ImageIO;
+import remexa.host.jblend.CanvasGraphics3D;
 import remexa.host.runtime.MidletRuntime;
 import remexa.probes.DebugLog;
 import remexa.probes.LogCategory;
@@ -17,6 +18,13 @@ public class Image {
 
     public static Image createImage(int width, int height) {
         return new Image(new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB));
+    }
+
+    public static Image fromBufferedImage(BufferedImage awtImage) {
+        if (awtImage == null) {
+            throw new NullPointerException("awtImage");
+        }
+        return new Image(awtImage);
     }
 
     public static Image createImage(byte[] imageData, int imageOffset, int imageLength) {
@@ -58,7 +66,11 @@ public class Image {
     }
 
     public Graphics getGraphics() {
-        return new Graphics(awtImage.createGraphics(), getWidth(), getHeight());
+        return new CanvasGraphics3D(awtImage.createGraphics(), getWidth(), getHeight(), true);
+    }
+
+    public void getRGB(int[] rgbData, int offset, int scanlength, int x, int y, int width, int height) {
+        awtImage.getRGB(x, y, width, height, rgbData, offset, scanlength);
     }
 
     BufferedImage awtImage() {

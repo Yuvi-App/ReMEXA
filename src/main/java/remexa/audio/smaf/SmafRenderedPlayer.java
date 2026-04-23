@@ -141,7 +141,7 @@ public final class SmafRenderedPlayer implements AutoCloseable {
         if (worker != null) {
             return;
         }
-        worker = new Thread(this::runLoop, "openmexa-smaf-rendered");
+        worker = new Thread(this::runLoop, "remexa-smaf-rendered");
         worker.setDaemon(true);
         worker.start();
     }

@@ -1,70 +1,91 @@
 package com.jblend.graphics.j3d;
 
+import remexa.host.j3d.FixedPoint;
+
 public class Vector3D {
     public int x = 0;
     public int y = 0;
     public int z = 0;
 
     public Vector3D () {
-        remexa.probes.SdkStubSupport.log("com.jblend.graphics.j3d.Vector3D", "Vector3D");
     }
 
     public Vector3D (int x, int y, int z) {
-        remexa.probes.SdkStubSupport.log("com.jblend.graphics.j3d.Vector3D", "Vector3D", x, y, z);
+        this.x = x;
+        this.y = y;
+        this.z = z;
     }
 
 
     public int getX () {
-        remexa.probes.SdkStubSupport.log("com.jblend.graphics.j3d.Vector3D", "getX");
-        return 0;
+        return x;
     }
 
     public int getY () {
-        remexa.probes.SdkStubSupport.log("com.jblend.graphics.j3d.Vector3D", "getY");
-        return 0;
+        return y;
     }
 
     public int getZ () {
-        remexa.probes.SdkStubSupport.log("com.jblend.graphics.j3d.Vector3D", "getZ");
-        return 0;
+        return z;
     }
 
     public void setX (int x) {
-        remexa.probes.SdkStubSupport.log("com.jblend.graphics.j3d.Vector3D", "setX", x);
+        this.x = x;
     }
 
     public void setY (int y) {
-        remexa.probes.SdkStubSupport.log("com.jblend.graphics.j3d.Vector3D", "setY", y);
+        this.y = y;
     }
 
     public void setZ (int z) {
-        remexa.probes.SdkStubSupport.log("com.jblend.graphics.j3d.Vector3D", "setZ", z);
+        this.z = z;
     }
 
     public void set (int x, int y, int z) {
-        remexa.probes.SdkStubSupport.log("com.jblend.graphics.j3d.Vector3D", "set", x, y, z);
+        this.x = x;
+        this.y = y;
+        this.z = z;
     }
 
     public void unit () {
-        remexa.probes.SdkStubSupport.log("com.jblend.graphics.j3d.Vector3D", "unit");
+        long lengthSquared = (long) x * (long) x + (long) y * (long) y + (long) z * (long) z;
+        int length = (int) Math.round(Math.sqrt(lengthSquared));
+        if (length == 0) {
+            throw new ArithmeticException();
+        }
+        x = (int) ((((long) x) << 12) / length);
+        y = (int) ((((long) y) << 12) / length);
+        z = (int) ((((long) z) << 12) / length);
     }
 
     public int innerProduct (com.jblend.graphics.j3d.Vector3D v) {
-        remexa.probes.SdkStubSupport.log("com.jblend.graphics.j3d.Vector3D", "innerProduct", v);
-        return 0;
+        return innerProduct(this, v);
     }
 
     public void outerProduct (com.jblend.graphics.j3d.Vector3D v) {
-        remexa.probes.SdkStubSupport.log("com.jblend.graphics.j3d.Vector3D", "outerProduct", v);
+        int nextX = this.y * v.z - this.z * v.y;
+        int nextY = this.z * v.x - this.x * v.z;
+        int nextZ = this.x * v.y - this.y * v.x;
+        this.x = nextX;
+        this.y = nextY;
+        this.z = nextZ;
     }
 
     public static int innerProduct (com.jblend.graphics.j3d.Vector3D v1, com.jblend.graphics.j3d.Vector3D v2) {
-        remexa.probes.SdkStubSupport.log("com.jblend.graphics.j3d.Vector3D", "innerProduct", v1, v2);
-        return 0;
+        if (v1 == null || v2 == null) {
+            throw new NullPointerException();
+        }
+        return FixedPoint.mul(v1.x, v2.x) + FixedPoint.mul(v1.y, v2.y) + FixedPoint.mul(v1.z, v2.z);
     }
 
     public static com.jblend.graphics.j3d.Vector3D outerProduct (com.jblend.graphics.j3d.Vector3D v1, com.jblend.graphics.j3d.Vector3D v2) {
-        remexa.probes.SdkStubSupport.log("com.jblend.graphics.j3d.Vector3D", "outerProduct", v1, v2);
-        return null;
+        if (v1 == null || v2 == null) {
+            throw new NullPointerException();
+        }
+        return new Vector3D(
+                v1.y * v2.z - v1.z * v2.y,
+                v1.z * v2.x - v1.x * v2.z,
+                v1.x * v2.y - v1.y * v2.x
+        );
     }
 }

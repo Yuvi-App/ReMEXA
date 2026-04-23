@@ -1,6 +1,7 @@
 package javax.microedition.lcdui;
 
 import java.awt.Color;
+import java.awt.image.BufferedImage;
 import java.awt.Graphics2D;
 import java.awt.Polygon;
 import java.awt.Rectangle;
@@ -149,6 +150,18 @@ public class Graphics {
             return;
         }
         delegate.drawImage(image.awtImage(), x + translateX, y + translateY, width, height, null);
+    }
+
+    public void drawRGB(int[] rgbData, int offset, int scanlength, int x, int y, int width, int height, boolean processAlpha) {
+        if (rgbData == null || width <= 0 || height <= 0) {
+            return;
+        }
+        BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+        for (int row = 0; row < height; row++) {
+            int rowStart = offset + row * scanlength;
+            image.setRGB(0, row, width, 1, rgbData, rowStart, scanlength);
+        }
+        delegate.drawImage(image, x + translateX, y + translateY, null);
     }
 
     public void setClip(int x, int y, int width, int height) {

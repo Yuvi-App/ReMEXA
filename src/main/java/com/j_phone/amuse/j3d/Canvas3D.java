@@ -1,5 +1,7 @@
 package com.j_phone.amuse.j3d;
 
+import remexa.host.j3d.SoftwareJ3dRenderer;
+
 public abstract class Canvas3D extends javax.microedition.lcdui.Canvas implements com.jblend.ui.SequenceInterface {
     private AffineTrans affineTrans;
     private int screenScaleX = 4096;
@@ -13,12 +15,13 @@ public abstract class Canvas3D extends javax.microedition.lcdui.Canvas implement
     private int clipHeight = Integer.MAX_VALUE;
 
     public Canvas3D () {
-        remexa.probes.SdkStubSupport.log("com.j_phone.amuse.j3d.Canvas3D", "Canvas3D");
     }
 
 
     public void setAffineTrans (com.j_phone.amuse.j3d.AffineTrans t) {
-        remexa.probes.SdkStubSupport.log("com.j_phone.amuse.j3d.Canvas3D", "setAffineTrans", t);
+        if (t == null) {
+            throw new NullPointerException();
+        }
         this.affineTrans = t;
     }
 
@@ -35,34 +38,50 @@ public abstract class Canvas3D extends javax.microedition.lcdui.Canvas implement
     }
 
     public void setTexture (com.j_phone.amuse.j3d.Texture texture) {
-        remexa.probes.SdkStubSupport.log("com.j_phone.amuse.j3d.Canvas3D", "setTexture", texture);
+        if (texture == null) {
+            throw new NullPointerException();
+        }
         this.texture = texture;
     }
 
     public void drawFigure (com.j_phone.amuse.j3d.Figure figure) {
-        remexa.probes.SdkStubSupport.log("com.j_phone.amuse.j3d.Canvas3D", "drawFigure", figure);
+        if (figure == null) {
+            throw new NullPointerException();
+        }
+        if (texture == null && figure.getNumTextures() == 0) {
+            throw new NullPointerException();
+        }
         var currentGraphics = remexa.host.runtime.MidletRuntime.currentGraphics();
-        if (currentGraphics == null || texture == null || texture.image() == null) {
+        if (currentGraphics == null) {
             return;
         }
-        int width = scaled(texture.image().getWidth(), screenScaleX);
-        int height = scaled(texture.image().getHeight(), screenScaleY);
         int centerX = screenCenterX == Integer.MIN_VALUE ? getWidth() / 2 : screenCenterX;
         int centerY = screenCenterY == Integer.MIN_VALUE ? getHeight() / 2 : screenCenterY;
-        int drawX = centerX - width / 2;
-        int drawY = centerY - height / 2;
-
-        int oldClipX = currentGraphics.getClipX();
-        int oldClipY = currentGraphics.getClipY();
-        int oldClipWidth = currentGraphics.getClipWidth();
-        int oldClipHeight = currentGraphics.getClipHeight();
-        currentGraphics.clipRect(clipX, clipY, clipWidth == Integer.MAX_VALUE ? getWidth() : clipWidth, clipHeight == Integer.MAX_VALUE ? getHeight() : clipHeight);
-        currentGraphics.drawImage(texture.image(), drawX, drawY, width, height);
-        currentGraphics.setClip(oldClipX, oldClipY, oldClipWidth, oldClipHeight);
+        int actualClipWidth = clipWidth == Integer.MAX_VALUE ? getWidth() : clipWidth;
+        int actualClipHeight = clipHeight == Integer.MAX_VALUE ? getHeight() : clipHeight;
+        SoftwareJ3dRenderer.drawFigure(
+                currentGraphics,
+                getWidth(),
+                getHeight(),
+                clipX,
+                clipY,
+                actualClipWidth,
+                actualClipHeight,
+                centerX,
+                centerY,
+                screenScaleX,
+                screenScaleY,
+                affineTrans,
+                figure.mascotFigure(),
+                texture,
+                null
+        );
     }
 
     public void setClipRect (int x, int y, int width, int height) {
-        remexa.probes.SdkStubSupport.log("com.j_phone.amuse.j3d.Canvas3D", "setClipRect", x, y, width, height);
+        if (x < 0 || y < 0 || width < 0 || height < 0 || x + width > getWidth() || y + height > getHeight()) {
+            throw new IllegalArgumentException();
+        }
         this.clipX = x;
         this.clipY = y;
         this.clipWidth = width;
@@ -70,18 +89,8 @@ public abstract class Canvas3D extends javax.microedition.lcdui.Canvas implement
     }
 
     public final void sequenceStart () {
-        remexa.probes.SdkStubSupport.log("com.j_phone.amuse.j3d.Canvas3D", "sequenceStart");
     }
 
     public final void sequenceStop () {
-        remexa.probes.SdkStubSupport.log("com.j_phone.amuse.j3d.Canvas3D", "sequenceStop");
-    }
-
-    private static int scaled(int size, int scale) {
-        if (scale <= 0) {
-            return size;
-        }
-        long scaled = Math.round((double) size * scale / 4096.0d);
-        return (int) Math.max(1L, scaled);
     }
 }

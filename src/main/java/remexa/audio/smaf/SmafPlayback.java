@@ -885,7 +885,7 @@ public final class SmafPlayback implements AutoCloseable {
                 if (bankLsb != 0) {
                     fallbackSummary.append("/").append(String.format("0x%02X", bankLsb));
                 }
-                fallbackSummary.append(" family=").append(describeOpenMEXABankFamily(bankMsb))
+                fallbackSummary.append(" family=").append(describeReMEXABankFamily(bankMsb))
                         .append(" role=").append(context.role.name().toLowerCase())
                         .append(" notes=").append(profile.noteCount)
                         .append(" range=").append(profile.minNote).append("-").append(profile.maxNote)
@@ -1337,7 +1337,7 @@ public final class SmafPlayback implements AutoCloseable {
         return false;
     }
 
-    private static String describeOpenMEXABankFamily(int bankMsb) {
+    private static String describeReMEXABankFamily(int bankMsb) {
         int unsigned = bankMsb & 0xFF;
         if (isOddLowBank(unsigned)) {
             return "lowbank-page1";

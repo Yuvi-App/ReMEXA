@@ -25,7 +25,7 @@ public record AppProfile(
         return new AppProfile(
                 "jsky-" + normalizedVersion.toLowerCase() + "-" + resolvedPhoneType.id(),
                 "JSKY / " + normalizedVersion + " / " + resolvedPhoneType.platformName(),
-                new DisplayMetrics(240, 320, "JSKY fallback"),
+                new DisplayMetrics(140, 160, "JSKY fallback"),
                 com.j_phone.system.DeviceControl.STYLE_PORTRAIT,
                 Map.ofEntries(
                         Map.entry("Platform", resolvedPhoneType.platformName()),

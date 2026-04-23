@@ -1,7 +1,10 @@
 package remexa.host.runtime;
 
+import java.io.FilterInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URL;
+import java.net.URLConnection;
 import java.net.URLClassLoader;
 import java.security.CodeSource;
 import remexa.probes.DebugLog;
@@ -14,6 +17,21 @@ final class LegacyJarClassLoader extends URLClassLoader {
 
     LegacyJarClassLoader(URL jarUrl, ClassLoader parent) {
         super(new URL[]{jarUrl}, parent);
+    }
+
+    @Override
+    public InputStream getResourceAsStream(String name) {
+        var resource = getResource(name);
+        if (resource == null) {
+            return null;
+        }
+        try {
+            URLConnection connection = resource.openConnection();
+            connection.setUseCaches(false);
+            return new LegacyResourceStream(connection.getInputStream(), connection.getContentLengthLong());
+        } catch (IOException exception) {
+            return null;
+        }
     }
 
     @Override
@@ -58,6 +76,44 @@ final class LegacyJarClassLoader extends URLClassLoader {
             );
         } catch (IOException exception) {
             throw new ClassNotFoundException(name, exception);
+        }
+    }
+
+    private static final class LegacyResourceStream extends FilterInputStream {
+        private final long contentLength;
+        private long bytesRead;
+
+        private LegacyResourceStream(InputStream input, long contentLength) {
+            super(input);
+            this.contentLength = contentLength;
+        }
+
+        @Override
+        public int read() throws IOException {
+            int value = super.read();
+            if (value >= 0) {
+                bytesRead++;
+            }
+            return value;
+        }
+
+        @Override
+        public int read(byte[] buffer, int offset, int length) throws IOException {
+            if (length == 0) {
+                return isAtEnd() ? -1 : 0;
+            }
+            int count = super.read(buffer, offset, length);
+            if (count > 0) {
+                bytesRead += count;
+            }
+            return count;
+        }
+
+        private boolean isAtEnd() throws IOException {
+            if (contentLength >= 0) {
+                return bytesRead >= contentLength;
+            }
+            return super.available() <= 0;
         }
     }
 }

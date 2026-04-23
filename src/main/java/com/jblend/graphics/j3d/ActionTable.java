@@ -1,26 +1,57 @@
 package com.jblend.graphics.j3d;
 
+import java.io.IOException;
+import java.io.InputStream;
+import remexa.host.j3d.MascotActionTableData;
+import remexa.host.j3d.MascotLoader;
+import remexa.host.runtime.MidletRuntime;
+
 public class ActionTable {
+    private final MascotActionTableData data;
+
     protected ActionTable() {
-        remexa.probes.SdkStubSupport.log("com.jblend.graphics.j3d.ActionTable", "ActionTable");
+        this.data = null;
     }
 
     public ActionTable (byte[] data) {
-        remexa.probes.SdkStubSupport.log("com.jblend.graphics.j3d.ActionTable", "ActionTable", data);
+        if (data == null) {
+            throw new NullPointerException();
+        }
+        try {
+            this.data = MascotLoader.loadActionTable(data);
+        } catch (IOException exception) {
+            throw new RuntimeException("Failed to load action table", exception);
+        }
     }
 
     public ActionTable (java.lang.String name) throws java.io.IOException {
-        remexa.probes.SdkStubSupport.log("com.jblend.graphics.j3d.ActionTable", "ActionTable", name);
+        if (name == null) {
+            throw new NullPointerException();
+        }
+        try (InputStream stream = MidletRuntime.openResource(name)) {
+            if (stream == null) {
+                throw new IOException("Resource not found: " + name);
+            }
+            this.data = MascotLoader.loadActionTable(stream);
+        }
     }
 
 
     public final int getNumAction () {
-        remexa.probes.SdkStubSupport.log("com.jblend.graphics.j3d.ActionTable", "getNumAction");
-        return 0;
+        return data == null ? 0 : data.numActions();
     }
 
     public final int getNumFrame (int action) {
-        remexa.probes.SdkStubSupport.log("com.jblend.graphics.j3d.ActionTable", "getNumFrame", action);
-        return 0;
+        if (data == null) {
+            return 0;
+        }
+        if (action < 0 || action >= data.numActions()) {
+            throw new IllegalArgumentException();
+        }
+        return data.maxFrame(action);
+    }
+
+    public MascotActionTableData data() {
+        return data;
     }
 }

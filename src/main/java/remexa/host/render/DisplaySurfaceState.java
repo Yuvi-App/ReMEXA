@@ -4,6 +4,7 @@ import java.awt.AlphaComposite;
 import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
+import remexa.host.jblend.CanvasGraphics3D;
 import remexa.host.profile.DisplayMetrics;
 
 public final class DisplaySurfaceState {
@@ -32,19 +33,18 @@ public final class DisplaySurfaceState {
     }
 
     public synchronized javax.microedition.lcdui.Graphics beginCanvasPaint(boolean spriteCanvas) {
+        ensureVirtualSurface();
         if (!spriteCanvas) {
-            ensureVirtualSurface();
             ensureCanvasGraphics();
             canvasGraphics.resetState();
             return canvasGraphics;
         }
-        ensureVirtualSurface();
-        return new javax.microedition.lcdui.Graphics(virtualImage.createGraphics(), virtualImage.getWidth(), virtualImage.getHeight());
+        return new CanvasGraphics3D(virtualImage.createGraphics(), virtualImage.getWidth(), virtualImage.getHeight(), true);
     }
 
     public synchronized javax.microedition.lcdui.Graphics beginVirtualPaint() {
         ensureVirtualSurface();
-        return new javax.microedition.lcdui.Graphics(virtualImage.createGraphics(), virtualImage.getWidth(), virtualImage.getHeight());
+        return new CanvasGraphics3D(virtualImage.createGraphics(), virtualImage.getWidth(), virtualImage.getHeight(), true);
     }
 
     public synchronized void createFrameBuffer(int width, int height) {
@@ -199,7 +199,7 @@ public final class DisplaySurfaceState {
         }
         disposeCanvasGraphics();
         canvasGraphicsDelegate = virtualImage.createGraphics();
-        canvasGraphics = new javax.microedition.lcdui.Graphics(
+        canvasGraphics = new CanvasGraphics3D(
                 canvasGraphicsDelegate,
                 virtualImage.getWidth(),
                 virtualImage.getHeight(),

@@ -373,7 +373,8 @@ public final class JadFrame extends JFrame {
     private void dispatchHostKey(int awtKeyCode, boolean release) {
         var displayable = MidletRuntime.currentDisplayable();
         var jPhoneDirectionalLayout =
-                displayable instanceof com.j_phone.amuse.ACanvas
+                launchProfile.profile().id().startsWith("jsky-")
+                        || displayable instanceof com.j_phone.amuse.ACanvas
                         || displayable instanceof com.j_phone.amuse.j3d.Canvas3D;
         var softKeyIndex = HostKeyMapper.toSoftKeyIndex(awtKeyCode);
         if (softKeyIndex >= 0) {
