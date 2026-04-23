@@ -3,16 +3,15 @@ package remexa.host.jad;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.prefs.Preferences;
+import remexa.settings.RemexaPreferences;
 
 public final class RecentJadsRepository {
     private static final int LIMIT = 10;
-    private static final Preferences PREFERENCES = Preferences.userRoot().node("remexa/recent-jads");
 
     public List<RecentJadEntry> load() {
         var entries = new ArrayList<RecentJadEntry>();
         for (int index = 0; index < LIMIT; index++) {
-            var value = PREFERENCES.get("entry." + index, null);
+            var value = RemexaPreferences.recentJads().get(RemexaPreferences.RECENT_ENTRY_PREFIX + index, null);
             if (value == null || value.isBlank()) {
                 continue;
             }
@@ -35,12 +34,12 @@ public final class RecentJadsRepository {
             entries.removeLast();
         }
         for (int index = 0; index < LIMIT; index++) {
-            var key = "entry." + index;
+            var key = RemexaPreferences.RECENT_ENTRY_PREFIX + index;
             if (index < entries.size()) {
                 var entry = entries.get(index);
-                PREFERENCES.put(key, entry.title() + "|" + entry.jadPath());
+                RemexaPreferences.recentJads().put(key, entry.title() + "|" + entry.jadPath());
             } else {
-                PREFERENCES.remove(key);
+                RemexaPreferences.recentJads().remove(key);
             }
         }
     }

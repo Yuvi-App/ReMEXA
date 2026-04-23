@@ -17,6 +17,7 @@ import java.nio.file.Path;
 import java.util.List;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
+import javax.swing.ButtonGroup;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JMenu;
@@ -25,12 +26,15 @@ import javax.swing.JMenuItem;
 import javax.swing.JCheckBoxMenuItem;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
+import javax.swing.JRadioButtonMenuItem;
 import javax.swing.SwingConstants;
 import javax.swing.TransferHandler;
 import javax.swing.UIManager;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.MatteBorder;
 import remexa.host.JadLauncher;
+import remexa.host.HostUiSettings;
+import remexa.host.LaunchConfig;
 import remexa.probes.DebugLog;
 import remexa.probes.LogCategory;
 import remexa.probes.LogSettings;
@@ -135,6 +139,38 @@ public final class LauncherFrame extends JFrame {
 
         var settingsMenu = new JMenu("Settings");
         styleMenu(settingsMenu);
+        var hostDetailsItem = new JCheckBoxMenuItem("Show Host Details", HostUiSettings.showHostDetails());
+        styleMenuItem(hostDetailsItem);
+        hostDetailsItem.addActionListener(event -> {
+            HostUiSettings.setShowHostDetails(hostDetailsItem.isSelected());
+            DebugLog.log(
+                    LogCategory.FRONTEND,
+                    LauncherFrame.class.getName(),
+                    "Show host details set to " + hostDetailsItem.isSelected()
+            );
+        });
+        settingsMenu.add(hostDetailsItem);
+        settingsMenu.addSeparator();
+        var fontMenu = new JMenu("Font");
+        styleMenu(fontMenu);
+        var fontGroup = new ButtonGroup();
+        for (var fontType : LaunchConfig.FontType.values()) {
+            var fontItem = new JRadioButtonMenuItem(fontType.toString(), HostUiSettings.fontType() == fontType);
+            styleMenuItem(fontItem);
+            fontGroup.add(fontItem);
+            fontItem.addActionListener(event -> {
+                HostUiSettings.setFontType(fontType);
+                LaunchConfig.applyFontType(fontType);
+                DebugLog.log(
+                        LogCategory.FRONTEND,
+                        LauncherFrame.class.getName(),
+                        "Font type set to " + fontType.id()
+                );
+            });
+            fontMenu.add(fontItem);
+        }
+        settingsMenu.add(fontMenu);
+        settingsMenu.addSeparator();
         var debugMenu = new JMenu("Debug Categories");
         styleMenu(debugMenu);
         for (var category : LogCategory.values()) {

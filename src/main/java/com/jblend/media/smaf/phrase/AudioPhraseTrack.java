@@ -1,84 +1,120 @@
 package com.jblend.media.smaf.phrase;
 
-public class AudioPhraseTrack extends com.jblend.media.smaf.phrase.PhraseTrackBase {
-    public static final int NO_DATA = 0;
-    public static final int READY = 0;
-    public static final int PLAYING = 0;
-    public static final int PAUSED = 0;
-    public static final int DEFAULT_VOLUME = 0;
-    public static final int DEFAULT_PANPOT = 0;
+public class AudioPhraseTrack extends PhraseTrackBase {
+    public static final int NO_DATA = 1;
+    public static final int READY = 2;
+    public static final int PLAYING = 3;
+    public static final int PAUSED = 5;
+    public static final int DEFAULT_VOLUME = 127;
+    public static final int DEFAULT_PANPOT = 64;
 
-    public void setPhrase (com.jblend.media.smaf.phrase.AudioPhrase p) {
+    private final int id;
+    private AudioPhrase phrase;
+    private PhraseTrackListener listener;
+    private int state = NO_DATA;
+    private int volume = DEFAULT_VOLUME;
+    private int panpot = DEFAULT_PANPOT;
+    private boolean muted;
+
+    AudioPhraseTrack(int id) {
+        this.id = id;
+    }
+
+    public void setPhrase(AudioPhrase p) {
         remexa.probes.SdkStubSupport.log("com.jblend.media.smaf.phrase.AudioPhraseTrack", "setPhrase", p);
+        phrase = p;
+        state = p == null ? NO_DATA : READY;
     }
 
-    public com.jblend.media.smaf.phrase.AudioPhrase getPhrase () {
+    public AudioPhrase getPhrase() {
         remexa.probes.SdkStubSupport.log("com.jblend.media.smaf.phrase.AudioPhraseTrack", "getPhrase");
-        return null;
+        return phrase;
     }
 
-    public void removePhrase () {
+    public void removePhrase() {
         remexa.probes.SdkStubSupport.log("com.jblend.media.smaf.phrase.AudioPhraseTrack", "removePhrase");
+        phrase = null;
+        state = NO_DATA;
     }
 
-    public void play () {
-        remexa.probes.SdkStubSupport.log("com.jblend.media.smaf.phrase.AudioPhraseTrack", "play");
+    public void play() {
+        play(1);
     }
 
-    public void play (int loop) {
+    public void play(int loop) {
         remexa.probes.SdkStubSupport.log("com.jblend.media.smaf.phrase.AudioPhraseTrack", "play", loop);
+        if (phrase != null) {
+            state = PLAYING;
+        }
     }
 
-    public void stop () {
+    public void stop() {
         remexa.probes.SdkStubSupport.log("com.jblend.media.smaf.phrase.AudioPhraseTrack", "stop");
+        if (phrase != null) {
+            state = READY;
+        }
     }
 
-    public void pause () {
+    public void pause() {
         remexa.probes.SdkStubSupport.log("com.jblend.media.smaf.phrase.AudioPhraseTrack", "pause");
+        if (state == PLAYING) {
+            state = PAUSED;
+        }
     }
 
-    public void resume () {
+    public void resume() {
         remexa.probes.SdkStubSupport.log("com.jblend.media.smaf.phrase.AudioPhraseTrack", "resume");
+        if (state == PAUSED) {
+            state = PLAYING;
+        }
     }
 
-    public int getState () {
+    public int getState() {
         remexa.probes.SdkStubSupport.log("com.jblend.media.smaf.phrase.AudioPhraseTrack", "getState");
-        return 0;
+        return state;
     }
 
-    public void setVolume (int value) {
+    public void setVolume(int value) {
         remexa.probes.SdkStubSupport.log("com.jblend.media.smaf.phrase.AudioPhraseTrack", "setVolume", value);
+        volume = Math.max(0, Math.min(127, value));
     }
 
-    public int getVolume () {
+    public int getVolume() {
         remexa.probes.SdkStubSupport.log("com.jblend.media.smaf.phrase.AudioPhraseTrack", "getVolume");
-        return 0;
+        return volume;
     }
 
-    public void setPanpot (int value) {
+    public void setPanpot(int value) {
         remexa.probes.SdkStubSupport.log("com.jblend.media.smaf.phrase.AudioPhraseTrack", "setPanpot", value);
+        panpot = Math.max(0, Math.min(127, value));
     }
 
-    public int getPanpot () {
+    public int getPanpot() {
         remexa.probes.SdkStubSupport.log("com.jblend.media.smaf.phrase.AudioPhraseTrack", "getPanpot");
-        return 0;
+        return panpot;
     }
 
-    public void mute (boolean mute) {
+    public void mute(boolean mute) {
         remexa.probes.SdkStubSupport.log("com.jblend.media.smaf.phrase.AudioPhraseTrack", "mute", mute);
+        muted = mute;
     }
 
-    public boolean isMute () {
+    public boolean isMute() {
         remexa.probes.SdkStubSupport.log("com.jblend.media.smaf.phrase.AudioPhraseTrack", "isMute");
-        return false;
+        return muted;
     }
 
-    public int getID () {
+    public int getID() {
         remexa.probes.SdkStubSupport.log("com.jblend.media.smaf.phrase.AudioPhraseTrack", "getID");
-        return 0;
+        return id;
     }
 
-    public void setEventListener (com.jblend.media.smaf.phrase.PhraseTrackListener l) {
+    public void setEventListener(PhraseTrackListener l) {
         remexa.probes.SdkStubSupport.log("com.jblend.media.smaf.phrase.AudioPhraseTrack", "setEventListener", l);
+        listener = l;
+    }
+
+    PhraseTrackListener listener() {
+        return listener;
     }
 }

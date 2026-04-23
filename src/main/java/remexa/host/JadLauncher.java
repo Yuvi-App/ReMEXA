@@ -1,12 +1,19 @@
 package remexa.host;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.atomic.AtomicBoolean;
+import javax.imageio.ImageIO;
 import javax.swing.JOptionPane;
+import javax.swing.Timer;
+import remexa.host.HostUiSettings;
 import remexa.host.jad.JadDescriptor;
 import remexa.host.jad.JadParser;
 import remexa.host.jad.RecentJadsRepository;
+import remexa.host.profile.LaunchProfileResolver;
 import remexa.host.runtime.AppRuntime;
 import remexa.host.runtime.LaunchException;
+import remexa.host.runtime.MidletRuntime;
 import remexa.probes.DebugLog;
 import remexa.probes.LogCategory;
 
@@ -14,13 +21,35 @@ public final class JadLauncher {
     private final RecentJadsRepository recentJads = new RecentJadsRepository();
     private final AppRuntime runtime = new AppRuntime();
     private final boolean consoleLaunch;
+    private final Boolean showHostDetailsOverride;
+    private final Path captureFramePath;
+    private final int captureDelayMs;
+    private final boolean exitAfterCapture;
 
     public JadLauncher() {
-        this(false);
+        this(false, null, null, 0, false);
     }
 
     public JadLauncher(boolean consoleLaunch) {
+        this(consoleLaunch, null, null, 0, false);
+    }
+
+    public JadLauncher(boolean consoleLaunch, Boolean showHostDetailsOverride) {
+        this(consoleLaunch, showHostDetailsOverride, null, 0, false);
+    }
+
+    public JadLauncher(
+            boolean consoleLaunch,
+            Boolean showHostDetailsOverride,
+            Path captureFramePath,
+            int captureDelayMs,
+            boolean exitAfterCapture
+    ) {
         this.consoleLaunch = consoleLaunch;
+        this.showHostDetailsOverride = showHostDetailsOverride;
+        this.captureFramePath = captureFramePath;
+        this.captureDelayMs = captureDelayMs;
+        this.exitAfterCapture = exitAfterCapture;
     }
 
     public void launch(Path jadPath) {
@@ -49,12 +78,16 @@ public final class JadLauncher {
     }
 
     private void openFrame(JadDescriptor descriptor) throws LaunchException {
-        var frame = new JadFrame(descriptor);
+        var launchProfile = LaunchProfileResolver.resolve(descriptor);
+        var frame = new JadFrame(descriptor, launchProfile, showHostDetails());
+        var shutdownOnce = new AtomicBoolean();
         try {
             frame.showFrame();
             frame.updateStatus("Loading " + descriptor.title());
-            var result = runtime.launch(descriptor);
+            var result = runtime.launch(descriptor, launchProfile, frame::updateDisplayMetrics);
+            frame.setCloseHandler(() -> shutdownLaunch(result, shutdownOnce));
             frame.updateStatus("Loaded " + result.entryClass());
+            scheduleCaptureIfRequested(frame);
             DebugLog.log(LogCategory.HOST, JadLauncher.class.getName(), "Loaded entry class: " + result.entryClass());
         } catch (LaunchException exception) {
             if (consoleLaunch) {
@@ -63,6 +96,63 @@ public final class JadLauncher {
                 frame.updateStatus("Launch failed");
             }
             throw exception;
+        }
+    }
+
+    private void shutdownLaunch(remexa.host.runtime.LaunchResult result, AtomicBoolean shutdownOnce) {
+        if (!shutdownOnce.compareAndSet(false, true)) {
+            return;
+        }
+
+        DebugLog.log(LogCategory.HOST, JadLauncher.class.getName(), "Shutting down " + result.descriptor().title());
+        runtime.shutdown(result);
+        if (consoleLaunch) {
+            System.exit(0);
+        }
+    }
+
+    private boolean showHostDetails() {
+        if (showHostDetailsOverride != null) {
+            return showHostDetailsOverride;
+        }
+        return HostUiSettings.showHostDetails();
+    }
+
+    private void scheduleCaptureIfRequested(JadFrame frame) {
+        if (captureFramePath == null) {
+            return;
+        }
+        var timer = new Timer(Math.max(0, captureDelayMs), event -> {
+            ((Timer) event.getSource()).stop();
+            captureFrame(frame);
+        });
+        timer.setRepeats(false);
+        timer.start();
+    }
+
+    private void captureFrame(JadFrame frame) {
+        try {
+            var snapshot = MidletRuntime.currentFrameSnapshot();
+            if (snapshot == null) {
+                throw new IllegalStateException("No rendered frame is available yet.");
+            }
+            var parent = captureFramePath.toAbsolutePath().getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
+            ImageIO.write(snapshot, "png", captureFramePath.toFile());
+            DebugLog.log(LogCategory.HOST, JadLauncher.class.getName(), "Captured frame to " + captureFramePath.toAbsolutePath());
+        } catch (Exception exception) {
+            DebugLog.log(LogCategory.HOST, JadLauncher.class.getName(), "Frame capture failed: " + exception.getMessage());
+            if (consoleLaunch) {
+                System.err.println("ReMEXA frame capture failed: " + exception.getMessage());
+                exception.printStackTrace(System.err);
+            }
+        }
+
+        if (exitAfterCapture) {
+            frame.dispose();
+            System.exit(0);
         }
     }
 }

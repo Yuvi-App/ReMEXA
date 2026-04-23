@@ -2,20 +2,18 @@ package remexa.probes;
 
 import java.util.EnumMap;
 import java.util.Map;
-import java.util.prefs.Preferences;
+import remexa.settings.RemexaPreferences;
 
 public final class LogSettings {
-    private static final Preferences PREFERENCES = Preferences.userRoot().node("remexa/log-settings");
-
     private LogSettings() {
     }
 
     public static boolean isEnabled(LogCategory category) {
-        return PREFERENCES.getBoolean(key(category), true);
+        return RemexaPreferences.log().getBoolean(key(category), true);
     }
 
     public static void setEnabled(LogCategory category, boolean enabled) {
-        PREFERENCES.putBoolean(key(category), enabled);
+        RemexaPreferences.log().putBoolean(key(category), enabled);
     }
 
     public static Map<LogCategory, Boolean> loadAll() {
@@ -27,6 +25,6 @@ public final class LogSettings {
     }
 
     private static String key(LogCategory category) {
-        return "enabled." + category.name();
+        return RemexaPreferences.LOG_ENABLED_PREFIX + category.name();
     }
 }

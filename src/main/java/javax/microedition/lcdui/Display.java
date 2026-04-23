@@ -1,6 +1,7 @@
 package javax.microedition.lcdui;
 
 import javax.microedition.midlet.MIDlet;
+import remexa.host.profile.DisplayMetrics;
 import remexa.host.runtime.MidletRuntime;
 import remexa.probes.SdkStubSupport;
 
@@ -23,11 +24,15 @@ public final class Display {
 
     public void setCurrent(Displayable next) {
         current = next;
+        MidletRuntime.bindDisplayable(midlet, next);
+        MidletRuntime.setCurrentDisplayable(midlet, next);
         SdkStubSupport.log(Display.class.getName(), "setCurrent", midlet, next == null ? null : next.getTitle());
     }
 
     public void setCurrent(Alert alert, Displayable next) {
         current = next;
+        MidletRuntime.bindDisplayable(midlet, next);
+        MidletRuntime.setCurrentDisplayable(midlet, next);
         SdkStubSupport.log(Display.class.getName(), "setCurrent", alert, next);
     }
 
@@ -37,5 +42,9 @@ public final class Display {
 
     public int numColors() {
         return 65536;
+    }
+
+    DisplayMetrics displayMetrics() {
+        return MidletRuntime.getDisplayMetrics(midlet);
     }
 }

@@ -1,26 +1,42 @@
 package com.jblend.media.smaf.phrase;
 
-public class Phrase extends com.jblend.media.smaf.phrase.PhraseBase {
+import java.io.IOException;
+import remexa.host.runtime.MidletRuntime;
+
+public class Phrase extends PhraseBase {
+    private final byte[] data;
+
     protected Phrase() {
+        this.data = new byte[0];
         remexa.probes.SdkStubSupport.log("com.jblend.media.smaf.phrase.Phrase", "Phrase");
     }
 
-    public Phrase (java.lang.String url) throws java.io.IOException {
+    public Phrase(String url) throws IOException {
         remexa.probes.SdkStubSupport.log("com.jblend.media.smaf.phrase.Phrase", "Phrase", url);
+        try (var stream = MidletRuntime.openResource(url)) {
+            if (stream == null) {
+                throw new IOException("Phrase resource not found: " + url);
+            }
+            this.data = stream.readAllBytes();
+        }
     }
 
-    public Phrase (byte[] data) {
+    public Phrase(byte[] data) {
         remexa.probes.SdkStubSupport.log("com.jblend.media.smaf.phrase.Phrase", "Phrase", data);
+        this.data = data == null ? new byte[0] : data.clone();
     }
 
-
-    public int getSize () {
+    public int getSize() {
         remexa.probes.SdkStubSupport.log("com.jblend.media.smaf.phrase.Phrase", "getSize");
-        return 0;
+        return data.length;
     }
 
-    public int getUseTracks () {
+    public int getUseTracks() {
         remexa.probes.SdkStubSupport.log("com.jblend.media.smaf.phrase.Phrase", "getUseTracks");
-        return 0;
+        return 1;
+    }
+
+    byte[] data() {
+        return data.clone();
     }
 }

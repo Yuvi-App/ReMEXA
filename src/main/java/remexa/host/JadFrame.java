@@ -1,61 +1,85 @@
 package remexa.host;
 
 import java.awt.BorderLayout;
+import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Font;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
+import java.awt.event.ActionEvent;
+import java.awt.event.KeyEvent;
+import java.awt.RenderingHints;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
+import javax.swing.BorderFactory;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
 import javax.swing.JTextArea;
+import javax.swing.JComponent;
+import javax.swing.KeyStroke;
+import javax.swing.Timer;
 import javax.swing.SwingUtilities;
+import remexa.host.input.HostKeyMapper;
 import remexa.host.jad.JadDescriptor;
+import remexa.host.profile.DisplayMetrics;
+import remexa.host.profile.LaunchProfile;
+import remexa.host.runtime.MidletRuntime;
 import remexa.probes.DebugLog;
 import remexa.probes.LogCategory;
 import remexa.probes.LogEvent;
 
 public final class JadFrame extends JFrame {
     private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm:ss").withZone(ZoneId.systemDefault());
+    private static final int DISPLAY_SCALE = 3;
 
     private final JTextArea detailsArea = new JTextArea();
     private final JTextArea logArea = new JTextArea();
     private final JLabel statusLabel = new JLabel("Idle");
+    private final JLabel renderInfoLabel = new JLabel();
+    private final JPanel renderSurface = new RenderSurfacePanel();
     private final Consumer<LogEvent> listener = this::appendLog;
+    private final LaunchProfile launchProfile;
+    private final boolean showHostDetails;
+    private final Timer refreshTimer;
+    private final AtomicBoolean disposed = new AtomicBoolean();
+    private Runnable closeHandler;
 
-    public JadFrame(JadDescriptor descriptor) {
+    public JadFrame(JadDescriptor descriptor, LaunchProfile launchProfile, boolean showHostDetails) {
         super(descriptor.title() + " - ReMEXA");
+        this.launchProfile = launchProfile;
+        this.showHostDetails = showHostDetails;
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
-        setMinimumSize(new Dimension(960, 640));
         setLayout(new BorderLayout());
+        renderSurface.setBackground(new Color(22, 24, 29));
+        renderSurface.setBorder(BorderFactory.createLineBorder(new Color(68, 74, 83)));
 
-        detailsArea.setEditable(false);
-        detailsArea.setFont(Font.decode(Font.MONOSPACED));
-        detailsArea.setText(String.join(System.lineSeparator(), descriptor.summaryLines()));
+        if (showHostDetails) {
+            buildDetailedLayout(descriptor, launchProfile);
+        } else {
+            buildGameOnlyLayout();
+        }
+        installInputBindings();
+        updateDisplayMetrics(launchProfile.initialDisplay());
+        setMinimumSize(minimumWindowSize(launchProfile.initialDisplay(), showHostDetails));
 
-        logArea.setEditable(false);
-        logArea.setFont(Font.decode(Font.MONOSPACED));
-
-        var renderPanel = new JPanel(new BorderLayout());
-        renderPanel.add(new JLabel("Legacy display host groundwork is active. SDK calls and display transitions will appear in the log."), BorderLayout.NORTH);
-        renderPanel.add(new JScrollPane(detailsArea), BorderLayout.CENTER);
-
-        var splitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, renderPanel, new JScrollPane(logArea));
-        splitPane.setResizeWeight(0.45);
-
-        add(splitPane, BorderLayout.CENTER);
-        add(statusLabel, BorderLayout.SOUTH);
-
-        DebugLog.addListener(listener);
+        if (showHostDetails) {
+            DebugLog.addListener(listener);
+        }
+        refreshTimer = new Timer(33, event -> renderSurface.repaint());
+        refreshTimer.start();
     }
 
     public void showFrame() {
         pack();
         setLocationByPlatform(true);
         setVisible(true);
+        SwingUtilities.invokeLater(() -> getRootPane().requestFocusInWindow());
     }
 
     public void updateStatus(String status) {
@@ -64,8 +88,24 @@ public final class JadFrame extends JFrame {
 
     @Override
     public void dispose() {
-        DebugLog.removeListener(listener);
+        if (!disposed.compareAndSet(false, true)) {
+            return;
+        }
+        var shutdownTask = closeHandler;
+        closeHandler = null;
+        refreshTimer.stop();
+        if (showHostDetails) {
+            DebugLog.removeListener(listener);
+        }
         super.dispose();
+        if (shutdownTask != null) {
+            var shutdownThread = new Thread(shutdownTask, "remexa-app-shutdown");
+            shutdownThread.start();
+        }
+    }
+
+    public void setCloseHandler(Runnable closeHandler) {
+        this.closeHandler = closeHandler;
     }
 
     private void appendLog(LogEvent event) {
@@ -80,5 +120,193 @@ public final class JadFrame extends JFrame {
             );
             logArea.setCaretPosition(logArea.getDocument().getLength());
         });
+    }
+
+    public void updateDisplayMetrics(DisplayMetrics displayMetrics) {
+        SwingUtilities.invokeLater(() -> {
+            if (showHostDetails) {
+                renderInfoLabel.setText(
+                        "Active display: " + displayMetrics.dimensions() +
+                                " | Source: " + displayMetrics.source() +
+                                " | Profile: " + launchProfile.profile().displayName()
+                );
+            }
+            renderSurface.setPreferredSize(new Dimension(scaledWidth(displayMetrics), scaledHeight(displayMetrics)));
+            renderSurface.revalidate();
+            pack();
+        });
+    }
+
+    private void buildDetailedLayout(JadDescriptor descriptor, LaunchProfile launchProfile) {
+        detailsArea.setEditable(false);
+        detailsArea.setFont(Font.decode(Font.MONOSPACED));
+        detailsArea.setText(String.join(System.lineSeparator(), summaryLines(descriptor, launchProfile)));
+
+        logArea.setEditable(false);
+        logArea.setFont(Font.decode(Font.MONOSPACED));
+
+        var renderPanel = new JPanel(new BorderLayout());
+        renderPanel.add(new JLabel("Legacy display host groundwork is active. SDK calls and display transitions will appear in the log."), BorderLayout.NORTH);
+
+        var displayHostPanel = new JPanel(new BorderLayout(0, 8));
+        displayHostPanel.add(renderInfoLabel, BorderLayout.NORTH);
+        displayHostPanel.add(renderSurface, BorderLayout.CENTER);
+
+        var detailsPanel = new JPanel(new BorderLayout(0, 8));
+        detailsPanel.add(displayHostPanel, BorderLayout.NORTH);
+        detailsPanel.add(new JScrollPane(detailsArea), BorderLayout.CENTER);
+        renderPanel.add(detailsPanel, BorderLayout.CENTER);
+
+        var splitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, renderPanel, new JScrollPane(logArea));
+        splitPane.setResizeWeight(0.45);
+
+        add(splitPane, BorderLayout.CENTER);
+        add(statusLabel, BorderLayout.SOUTH);
+    }
+
+    private void buildGameOnlyLayout() {
+        var gamePanel = new JPanel(new BorderLayout());
+        gamePanel.setBackground(Color.BLACK);
+        gamePanel.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 0));
+        gamePanel.add(renderSurface, BorderLayout.CENTER);
+        add(gamePanel, BorderLayout.CENTER);
+    }
+
+    private void installInputBindings() {
+        var inputMap = getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW);
+        var actionMap = getRootPane().getActionMap();
+        var keyCodes = new int[]{
+                KeyEvent.VK_UP,
+                KeyEvent.VK_DOWN,
+                KeyEvent.VK_LEFT,
+                KeyEvent.VK_RIGHT,
+                KeyEvent.VK_KP_UP,
+                KeyEvent.VK_KP_DOWN,
+                KeyEvent.VK_KP_LEFT,
+                KeyEvent.VK_KP_RIGHT,
+                KeyEvent.VK_ENTER,
+                KeyEvent.VK_NUMPAD0,
+                KeyEvent.VK_NUMPAD1,
+                KeyEvent.VK_NUMPAD2,
+                KeyEvent.VK_NUMPAD3,
+                KeyEvent.VK_NUMPAD4,
+                KeyEvent.VK_NUMPAD5,
+                KeyEvent.VK_NUMPAD6,
+                KeyEvent.VK_NUMPAD7,
+                KeyEvent.VK_NUMPAD8,
+                KeyEvent.VK_NUMPAD9,
+                KeyEvent.VK_MULTIPLY,
+                KeyEvent.VK_DIVIDE,
+                KeyEvent.VK_DECIMAL,
+                KeyEvent.VK_NUMBER_SIGN,
+                KeyEvent.VK_A,
+                KeyEvent.VK_S,
+                KeyEvent.VK_F1,
+                KeyEvent.VK_F2
+        };
+
+        for (var keyCode : keyCodes) {
+            bindKey(inputMap, actionMap, keyCode, false);
+            bindKey(inputMap, actionMap, keyCode, true);
+        }
+    }
+
+    private void bindKey(
+            javax.swing.InputMap inputMap,
+            javax.swing.ActionMap actionMap,
+            int keyCode,
+            boolean release
+    ) {
+        var actionId = (release ? "release-" : "press-") + keyCode;
+        inputMap.put(KeyStroke.getKeyStroke(keyCode, 0, release), actionId);
+        actionMap.put(actionId, new javax.swing.AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent event) {
+                dispatchHostKey(keyCode, release);
+            }
+        });
+    }
+
+    private void dispatchHostKey(int awtKeyCode, boolean release) {
+        var softKeyIndex = HostKeyMapper.toSoftKeyIndex(awtKeyCode);
+        if (softKeyIndex >= 0) {
+            if (!release) {
+                MidletRuntime.dispatchSoftKey(softKeyIndex);
+            }
+            return;
+        }
+
+        var phoneKeyCode = HostKeyMapper.toPhoneKeyCode(awtKeyCode);
+        if (phoneKeyCode == Integer.MIN_VALUE) {
+            return;
+        }
+
+        if (release) {
+            MidletRuntime.dispatchKeyReleased(phoneKeyCode);
+        } else {
+            MidletRuntime.dispatchKeyPressed(phoneKeyCode);
+        }
+    }
+
+    private static java.util.List<String> summaryLines(JadDescriptor descriptor, LaunchProfile launchProfile) {
+        var lines = new ArrayList<>(descriptor.summaryLines());
+        lines.add("Profile: " + launchProfile.profile().displayName());
+        lines.add("Display: " + launchProfile.initialDisplay().dimensions() + " (" + launchProfile.initialDisplay().source() + ")");
+        return lines;
+    }
+
+    private static int scaledWidth(DisplayMetrics displayMetrics) {
+        return displayMetrics.width() * DISPLAY_SCALE;
+    }
+
+    private static int scaledHeight(DisplayMetrics displayMetrics) {
+        return displayMetrics.height() * DISPLAY_SCALE;
+    }
+
+    private static Dimension minimumWindowSize(DisplayMetrics displayMetrics, boolean showHostDetails) {
+        if (showHostDetails) {
+            return new Dimension(Math.max(620, scaledWidth(displayMetrics) + 280), 520);
+        }
+        return new Dimension(scaledWidth(displayMetrics), scaledHeight(displayMetrics));
+    }
+
+    private static final class RenderSurfacePanel extends JPanel {
+        private RenderSurfacePanel() {
+            setOpaque(true);
+            setBackground(Color.BLACK);
+        }
+
+        @Override
+        protected void paintComponent(Graphics graphics) {
+            super.paintComponent(graphics);
+            var frame = MidletRuntime.currentFrameSnapshot();
+            if (frame == null) {
+                return;
+            }
+
+            var g2 = (Graphics2D) graphics.create();
+            try {
+                g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
+                g2.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_SPEED);
+                var frameWidth = frame.getWidth();
+                var frameHeight = frame.getHeight();
+                if (frameWidth <= 0 || frameHeight <= 0) {
+                    return;
+                }
+
+                var scale = Math.min(
+                        (double) getWidth() / frameWidth,
+                        (double) getHeight() / frameHeight
+                );
+                var drawWidth = Math.max(1, (int) Math.round(frameWidth * scale));
+                var drawHeight = Math.max(1, (int) Math.round(frameHeight * scale));
+                var drawX = (getWidth() - drawWidth) / 2;
+                var drawY = (getHeight() - drawHeight) / 2;
+
+                g2.drawImage(frame, drawX, drawY, drawWidth, drawHeight, null);
+            } finally {
+                g2.dispose();
+            }
+        }
     }
 }

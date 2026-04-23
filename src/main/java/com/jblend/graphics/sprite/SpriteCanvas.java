@@ -30,20 +30,26 @@ public abstract class SpriteCanvas extends javax.microedition.lcdui.Canvas {
 
     public void createFrameBuffer (int fw, int fh) {
         remexa.probes.SdkStubSupport.log("com.jblend.graphics.sprite.SpriteCanvas", "createFrameBuffer", fw, fh);
+        remexa.host.runtime.MidletRuntime.updateDisplayMetrics(
+                this,
+                new remexa.host.profile.DisplayMetrics(fw, fh, "SpriteCanvas.createFrameBuffer")
+        );
+        remexa.host.runtime.MidletRuntime.createSpriteFrameBuffer(this, fw, fh);
     }
 
     public void disposeFrameBuffer () {
         remexa.probes.SdkStubSupport.log("com.jblend.graphics.sprite.SpriteCanvas", "disposeFrameBuffer");
+        remexa.host.runtime.MidletRuntime.disposeSpriteFrameBuffer(this);
     }
 
     public static int getVirtualWidth () {
         remexa.probes.SdkStubSupport.log("com.jblend.graphics.sprite.SpriteCanvas", "getVirtualWidth");
-        return 0;
+        return remexa.host.runtime.MidletRuntime.getDisplayMetrics((javax.microedition.lcdui.Displayable) null).width();
     }
 
     public static int getVirtualHeight () {
         remexa.probes.SdkStubSupport.log("com.jblend.graphics.sprite.SpriteCanvas", "getVirtualHeight");
-        return 0;
+        return remexa.host.runtime.MidletRuntime.getDisplayMetrics((javax.microedition.lcdui.Displayable) null).height();
     }
 
     public void setPalette (int index, int palette) {
@@ -69,13 +75,16 @@ public abstract class SpriteCanvas extends javax.microedition.lcdui.Canvas {
 
     public void copyArea (int sx, int sy, int fw, int fh, int tx, int ty) {
         remexa.probes.SdkStubSupport.log("com.jblend.graphics.sprite.SpriteCanvas", "copyArea", sx, sy, fw, fh, tx, ty);
+        remexa.host.runtime.MidletRuntime.spriteCopyArea(this, sx, sy, fw, fh, tx, ty);
     }
 
     public void copyFullScreen (int tx, int ty) {
         remexa.probes.SdkStubSupport.log("com.jblend.graphics.sprite.SpriteCanvas", "copyFullScreen", tx, ty);
+        remexa.host.runtime.MidletRuntime.spriteCopyFullScreen(this, tx, ty);
     }
 
     public void drawFrameBuffer (int tx, int ty) {
         remexa.probes.SdkStubSupport.log("com.jblend.graphics.sprite.SpriteCanvas", "drawFrameBuffer", tx, ty);
+        remexa.host.runtime.MidletRuntime.spriteDrawFrameBuffer(this, tx, ty);
     }
 }

@@ -28,16 +28,21 @@ public class DeviceControl {
     public static final int RAB_NULL = 0;
     public static final int RAB_MEASUREMENT = 0;
     public static final int RAB_INDEFINITE = 0;
-    public static final int STYLE_PORTRAIT = 0;
-    public static final int STYLE_LANDSCAPE = 0;
+    public static final int STYLE_PORTRAIT = 1;
+    public static final int STYLE_LANDSCAPE = 2;
+    private static final com.j_phone.system.DeviceControl DEFAULT = new com.j_phone.system.DeviceControl();
 
     public static final com.j_phone.system.DeviceControl getDefaultDeviceControl () {
         remexa.probes.SdkStubSupport.log("com.j_phone.system.DeviceControl", "getDefaultDeviceControl");
-        return null;
+        return DEFAULT;
     }
 
     public int getDeviceState (int deviceNo) {
         remexa.probes.SdkStubSupport.log("com.j_phone.system.DeviceControl", "getDeviceState", deviceNo);
+        remexa.host.runtime.MidletRuntime.ensureThreadActive();
+        if (deviceNo == 3) {
+            return remexa.host.runtime.MidletRuntime.currentDeviceKeyState();
+        }
         return 0;
     }
 
@@ -48,7 +53,7 @@ public class DeviceControl {
 
     public boolean setDeviceActive (int deviceNo, boolean active) {
         remexa.probes.SdkStubSupport.log("com.j_phone.system.DeviceControl", "setDeviceActive", deviceNo, active);
-        return false;
+        return true;
     }
 
     public void blink (int lighting, int extinction, int repeat) {
@@ -111,7 +116,7 @@ public class DeviceControl {
 
     public int getStyle () {
         remexa.probes.SdkStubSupport.log("com.j_phone.system.DeviceControl", "getStyle");
-        return 0;
+        return remexa.host.runtime.MidletRuntime.getDeviceStyle((javax.microedition.lcdui.Displayable) null);
     }
 
     public static void setMailListener (com.j_phone.system.MailListener listener) {
