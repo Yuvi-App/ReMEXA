@@ -1,6 +1,7 @@
 package remexa.host.render;
 
 import java.awt.AlphaComposite;
+import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
 import remexa.host.profile.DisplayMetrics;
@@ -33,7 +34,6 @@ public final class DisplaySurfaceState {
             return new javax.microedition.lcdui.Graphics(displayImage.createGraphics(), displayImage.getWidth(), displayImage.getHeight());
         }
         ensureVirtualSurface();
-        clear(virtualImage);
         return new javax.microedition.lcdui.Graphics(virtualImage.createGraphics(), virtualImage.getWidth(), virtualImage.getHeight());
     }
 
@@ -176,7 +176,9 @@ public final class DisplaySurfaceState {
     }
 
     private static BufferedImage createSurface(int width, int height) {
-        return new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+        var image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+        clear(image);
+        return image;
     }
 
     private static BufferedImage copyOf(BufferedImage source) {
@@ -193,7 +195,8 @@ public final class DisplaySurfaceState {
     private static void clear(BufferedImage image) {
         var graphics = image.createGraphics();
         try {
-            graphics.setComposite(AlphaComposite.Clear);
+            graphics.setComposite(AlphaComposite.Src);
+            graphics.setColor(Color.BLACK);
             graphics.fillRect(0, 0, image.getWidth(), image.getHeight());
         } finally {
             graphics.dispose();

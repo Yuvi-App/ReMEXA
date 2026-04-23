@@ -29,6 +29,7 @@ public class Graphics {
         this.delegate.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
         this.delegate.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
         this.delegate.setFont(font.awtFont());
+        this.delegate.setColor(new Color(argbColor, true));
     }
 
     public void setColor(int rgb) {

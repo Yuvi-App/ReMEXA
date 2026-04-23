@@ -110,7 +110,7 @@ public abstract class ACanvas extends javax.microedition.lcdui.Canvas implements
                 palette,
                 requirePattern(resolved.patternNo),
                 resolved.offset * PALETTE_BANK_SIZE,
-                resolved.transparent,
+                false,
                 false,
                 x * 8,
                 y * 8,
