@@ -329,7 +329,6 @@ public final class JadFrame extends JFrame {
             if (!release) {
                 MidletRuntime.dispatchSoftKey(softKeyIndex);
             }
-            return;
         }
 
         var phoneKeyCode = HostKeyMapper.toPhoneKeyCode(awtKeyCode);

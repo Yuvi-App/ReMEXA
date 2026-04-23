@@ -14,6 +14,8 @@ public final class HostKeyMapper {
             case KeyEvent.VK_RIGHT, KeyEvent.VK_KP_RIGHT -> Canvas.RIGHT;
             case KeyEvent.VK_DOWN, KeyEvent.VK_KP_DOWN -> Canvas.DOWN;
             case KeyEvent.VK_ENTER -> Canvas.FIRE;
+            case KeyEvent.VK_A, KeyEvent.VK_F1 -> Canvas.SOFT1;
+            case KeyEvent.VK_S, KeyEvent.VK_F2 -> Canvas.SOFT2;
             case KeyEvent.VK_NUMPAD7 -> '1';
             case KeyEvent.VK_NUMPAD8 -> '2';
             case KeyEvent.VK_NUMPAD9 -> '3';

@@ -10,6 +10,9 @@ public abstract class Canvas extends Displayable {
     public static final int LEFT = -3;
     public static final int RIGHT = -4;
     public static final int FIRE = -5;
+    public static final int SOFT1 = -6;
+    public static final int SOFT2 = -7;
+    public static final int SOFT3 = -8;
     private final Set<Integer> pressedKeys = new HashSet<>();
 
     protected abstract void paint(Graphics graphics);
@@ -75,6 +78,15 @@ public abstract class Canvas extends Displayable {
         }
         if (containsAnyKey(FIRE, (int) '\n')) {
             state |= 0x10000;
+        }
+        if (pressedKeys.contains(SOFT1)) {
+            state |= 0x20000;
+        }
+        if (pressedKeys.contains(SOFT2)) {
+            state |= 0x40000;
+        }
+        if (pressedKeys.contains(SOFT3)) {
+            state |= 0x80000;
         }
         if (pressedKeys.contains((int) '9')) {
             state |= 0x0200;
