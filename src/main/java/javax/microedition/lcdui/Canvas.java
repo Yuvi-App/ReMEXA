@@ -58,11 +58,11 @@ public abstract class Canvas extends Displayable {
 
     public int getGameAction(int keyCode) {
         return switch (keyCode) {
-            case KEYCODE_UP, '2' -> UP;
-            case KEYCODE_LEFT, '4' -> LEFT;
-            case KEYCODE_RIGHT, '6' -> RIGHT;
-            case KEYCODE_DOWN, '8' -> DOWN;
-            case KEYCODE_FIRE, '\n', '5' -> FIRE;
+            case KEYCODE_UP, '2', UP -> UP;
+            case KEYCODE_LEFT, '4', LEFT -> LEFT;
+            case KEYCODE_RIGHT, '6', RIGHT -> RIGHT;
+            case KEYCODE_DOWN, '8', DOWN -> DOWN;
+            case KEYCODE_FIRE, '\n', '5', FIRE -> FIRE;
             default -> 0;
         };
     }
@@ -80,11 +80,11 @@ public abstract class Canvas extends Displayable {
 
     public String getKeyName(int keyCode) {
         return switch (keyCode) {
-            case KEYCODE_UP -> "Up";
-            case KEYCODE_LEFT -> "Left";
-            case KEYCODE_RIGHT -> "Right";
-            case KEYCODE_DOWN -> "Down";
-            case KEYCODE_FIRE, '\n' -> "Select";
+            case KEYCODE_UP, UP -> "Up";
+            case KEYCODE_LEFT, LEFT -> "Left";
+            case KEYCODE_RIGHT, RIGHT -> "Right";
+            case KEYCODE_DOWN, DOWN -> "Down";
+            case KEYCODE_FIRE, '\n', FIRE -> "Select";
             case SOFT1 -> "Soft1";
             case SOFT2 -> "Soft2";
             case SOFT3 -> "Soft3";
@@ -121,19 +121,19 @@ public abstract class Canvas extends Displayable {
 
     public final int deviceKeyStateMask() {
         var state = 0;
-        if (pressedKeys.contains(KEYCODE_UP)) {
+        if (containsAnyKey(KEYCODE_UP, UP)) {
             state |= 0x1000;
         }
-        if (pressedKeys.contains(KEYCODE_LEFT)) {
+        if (containsAnyKey(KEYCODE_LEFT, LEFT)) {
             state |= 0x2000;
         }
-        if (pressedKeys.contains(KEYCODE_RIGHT)) {
+        if (containsAnyKey(KEYCODE_RIGHT, RIGHT)) {
             state |= 0x4000;
         }
-        if (pressedKeys.contains(KEYCODE_DOWN)) {
+        if (containsAnyKey(KEYCODE_DOWN, DOWN)) {
             state |= 0x8000;
         }
-        if (containsAnyKey(KEYCODE_FIRE, (int) '\n')) {
+        if (containsAnyKey(KEYCODE_FIRE, (int) '\n', FIRE)) {
             state |= 0x10000;
         }
         if (pressedKeys.contains(SOFT1)) {

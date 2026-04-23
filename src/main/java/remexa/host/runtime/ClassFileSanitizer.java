@@ -1,9 +1,26 @@
 package remexa.host.runtime;
 
+import java.lang.classfile.ClassFile;
+import java.lang.classfile.ClassTransform;
+import java.lang.classfile.CodeBuilder;
+import java.lang.classfile.CodeElement;
+import java.lang.classfile.CodeTransform;
+import java.lang.classfile.Label;
+import java.lang.classfile.instruction.BranchInstruction;
+import java.lang.classfile.instruction.LabelTarget;
+import java.lang.constant.ClassDesc;
+import java.lang.constant.MethodTypeDesc;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 final class ClassFileSanitizer {
+    private static final ClassDesc SPIN_SUPPORT = ClassDesc.of("remexa.host.runtime.LegacyRuntimeSupport");
+    private static final MethodTypeDesc SPIN_HINT_DESCRIPTOR = MethodTypeDesc.ofDescriptor("()V");
+
     private ClassFileSanitizer() {
     }
 
@@ -63,6 +80,23 @@ final class ClassFileSanitizer {
         }
 
         return changes == 0 ? new SanitizeResult(classBytes, 0) : new SanitizeResult(sanitized, changes);
+    }
+
+    static SanitizeResult injectSpinLoopHints(byte[] classBytes) {
+        try {
+            var classFile = ClassFile.of();
+            var classModel = classFile.parse(classBytes);
+            var changes = new AtomicInteger();
+            byte[] transformed = classFile.transformClass(
+                    classModel,
+                    ClassTransform.transformingMethodBodies(
+                            CodeTransform.ofStateful(() -> new SpinLoopCodeTransform(changes))
+                    )
+            );
+            return changes.get() == 0 ? new SanitizeResult(classBytes, 0) : new SanitizeResult(transformed, changes.get());
+        } catch (RuntimeException ignored) {
+            return new SanitizeResult(classBytes, 0);
+        }
     }
 
     private static int LAST_MEMBER_CHANGE_COUNT;
@@ -181,5 +215,28 @@ final class ClassFileSanitizer {
     }
 
     record SanitizeResult(byte[] classBytes, int changes) {
+    }
+
+    private static final class SpinLoopCodeTransform implements CodeTransform {
+        private final AtomicInteger changeCount;
+        private final Set<Label> seenLabels = Collections.newSetFromMap(new IdentityHashMap<>());
+
+        private SpinLoopCodeTransform(AtomicInteger changeCount) {
+            this.changeCount = changeCount;
+        }
+
+        @Override
+        public void accept(CodeBuilder builder, CodeElement element) {
+            if (element instanceof LabelTarget labelTarget) {
+                seenLabels.add(labelTarget.label());
+                builder.with(element);
+                return;
+            }
+            if (element instanceof BranchInstruction branch && seenLabels.contains(branch.target())) {
+                builder.invokestatic(SPIN_SUPPORT, "spinLoopHint", SPIN_HINT_DESCRIPTOR);
+                changeCount.incrementAndGet();
+            }
+            builder.with(element);
+        }
     }
 }

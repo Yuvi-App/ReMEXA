@@ -276,6 +276,16 @@ public final class JadFrame extends JFrame {
                 KeyEvent.VK_DOWN,
                 KeyEvent.VK_LEFT,
                 KeyEvent.VK_RIGHT,
+                KeyEvent.VK_0,
+                KeyEvent.VK_1,
+                KeyEvent.VK_2,
+                KeyEvent.VK_3,
+                KeyEvent.VK_4,
+                KeyEvent.VK_5,
+                KeyEvent.VK_6,
+                KeyEvent.VK_7,
+                KeyEvent.VK_8,
+                KeyEvent.VK_9,
                 KeyEvent.VK_KP_UP,
                 KeyEvent.VK_KP_DOWN,
                 KeyEvent.VK_KP_LEFT,
@@ -324,6 +334,10 @@ public final class JadFrame extends JFrame {
     }
 
     private void dispatchHostKey(int awtKeyCode, boolean release) {
+        var displayable = MidletRuntime.currentDisplayable();
+        var jPhoneDirectionalLayout =
+                displayable instanceof com.j_phone.amuse.ACanvas
+                        || displayable instanceof com.j_phone.amuse.j3d.Canvas3D;
         var softKeyIndex = HostKeyMapper.toSoftKeyIndex(awtKeyCode);
         if (softKeyIndex >= 0) {
             if (!release) {
@@ -331,7 +345,7 @@ public final class JadFrame extends JFrame {
             }
         }
 
-        var phoneKeyCode = HostKeyMapper.toPhoneKeyCode(awtKeyCode);
+        var phoneKeyCode = HostKeyMapper.toPhoneKeyCode(awtKeyCode, jPhoneDirectionalLayout);
         if (phoneKeyCode == Integer.MIN_VALUE) {
             return;
         }

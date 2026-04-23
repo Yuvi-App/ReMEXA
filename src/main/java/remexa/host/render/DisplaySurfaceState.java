@@ -128,10 +128,8 @@ public final class DisplaySurfaceState {
         }
         var target = toFrameBuffer ? ensureFrameBuffer() : ensureVirtualSurfaceAndGet();
         var normalizedRotation = Math.floorMod(rotation, 4);
-        for (int py = 0; py < 8; py++) {
-            for (int px = 0; px < 8; px++) {
-                var sampleX = rightsideLeft ? 7 - px : px;
-                var sampleY = upsideDown ? 7 - py : py;
+        for (int sampleY = 0; sampleY < 8; sampleY++) {
+            for (int sampleX = 0; sampleX < 8; sampleX++) {
                 var rawPaletteIndex = pattern[sampleY * 8 + sampleX] & 0xFF;
                 if (transparent && rawPaletteIndex == 0) {
                     continue;
@@ -141,8 +139,16 @@ public final class DisplaySurfaceState {
                 if (((argb >>> 24) & 0xFF) == 0) {
                     continue;
                 }
-                var drawX = x + rotateX(px, py, normalizedRotation);
-                var drawY = y + rotateY(px, py, normalizedRotation);
+                int transformedX = rotateX(sampleX, sampleY, normalizedRotation);
+                int transformedY = rotateY(sampleX, sampleY, normalizedRotation);
+                if (upsideDown) {
+                    transformedY = 7 - transformedY;
+                }
+                if (rightsideLeft) {
+                    transformedX = 7 - transformedX;
+                }
+                var drawX = x + transformedX;
+                var drawY = y + transformedY;
                 if (drawX < 0 || drawY < 0 || drawX >= target.getWidth() || drawY >= target.getHeight()) {
                     continue;
                 }

@@ -26,12 +26,20 @@ final class LegacyJarClassLoader extends URLClassLoader {
 
         try (var input = resource.openStream()) {
             byte[] original = input.readAllBytes();
-            var result = ClassFileSanitizer.zeroSwitchPadding(original);
-            if (result.changes() > 0) {
+            var switchResult = ClassFileSanitizer.zeroSwitchPadding(original);
+            if (switchResult.changes() > 0) {
                 DebugLog.log(
                         LogCategory.HOST,
                         LegacyJarClassLoader.class.getName(),
-                        "Sanitized " + result.changes() + " switch padding byte(s) in " + name
+                        "Sanitized " + switchResult.changes() + " switch padding byte(s) in " + name
+                );
+            }
+            var spinResult = ClassFileSanitizer.injectSpinLoopHints(switchResult.classBytes());
+            if (spinResult.changes() > 0) {
+                DebugLog.log(
+                        LogCategory.HOST,
+                        LegacyJarClassLoader.class.getName(),
+                        "Injected " + spinResult.changes() + " spin loop hint(s) into " + name
                 );
             }
             int packageSeparator = name.lastIndexOf('.');
@@ -41,7 +49,13 @@ final class LegacyJarClassLoader extends URLClassLoader {
                     definePackage(packageName, null, null, null, null, null, null, null);
                 }
             }
-            return defineClass(name, result.classBytes(), 0, result.classBytes().length, new CodeSource(resource, (java.security.cert.Certificate[]) null));
+            return defineClass(
+                    name,
+                    spinResult.classBytes(),
+                    0,
+                    spinResult.classBytes().length,
+                    new CodeSource(resource, (java.security.cert.Certificate[]) null)
+            );
         } catch (IOException exception) {
             throw new ClassNotFoundException(name, exception);
         }
