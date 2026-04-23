@@ -93,7 +93,7 @@ public final class JadFrame extends JFrame {
 
     public void showFrame() {
         pack();
-        setLocationByPlatform(true);
+        setLocationRelativeTo(null);
         setVisible(true);
         SwingUtilities.invokeLater(() -> getRootPane().requestFocusInWindow());
     }
