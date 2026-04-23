@@ -227,6 +227,84 @@ public abstract class Canvas extends Displayable {
         return state;
     }
 
+    public final int phoneKeyStateMask(boolean eightDirectionsEnabled) {
+        var up = containsAnyKey(KEYCODE_UP, UP, (int) '2');
+        var left = containsAnyKey(KEYCODE_LEFT, LEFT, (int) '4');
+        var right = containsAnyKey(KEYCODE_RIGHT, RIGHT, (int) '6');
+        var down = containsAnyKey(KEYCODE_DOWN, DOWN, (int) '8');
+        var fire = containsAnyKey(KEYCODE_FIRE, (int) '\n', FIRE, (int) '5');
+        var upRight = pressedKeys.contains((int) '9');
+        var upLeft = pressedKeys.contains((int) '7');
+        var downLeft = pressedKeys.contains((int) '1');
+        var downRight = pressedKeys.contains((int) '3');
+
+        if (eightDirectionsEnabled) {
+            if (up && right) {
+                upRight = true;
+            }
+            if (up && left) {
+                upLeft = true;
+            }
+            if (down && left) {
+                downLeft = true;
+            }
+            if (down && right) {
+                downRight = true;
+            }
+            if (upRight || upLeft) {
+                up = false;
+            }
+            if (upLeft || downLeft) {
+                left = false;
+            }
+            if (upRight || downRight) {
+                right = false;
+            }
+            if (downLeft || downRight) {
+                down = false;
+            }
+        }
+
+        var state = 0;
+        if (upRight) {
+            state |= 0x0200;
+        }
+        if (down) {
+            state |= 0x0100;
+        }
+        if (upLeft) {
+            state |= 0x0080;
+        }
+        if (right) {
+            state |= 0x0040;
+        }
+        if (fire) {
+            state |= 0x0020;
+        }
+        if (left) {
+            state |= 0x0010;
+        }
+        if (downRight) {
+            state |= 0x0008;
+        }
+        if (up) {
+            state |= 0x0004;
+        }
+        if (downLeft) {
+            state |= 0x0002;
+        }
+        if (pressedKeys.contains((int) '*')) {
+            state |= 0x0400;
+        }
+        if (pressedKeys.contains((int) '#')) {
+            state |= 0x0800;
+        }
+        if (pressedKeys.contains((int) '0')) {
+            state |= 0x0001;
+        }
+        return state;
+    }
+
     final void fireShowNotify() {
         if (shown) {
             return;

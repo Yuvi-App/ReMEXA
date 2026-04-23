@@ -24,6 +24,7 @@ import remexa.probes.LogCategory;
 public final class MidletRuntime {
     private static final DisplayMetrics DEFAULT_DISPLAY = new DisplayMetrics(240, 320, "MIDP default");
     private static final ThreadLocal<LaunchContext> CURRENT_CONTEXT = new ThreadLocal<>();
+    private static final ThreadLocal<javax.microedition.lcdui.Graphics> CURRENT_GRAPHICS = new ThreadLocal<>();
     private static final Map<MIDlet, LaunchContext> CONTEXTS = Collections.synchronizedMap(new WeakHashMap<>());
     private static final Map<MIDlet, Display> DISPLAYS = Collections.synchronizedMap(new WeakHashMap<>());
     private static final Map<Displayable, LaunchContext> DISPLAYABLES = Collections.synchronizedMap(new WeakHashMap<>());
@@ -152,9 +153,14 @@ public final class MidletRuntime {
         var surface = context.surfaceFor(canvas);
         var spriteCanvas = canvas instanceof SpriteCanvas || canvas instanceof ACanvas;
         var graphics = surface.beginCanvasPaint(spriteCanvas);
-        renderer.accept(graphics);
-        if (!spriteCanvas) {
-            surface.presentCanvas();
+        CURRENT_GRAPHICS.set(graphics);
+        try {
+            renderer.accept(graphics);
+            if (!spriteCanvas) {
+                surface.presentCanvas();
+            }
+        } finally {
+            CURRENT_GRAPHICS.remove();
         }
     }
 
@@ -278,6 +284,18 @@ public final class MidletRuntime {
         return context.appStorageRoot();
     }
 
+    public static Path currentJarPath() {
+        var context = activeContext();
+        if (context == null) {
+            return null;
+        }
+        return context.descriptor().resolveJarPath().orElse(null);
+    }
+
+    public static javax.microedition.lcdui.Graphics currentGraphics() {
+        return CURRENT_GRAPHICS.get();
+    }
+
     public static Displayable currentDisplayable() {
         var context = activeContext();
         return context == null ? null : context.currentDisplayable();
@@ -311,11 +329,11 @@ public final class MidletRuntime {
         }
     }
 
-    public static int currentDeviceKeyState() {
+    public static int currentDeviceKeyState(boolean eightDirectionsEnabled) {
         ensureThreadActive();
         var displayable = currentDisplayable();
         if (displayable instanceof Canvas canvas) {
-            return canvas.deviceKeyStateMask();
+            return canvas.phoneKeyStateMask(eightDirectionsEnabled);
         }
         return 0;
     }

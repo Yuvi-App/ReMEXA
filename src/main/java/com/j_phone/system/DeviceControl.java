@@ -42,8 +42,8 @@ public class DeviceControl {
         remexa.probes.SdkStubSupport.log("com.j_phone.system.DeviceControl", "getDeviceState", deviceNo);
         remexa.host.runtime.MidletRuntime.ensureThreadActive();
         return switch (deviceNo) {
-            case KEY_STATE -> remexa.host.runtime.MidletRuntime.currentDeviceKeyState();
-            case ENHANCED_KEY_STATE -> remexa.host.runtime.MidletRuntime.currentDeviceKeyState();
+            case KEY_STATE -> remexa.host.runtime.MidletRuntime.currentDeviceKeyState(activeDevices.get(EIGHT_DIRECTIONS));
+            case ENHANCED_KEY_STATE -> remexa.host.runtime.MidletRuntime.currentDeviceKeyState(activeDevices.get(EIGHT_DIRECTIONS));
             case FLIP_STATE -> FLIP_OPENED;
             case MEMORY_CARD -> MEMORY_CARD_OFF;
             case SPEAKER_STATE -> SPEAKER_INTERNAL;

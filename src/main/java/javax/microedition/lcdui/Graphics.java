@@ -144,6 +144,13 @@ public class Graphics {
         delegate.drawImage(image.awtImage(), drawX, drawY, null);
     }
 
+    public void drawImage(Image image, int x, int y, int width, int height) {
+        if (image == null || width <= 0 || height <= 0) {
+            return;
+        }
+        delegate.drawImage(image.awtImage(), x + translateX, y + translateY, width, height, null);
+    }
+
     public void setClip(int x, int y, int width, int height) {
         delegate.setClip(x + translateX, y + translateY, width, height);
     }

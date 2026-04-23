@@ -1,73 +1,103 @@
 package com.j_phone.media;
 
 public class MediaPlayer extends javax.microedition.lcdui.Canvas {
+    private byte[] mediaData;
+    private String mediaUrl;
+    private int contentX;
+    private int contentY;
+    private boolean playing;
+    private boolean paused;
+    private MediaPlayerListener listener;
+
     protected MediaPlayer() {
         remexa.probes.SdkStubSupport.log("com.j_phone.media.MediaPlayer", "MediaPlayer");
     }
 
     public MediaPlayer (byte[] data) {
         remexa.probes.SdkStubSupport.log("com.j_phone.media.MediaPlayer", "MediaPlayer", data);
+        this.mediaData = data;
     }
 
     public MediaPlayer (java.lang.String url) throws java.io.IOException {
         remexa.probes.SdkStubSupport.log("com.j_phone.media.MediaPlayer", "MediaPlayer", url);
+        this.mediaUrl = url;
     }
 
 
     public void setMediaData (byte[] data) {
         remexa.probes.SdkStubSupport.log("com.j_phone.media.MediaPlayer", "setMediaData", data);
+        this.mediaData = data;
+        this.mediaUrl = null;
     }
 
-    public void setMediaData (java.lang.String url) throws java.io.IOException {
+    public void setMediaData (java.lang.String url) {
         remexa.probes.SdkStubSupport.log("com.j_phone.media.MediaPlayer", "setMediaData", url);
+        this.mediaUrl = url;
+        this.mediaData = null;
     }
 
     public int getMediaWidth () {
         remexa.probes.SdkStubSupport.log("com.j_phone.media.MediaPlayer", "getMediaWidth");
-        return 0;
+        return getWidth();
     }
 
     public int getMediaHeight () {
         remexa.probes.SdkStubSupport.log("com.j_phone.media.MediaPlayer", "getMediaHeight");
-        return 0;
+        return getHeight();
     }
 
     public int getWidth () {
         remexa.probes.SdkStubSupport.log("com.j_phone.media.MediaPlayer", "getWidth");
-        return 0;
+        return super.getWidth();
     }
 
     public int getHeight () {
         remexa.probes.SdkStubSupport.log("com.j_phone.media.MediaPlayer", "getHeight");
-        return 0;
+        return super.getHeight();
     }
 
     public void setContentPos (int x, int y) {
         remexa.probes.SdkStubSupport.log("com.j_phone.media.MediaPlayer", "setContentPos", x, y);
+        this.contentX = x;
+        this.contentY = y;
     }
 
     public void play () {
         remexa.probes.SdkStubSupport.log("com.j_phone.media.MediaPlayer", "play");
+        this.playing = true;
+        this.paused = false;
+        fireStateChanged(MediaPlayerListener.PLAYED);
     }
 
     public void play (boolean isRepeat) {
         remexa.probes.SdkStubSupport.log("com.j_phone.media.MediaPlayer", "play", isRepeat);
+        play();
     }
 
     public void stop () {
         remexa.probes.SdkStubSupport.log("com.j_phone.media.MediaPlayer", "stop");
+        this.playing = false;
+        this.paused = false;
+        fireStateChanged(MediaPlayerListener.STOPPED);
     }
 
     public void pause () {
         remexa.probes.SdkStubSupport.log("com.j_phone.media.MediaPlayer", "pause");
+        this.playing = false;
+        this.paused = true;
+        fireStateChanged(MediaPlayerListener.PAUSED);
     }
 
     public void resume () {
         remexa.probes.SdkStubSupport.log("com.j_phone.media.MediaPlayer", "resume");
+        this.playing = true;
+        this.paused = false;
+        fireStateChanged(MediaPlayerListener.PLAYED);
     }
 
     public void setMediaPlayerListener (com.j_phone.media.MediaPlayerListener listener) {
         remexa.probes.SdkStubSupport.log("com.j_phone.media.MediaPlayer", "setMediaPlayerListener", listener);
+        this.listener = listener;
     }
 
     protected void paint (javax.microedition.lcdui.Graphics g) {
@@ -102,5 +132,15 @@ public class MediaPlayer extends javax.microedition.lcdui.Canvas {
 
     public final void setTitle (java.lang.String title) {
         remexa.probes.SdkStubSupport.log("com.j_phone.media.MediaPlayer", "setTitle", title);
+    }
+
+    boolean hasMedia() {
+        return mediaData != null || (mediaUrl != null && !mediaUrl.isBlank());
+    }
+
+    private void fireStateChanged(int state) {
+        if (listener != null) {
+            listener.mediaStateChanged(state);
+        }
     }
 }
