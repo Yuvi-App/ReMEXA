@@ -202,6 +202,7 @@ public final class MidletRuntime {
             Displayable displayable,
             int[] palette,
             byte[] pattern,
+            int paletteOffset,
             boolean transparent,
             boolean toFrameBuffer,
             int x,
@@ -213,6 +214,7 @@ public final class MidletRuntime {
         contextFor(displayable).ifPresent(context -> context.surfaceFor(displayable).drawIndexedPattern(
                 palette,
                 pattern,
+                paletteOffset,
                 transparent,
                 toFrameBuffer,
                 x,

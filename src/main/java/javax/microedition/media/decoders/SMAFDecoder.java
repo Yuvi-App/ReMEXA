@@ -923,10 +923,14 @@ public final class SMAFDecoder
                         switch (eventCategory) 
                         {
                             case 0x0: // Program Change
+                                channelData[channel].program = (byte) (valueField & 0x7F);
                                 Mobile.log(Mobile.LOG_DEBUG, SMAFDecoder.class.getPackage().getName() + "." + SMAFDecoder.class.getSimpleName() + ": " + "Adding program change value 0x" + String.format("%02X", valueField) + "(" + valueField + ") to channel " + channel);
-                                setChannelMessage(event, ShortMessage.PROGRAM_CHANGE, channel, valueField, 0);
-                                midiEvent = new MidiEvent(event, totalDuration);
-                                track.add(midiEvent);
+                                if (!usesMidiPercussionChannel(channel))
+                                {
+                                    setChannelMessage(event, ShortMessage.PROGRAM_CHANGE, channel, valueField, 0);
+                                    midiEvent = new MidiEvent(event, totalDuration);
+                                    track.add(midiEvent);
+                                }
                                 break;
 
                             case 0x1: // Bank Select
@@ -940,10 +944,12 @@ public final class SMAFDecoder
                                 {
                                     Mobile.log(Mobile.LOG_DEBUG, SMAFDecoder.class.getPackage().getName() + "." + SMAFDecoder.class.getSimpleName() + ": " + "Channel Drum Bank requested. Routing channel " + channel + " through MIDI percussion channel 10 until a non-drum bank is requested");
                                 }
-                                setChannelMessage(event, ShortMessage.CONTROL_CHANGE, channel, 0, bankNumber);
-                                // Send the bank select message
-                                midiEvent = new MidiEvent(event, totalDuration);
-                                track.add(midiEvent);
+                                // Handy Phone bank select is used to switch
+                                // melodic/drum interpretation, not to emit a
+                                // literal GM bank message. The active routing
+                                // state is tracked in channelData and later
+                                // note events are emitted on the resolved
+                                // output channel.
                                 break;
 
                             case 0x2: // Octave Shift (NOTE: MIDI doesn't have anything analogous to this, we have to implement it manually by shifting all notes in the channel after this event)                                
@@ -1101,15 +1107,28 @@ public final class SMAFDecoder
                         return;
                     }
 
-                    int midiNoteNumber = 0;
-                    switch (octave) 
+                    int midiNoteNumber;
+                    if (usesMidiPercussionChannel(channel))
                     {
-                        case 0x00: midiNoteNumber = (byte) (36 + noteNumber); break; // Low
-                        case 0x01: midiNoteNumber = (byte) (48 + noteNumber); break; // Mid Low
-                        case 0x02: midiNoteNumber = (byte) (60 + noteNumber); break; // Mid High
-                        case 0x03: midiNoteNumber = (byte) (72 + noteNumber); break; // High
+                        // Handy Phone percussion selects the drum sound with
+                        // the current program number rather than the packed
+                        // note byte. This mirrors the reference SMAF routing
+                        // model more closely and avoids pitched instruments
+                        // showing up as the wrong percussion sound.
+                        midiNoteNumber = channelData[channel].program & 0x7F;
                     }
-                    midiNoteNumber += 12 * channelData[channel].octaveShift;
+                    else
+                    {
+                        midiNoteNumber = 0;
+                        switch (octave) 
+                        {
+                            case 0x00: midiNoteNumber = (byte) (36 + noteNumber); break; // Low
+                            case 0x01: midiNoteNumber = (byte) (48 + noteNumber); break; // Mid Low
+                            case 0x02: midiNoteNumber = (byte) (60 + noteNumber); break; // Mid High
+                            case 0x03: midiNoteNumber = (byte) (72 + noteNumber); break; // High
+                        }
+                        midiNoteNumber += 12 * channelData[channel].octaveShift;
+                    }
 
                     // Create MIDI note event
                     Mobile.log(Mobile.LOG_DEBUG, SMAFDecoder.class.getPackage().getName() + "." + SMAFDecoder.class.getSimpleName() + ": " + "Adding note event " + noteTypes[noteNumber] + (4+octave+channelData[channel].octaveShift) + "(" + noteNumber + ")" + " to channel " + channel);
@@ -1354,8 +1373,14 @@ public final class SMAFDecoder
 
                     if(eventType == (byte) 0x00) // Fine tune event (fine pitch bend)
                     {
-                        byte eventValue = (byte) (data[offset++] & 0xFF);
-                        Mobile.log(Mobile.LOG_WARNING, SMAFDecoder.class.getPackage().getName() + "." + SMAFDecoder.class.getSimpleName() + ": " + "Fine Tune event not implemented. Value:" + String.format("%02X", eventValue));
+                        int eventValue = data[offset++] & 0x7F;
+                        int pitchBend = encodeCentered7PitchBend(eventValue);
+                        byte pitchBendLSB = (byte) (pitchBend & 0x7F);
+                        byte pitchBendMSB = (byte) ((pitchBend >> 7) & 0x7F);
+                        Mobile.log(Mobile.LOG_DEBUG, SMAFDecoder.class.getPackage().getName() + "." + SMAFDecoder.class.getSimpleName() + ": " + "Adding fine tune value 0x" + String.format("%02X", eventValue) + "(" + eventValue + ") to channel " + channel);
+                        setChannelMessage(event, ShortMessage.PITCH_BEND, channel, pitchBendLSB, pitchBendMSB);
+                        midiEvent = new MidiEvent(event, totalDuration);
+                        track.add(midiEvent);
                     }
                     else if (eventType >= (byte) 0x01 && eventType <= (byte) 0x0E) // Short Expression event
                     {
@@ -1735,7 +1760,7 @@ public final class SMAFDecoder
 class ChannelData 
 {
     public boolean keyControlBasic, led, vibStatus, usingDrumBank;
-    public byte keyControl, channelType, octaveShift, velocity;
+    public byte keyControl, channelType, octaveShift, velocity, program;
 
     ChannelData() 
     {
@@ -1746,6 +1771,7 @@ class ChannelData
         octaveShift = 0;
         usingDrumBank = false;
         velocity = 64; // Default SMAF channel velocity is 64
+        program = 0;
     }
 }
 

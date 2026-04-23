@@ -114,6 +114,7 @@ public final class DisplaySurfaceState {
     public synchronized void drawIndexedPattern(
             int[] palette,
             byte[] pattern,
+            int paletteOffset,
             boolean transparent,
             boolean toFrameBuffer,
             int x,
@@ -131,11 +132,12 @@ public final class DisplaySurfaceState {
             for (int px = 0; px < 8; px++) {
                 var sampleX = rightsideLeft ? 7 - px : px;
                 var sampleY = upsideDown ? 7 - py : py;
-                var paletteIndex = pattern[sampleY * 8 + sampleX] & 0xFF;
-                if (transparent && paletteIndex == 0) {
+                var rawPaletteIndex = pattern[sampleY * 8 + sampleX] & 0xFF;
+                if (transparent && rawPaletteIndex == 0) {
                     continue;
                 }
-                var argb = resolvePaletteColor(palette, paletteIndex, transparent);
+                var paletteIndex = paletteOffset + rawPaletteIndex;
+                var argb = resolvePaletteColor(palette, paletteIndex, rawPaletteIndex, transparent);
                 if (((argb >>> 24) & 0xFF) == 0) {
                     continue;
                 }
@@ -198,7 +200,7 @@ public final class DisplaySurfaceState {
         }
     }
 
-    private static int resolvePaletteColor(int[] palette, int paletteIndex, boolean transparent) {
+    private static int resolvePaletteColor(int[] palette, int paletteIndex, int rawPaletteIndex, boolean transparent) {
         int color;
         if (palette != null && paletteIndex >= 0 && paletteIndex < palette.length) {
             color = palette[paletteIndex];
@@ -207,7 +209,7 @@ public final class DisplaySurfaceState {
             color = 0xFF000000 | (shade << 16) | (shade << 8) | shade;
         }
         if ((color >>> 24) == 0) {
-            if (transparent && paletteIndex == 0) {
+            if (transparent && rawPaletteIndex == 0) {
                 return 0;
             }
             color |= 0xFF000000;

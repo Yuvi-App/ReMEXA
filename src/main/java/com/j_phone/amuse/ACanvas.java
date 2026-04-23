@@ -1,6 +1,7 @@
 package com.j_phone.amuse;
 
 public abstract class ACanvas extends javax.microedition.lcdui.Canvas implements com.jblend.ui.SequenceInterface {
+    private static final int PALETTE_BANK_SIZE = 32;
     private static final java.util.Map<java.lang.Short, CharacterCommand> COMMANDS =
             java.util.Collections.synchronizedMap(new java.util.HashMap<>());
     private static short nextCommandId = 1;
@@ -90,9 +91,10 @@ public abstract class ACanvas extends javax.microedition.lcdui.Canvas implements
                 this,
                 palette,
                 requirePattern(resolved.patternNo),
+                resolved.offset * PALETTE_BANK_SIZE,
                 resolved.transparent,
                 true,
-                x + resolved.offset,
+                x,
                 y,
                 resolved.rotation,
                 resolved.upsideDown,
@@ -107,9 +109,10 @@ public abstract class ACanvas extends javax.microedition.lcdui.Canvas implements
                 this,
                 palette,
                 requirePattern(resolved.patternNo),
+                resolved.offset * PALETTE_BANK_SIZE,
                 resolved.transparent,
                 false,
-                (x * 8) + resolved.offset,
+                x * 8,
                 y * 8,
                 resolved.rotation,
                 resolved.upsideDown,
