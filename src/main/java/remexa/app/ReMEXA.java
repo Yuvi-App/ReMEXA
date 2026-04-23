@@ -35,8 +35,9 @@ public final class ReMEXA {
                     ReMEXA.class.getName(),
                     "JAD file does not exist: " + jadPath.toAbsolutePath()
             );
+            System.err.println("ReMEXA launch failed: JAD file does not exist: " + jadPath.toAbsolutePath());
             return;
         }
-        SwingUtilities.invokeLater(() -> new JadLauncher().launch(jadPath));
+        SwingUtilities.invokeLater(() -> new JadLauncher(true).launch(jadPath));
     }
 }

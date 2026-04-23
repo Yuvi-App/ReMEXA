@@ -13,6 +13,15 @@ import remexa.probes.LogCategory;
 public final class JadLauncher {
     private final RecentJadsRepository recentJads = new RecentJadsRepository();
     private final AppRuntime runtime = new AppRuntime();
+    private final boolean consoleLaunch;
+
+    public JadLauncher() {
+        this(false);
+    }
+
+    public JadLauncher(boolean consoleLaunch) {
+        this.consoleLaunch = consoleLaunch;
+    }
 
     public void launch(Path jadPath) {
         try {
@@ -21,12 +30,17 @@ public final class JadLauncher {
             openFrame(descriptor);
         } catch (Exception exception) {
             DebugLog.log(LogCategory.HOST, JadLauncher.class.getName(), "Launch failed: " + exception.getMessage());
-            JOptionPane.showMessageDialog(
-                    null,
-                    exception.getMessage(),
-                    "ReMEXA Launch Failed",
-                    JOptionPane.ERROR_MESSAGE
-            );
+            if (consoleLaunch) {
+                System.err.println("ReMEXA launch failed: " + exception.getMessage());
+                exception.printStackTrace(System.err);
+            } else {
+                JOptionPane.showMessageDialog(
+                        null,
+                        exception.getMessage(),
+                        "ReMEXA Launch Failed",
+                        JOptionPane.ERROR_MESSAGE
+                );
+            }
         }
     }
 
@@ -36,10 +50,19 @@ public final class JadLauncher {
 
     private void openFrame(JadDescriptor descriptor) throws LaunchException {
         var frame = new JadFrame(descriptor);
-        frame.showFrame();
-        frame.updateStatus("Loading " + descriptor.title());
-        var result = runtime.launch(descriptor);
-        frame.updateStatus("Loaded " + result.entryClass());
-        DebugLog.log(LogCategory.HOST, JadLauncher.class.getName(), "Loaded entry class: " + result.entryClass());
+        try {
+            frame.showFrame();
+            frame.updateStatus("Loading " + descriptor.title());
+            var result = runtime.launch(descriptor);
+            frame.updateStatus("Loaded " + result.entryClass());
+            DebugLog.log(LogCategory.HOST, JadLauncher.class.getName(), "Loaded entry class: " + result.entryClass());
+        } catch (LaunchException exception) {
+            if (consoleLaunch) {
+                frame.dispose();
+            } else {
+                frame.updateStatus("Launch failed");
+            }
+            throw exception;
+        }
     }
 }
