@@ -171,6 +171,26 @@ public final class LauncherFrame extends JFrame {
         }
         settingsMenu.add(fontMenu);
         settingsMenu.addSeparator();
+        var jskyPhoneMenu = new JMenu("JSKY Phone Type");
+        styleMenu(jskyPhoneMenu);
+        var jskyPhoneGroup = new ButtonGroup();
+        for (var phoneType : LaunchConfig.JskyPhoneType.values()) {
+            var phoneItem = new JRadioButtonMenuItem(phoneType.toString(), HostUiSettings.jskyPhoneType() == phoneType);
+            styleMenuItem(phoneItem);
+            jskyPhoneGroup.add(phoneItem);
+            phoneItem.addActionListener(event -> {
+                HostUiSettings.setJskyPhoneType(phoneType);
+                LaunchConfig.applyJskyPhoneType(phoneType);
+                DebugLog.log(
+                        LogCategory.FRONTEND,
+                        LauncherFrame.class.getName(),
+                        "JSKY phone type set to " + phoneType.platformName()
+                );
+            });
+            jskyPhoneMenu.add(phoneItem);
+        }
+        settingsMenu.add(jskyPhoneMenu);
+        settingsMenu.addSeparator();
         var debugMenu = new JMenu("Debug Categories");
         styleMenu(debugMenu);
         for (var category : LogCategory.values()) {

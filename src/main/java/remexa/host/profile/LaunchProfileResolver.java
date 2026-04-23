@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.regex.Pattern;
 import remexa.host.jad.JadDescriptor;
+import remexa.host.LaunchConfig;
 
 public final class LaunchProfileResolver {
     private static final List<String> DISPLAY_KEYS = List.of(
@@ -31,7 +32,7 @@ public final class LaunchProfileResolver {
     private static AppProfile resolveProfile(JadDescriptor descriptor) {
         var ocl = descriptor.property("MIDlet-OCL").orElse("");
         if (ocl.startsWith("JSCL-")) {
-            return AppProfile.jsky(ocl);
+            return AppProfile.jsky(ocl, LaunchConfig.JskyPhoneType.resolveConfigured());
         }
         return AppProfile.generic();
     }

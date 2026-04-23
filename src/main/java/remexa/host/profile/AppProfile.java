@@ -19,16 +19,17 @@ public record AppProfile(
         );
     }
 
-    public static AppProfile jsky(String oclVersion) {
+    public static AppProfile jsky(String oclVersion, remexa.host.LaunchConfig.JskyPhoneType phoneType) {
         var normalizedVersion = oclVersion == null || oclVersion.isBlank() ? "JSCL" : oclVersion;
+        var resolvedPhoneType = phoneType == null ? remexa.host.LaunchConfig.JskyPhoneType.GENERIC : phoneType;
         return new AppProfile(
-                "jsky-" + normalizedVersion.toLowerCase(),
-                "JSKY / " + normalizedVersion,
+                "jsky-" + normalizedVersion.toLowerCase() + "-" + resolvedPhoneType.id(),
+                "JSKY / " + normalizedVersion + " / " + resolvedPhoneType.platformName(),
                 new DisplayMetrics(120, 128, "JSKY fallback"),
                 com.j_phone.system.DeviceControl.STYLE_PORTRAIT,
                 Map.ofEntries(
-                        Map.entry("Platform", "JSKY-Generic"),
-                        Map.entry("microedition.platform", "JSKY-Generic"),
+                        Map.entry("Platform", resolvedPhoneType.platformName()),
+                        Map.entry("microedition.platform", resolvedPhoneType.platformName()),
                         Map.entry("jscl.system.display.colordepth", "565"),
                         Map.entry("jscl.supports.subdisplay", "false"),
                         Map.entry("jscl.supports.subdisplay.dualdraw", "false"),
