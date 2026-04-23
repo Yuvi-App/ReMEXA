@@ -3,6 +3,7 @@ package remexa.host.runtime;
 import java.lang.reflect.InvocationTargetException;
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.util.function.Consumer;
 import remexa.host.jad.JadDescriptor;
 import remexa.host.profile.DisplayMetrics;
 import remexa.host.profile.LaunchProfile;
@@ -10,7 +11,6 @@ import remexa.probes.DebugLog;
 import remexa.probes.LogCategory;
 import javax.microedition.midlet.MIDlet;
 import javax.microedition.midlet.MIDletStateChangeException;
-import java.util.function.Consumer;
 
 public final class AppRuntime {
     public LaunchResult launch(
@@ -35,7 +35,7 @@ public final class AppRuntime {
         );
 
         try {
-            var classLoader = new URLClassLoader(new URL[]{jarPath.toUri().toURL()}, getClass().getClassLoader());
+            var classLoader = new LegacyJarClassLoader(jarPath.toUri().toURL(), getClass().getClassLoader());
             var appClass = classLoader.loadClass(entryClass);
             Object instance;
             MIDlet midlet = null;
@@ -78,6 +78,8 @@ public final class AppRuntime {
                     throw new LaunchException("MIDlet refused to start.", stateChangeException);
             }
             throw new LaunchException("App constructor threw an exception.", exception.getTargetException());
+        } catch (LinkageError exception) {
+            throw new LaunchException("App class verification failed.", exception);
         } catch (ReflectiveOperationException | java.io.IOException exception) {
             throw new LaunchException("Failed to launch app.", exception);
         }

@@ -57,6 +57,10 @@ public class Image {
         return awtImage.getHeight();
     }
 
+    public Graphics getGraphics() {
+        return new Graphics(awtImage.createGraphics(), getWidth(), getHeight());
+    }
+
     BufferedImage awtImage() {
         return awtImage;
     }
