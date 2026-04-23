@@ -115,6 +115,26 @@ public class Graphics {
         font.drawString(delegate, text, drawX, drawY, argbColor);
     }
 
+    public void drawChar(char character, int x, int y, int anchor) {
+        drawString(String.valueOf(character), x, y, anchor);
+    }
+
+    public void drawChars(char[] data, int offset, int length, int x, int y, int anchor) {
+        if (data == null || length <= 0) {
+            return;
+        }
+        drawString(new String(data, offset, length), x, y, anchor);
+    }
+
+    public void drawSubstring(String string, int offset, int len, int x, int y, int anchor) {
+        if (string == null || len <= 0 || offset >= string.length()) {
+            return;
+        }
+        int safeOffset = Math.max(0, offset);
+        int safeEnd = Math.min(string.length(), safeOffset + Math.max(0, len));
+        drawString(string.substring(safeOffset, safeEnd), x, y, anchor);
+    }
+
     public void drawImage(Image image, int x, int y, int anchor) {
         if (image == null) {
             return;

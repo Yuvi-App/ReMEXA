@@ -23,17 +23,21 @@ public final class Display {
     }
 
     public void setCurrent(Displayable next) {
+        var previous = current;
         current = next;
         MidletRuntime.bindDisplayable(midlet, next);
         MidletRuntime.setCurrentDisplayable(midlet, next);
+        deactivateDisplayable(previous, next);
         initializeDisplayable(next);
         SdkStubSupport.log(Display.class.getName(), "setCurrent", midlet, next == null ? null : next.getTitle());
     }
 
     public void setCurrent(Alert alert, Displayable next) {
+        var previous = current;
         current = next;
         MidletRuntime.bindDisplayable(midlet, next);
         MidletRuntime.setCurrentDisplayable(midlet, next);
+        deactivateDisplayable(previous, next);
         initializeDisplayable(next);
         SdkStubSupport.log(Display.class.getName(), "setCurrent", alert, next);
     }
@@ -53,10 +57,21 @@ public final class Display {
     private static void initializeDisplayable(Displayable displayable) {
         if (displayable instanceof com.j_phone.amuse.ACanvas aCanvas) {
             aCanvas.attachHostGraphics();
+            ((Canvas) aCanvas).fireShowNotify();
             return;
         }
         if (displayable instanceof Canvas canvas) {
+            canvas.fireShowNotify();
             canvas.repaint();
+        }
+    }
+
+    private static void deactivateDisplayable(Displayable previous, Displayable next) {
+        if (previous == next) {
+            return;
+        }
+        if (previous instanceof Canvas canvas) {
+            canvas.fireHideNotify();
         }
     }
 }

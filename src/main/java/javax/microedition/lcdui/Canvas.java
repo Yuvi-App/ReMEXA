@@ -23,6 +23,7 @@ public abstract class Canvas extends Displayable {
     public static final int SOFT2 = -7;
     public static final int SOFT3 = -8;
     private final Set<Integer> pressedKeys = new HashSet<>();
+    private boolean shown;
 
     protected abstract void paint(Graphics graphics);
 
@@ -35,12 +36,53 @@ public abstract class Canvas extends Displayable {
     protected void keyRepeated(int keyCode) {
     }
 
+    protected void pointerPressed(int x, int y) {
+    }
+
+    protected void pointerReleased(int x, int y) {
+    }
+
+    protected void pointerDragged(int x, int y) {
+    }
+
+    protected void showNotify() {
+    }
+
+    protected void hideNotify() {
+    }
+
+    protected void sizeChanged(int width, int height) {
+    }
+
     public int getWidth() {
         return MidletRuntime.getDisplayMetrics(this).width();
     }
 
     public int getHeight() {
         return MidletRuntime.getDisplayMetrics(this).height();
+    }
+
+    public boolean hasPointerEvents() {
+        return false;
+    }
+
+    public boolean hasPointerMotionEvents() {
+        return false;
+    }
+
+    public boolean hasRepeatEvents() {
+        return true;
+    }
+
+    public boolean isDoubleBuffered() {
+        return true;
+    }
+
+    public boolean isShown() {
+        return shown;
+    }
+
+    public void setFullScreenMode(boolean mode) {
     }
 
     public void repaint() {
@@ -183,6 +225,22 @@ public abstract class Canvas extends Displayable {
             state |= 0x0001;
         }
         return state;
+    }
+
+    final void fireShowNotify() {
+        if (shown) {
+            return;
+        }
+        shown = true;
+        showNotify();
+    }
+
+    final void fireHideNotify() {
+        if (!shown) {
+            return;
+        }
+        shown = false;
+        hideNotify();
     }
 
     private boolean containsAnyKey(int... keyCodes) {

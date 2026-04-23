@@ -1,8 +1,11 @@
 package remexa.host.runtime;
 
+import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.util.Optional;
+import java.util.jar.JarFile;
 import java.util.function.Consumer;
 import remexa.host.jad.JadDescriptor;
 import remexa.host.profile.DisplayMetrics;
@@ -20,7 +23,11 @@ public final class AppRuntime {
     ) throws LaunchException {
         var jarPath = descriptor.resolveJarPath()
                 .orElseThrow(() -> new LaunchException("No JAR path was found in the JAD."));
-        var entryClass = descriptor.entryClassName()
+        var entryClass = descriptor.entryClassName();
+        if (entryClass.isEmpty()) {
+            entryClass = entryClassFromJarManifest(jarPath);
+        }
+        var resolvedEntryClass = entryClass
                 .orElseThrow(() -> new LaunchException("No entry class was found in the JAD."));
 
         if (!jarPath.toFile().exists()) {
@@ -36,7 +43,7 @@ public final class AppRuntime {
 
         try {
             var classLoader = new LegacyJarClassLoader(jarPath.toUri().toURL(), getClass().getClassLoader());
-            var appClass = classLoader.loadClass(entryClass);
+            var appClass = classLoader.loadClass(resolvedEntryClass);
             Object instance;
             MIDlet midlet = null;
             SystemPropertyProfile.apply(launchProfile.profile());
@@ -72,7 +79,7 @@ public final class AppRuntime {
                 }
             }
 
-            return new LaunchResult(descriptor, launchProfile, jarPath.toAbsolutePath().toString(), entryClass, classLoader, instance, midlet);
+            return new LaunchResult(descriptor, launchProfile, jarPath.toAbsolutePath().toString(), resolvedEntryClass, classLoader, instance, midlet);
         } catch (InvocationTargetException exception) {
             if (exception.getTargetException() instanceof MIDletStateChangeException stateChangeException) {
                     throw new LaunchException("MIDlet refused to start.", stateChangeException);
@@ -229,6 +236,48 @@ public final class AppRuntime {
                     "Failed to dispose phrase player during shutdown: " + exception.getMessage()
             );
         }
+    }
+
+    private Optional<String> entryClassFromJarManifest(java.nio.file.Path jarPath) throws LaunchException {
+        try (var jarFile = new JarFile(jarPath.toFile())) {
+            var manifest = jarFile.getManifest();
+            if (manifest == null) {
+                return Optional.empty();
+            }
+            var attributes = manifest.getMainAttributes();
+            var manifestMidlet = firstPresentAttribute(attributes, "MIDlet-1", "MIDlet-2", "MIDlet-3", "MIDlet-4");
+            if (manifestMidlet.isPresent()) {
+                var parsed = parseMidletClassName(manifestMidlet.get());
+                if (parsed.isPresent()) {
+                    return parsed;
+                }
+            }
+            return firstPresentAttribute(attributes, "AppClass", "KVM-Class-Name", "Main-Class");
+        } catch (IOException exception) {
+            throw new LaunchException("Failed to read JAR manifest.", exception);
+        }
+    }
+
+    private static Optional<String> firstPresentAttribute(
+            java.util.jar.Attributes attributes,
+            String... keys
+    ) {
+        for (var key : keys) {
+            var value = attributes.getValue(key);
+            if (value != null && !value.isBlank()) {
+                return Optional.of(value.trim());
+            }
+        }
+        return Optional.empty();
+    }
+
+    private static Optional<String> parseMidletClassName(String manifestMidlet) {
+        var parts = manifestMidlet.split(",");
+        if (parts.length == 0) {
+            return Optional.empty();
+        }
+        var className = parts[parts.length - 1].trim();
+        return className.isEmpty() ? Optional.empty() : Optional.of(className);
     }
 
     private void invokeLifecycle(MIDlet midlet, String methodName, Object... arguments) {

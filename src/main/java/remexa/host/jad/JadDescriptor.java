@@ -1,5 +1,7 @@
 package remexa.host.jad;
 
+import java.net.URI;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -35,7 +37,7 @@ public record JadDescriptor(
         var configuredJar = property("MIDlet-Jar-URL")
                 .or(() -> property("Jar-URL"))
                 .or(() -> property("AppJar"))
-                .map(value -> sourcePath.getParent().resolve(value).normalize());
+                .flatMap(this::configuredJarPath);
         if (configuredJar.isPresent() && java.nio.file.Files.exists(configuredJar.get())) {
             return configuredJar;
         }
@@ -46,6 +48,79 @@ public record JadDescriptor(
         }
 
         return configuredJar.isPresent() ? configuredJar : siblingFallback;
+    }
+
+    private Optional<Path> configuredJarPath(String rawValue) {
+        if (rawValue == null) {
+            return Optional.empty();
+        }
+
+        var trimmed = rawValue.trim();
+        if (trimmed.isEmpty()) {
+            return Optional.empty();
+        }
+
+        var uriCandidate = toUri(trimmed);
+        if (uriCandidate.isPresent() && uriCandidate.get().isAbsolute()) {
+            var uri = uriCandidate.get();
+            if ("file".equalsIgnoreCase(uri.getScheme())) {
+                try {
+                    return Optional.of(Path.of(uri).normalize());
+                } catch (IllegalArgumentException exception) {
+                    return Optional.empty();
+                }
+            }
+
+            var fileName = fileNameFromUri(uri);
+            if (fileName.isEmpty()) {
+                return Optional.empty();
+            }
+            return resolveAgainstSourceParent(fileName);
+        }
+
+        try {
+            var directPath = Path.of(trimmed);
+            if (directPath.isAbsolute()) {
+                return Optional.of(directPath.normalize());
+            }
+        } catch (InvalidPathException ignored) {
+            return Optional.empty();
+        }
+
+        return resolveAgainstSourceParent(trimmed);
+    }
+
+    private Optional<Path> resolveAgainstSourceParent(String fileName) {
+        var parent = sourcePath.getParent();
+        if (parent == null) {
+            try {
+                return Optional.of(Path.of(fileName).normalize());
+            } catch (InvalidPathException exception) {
+                return Optional.empty();
+            }
+        }
+        try {
+            return Optional.of(parent.resolve(fileName).normalize());
+        } catch (InvalidPathException exception) {
+            return Optional.empty();
+        }
+    }
+
+    private static Optional<URI> toUri(String rawValue) {
+        try {
+            return Optional.of(URI.create(rawValue));
+        } catch (IllegalArgumentException exception) {
+            return Optional.empty();
+        }
+    }
+
+    private static String fileNameFromUri(URI uri) {
+        var path = uri.getPath();
+        if (path == null || path.isBlank()) {
+            return "";
+        }
+        var separator = path.lastIndexOf('/');
+        return separator >= 0 ? path.substring(separator + 1) : path;
     }
 
     private Optional<Path> siblingJarPath() {

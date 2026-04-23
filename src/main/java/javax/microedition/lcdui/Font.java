@@ -123,6 +123,11 @@ public final class Font {
         if (value == null || value.isEmpty()) {
             return "";
         }
-        return value.replace("\r", "");
+        return value
+                .replace("\r", "")
+                .replace('\ue232', '\u25b2')
+                .replace('\ue233', '\u25bc')
+                .replace('\ue23a', '\u25b6')
+                .replace('\ue23b', '\u25c0');
     }
 }
