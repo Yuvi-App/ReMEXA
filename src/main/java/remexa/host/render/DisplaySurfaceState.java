@@ -8,6 +8,8 @@ import remexa.host.jblend.CanvasGraphics3D;
 import remexa.host.profile.DisplayMetrics;
 
 public final class DisplaySurfaceState {
+    private static final int SPRITE_SCRATCH_ROWS = 8;
+
     private DisplayMetrics displayMetrics;
     private BufferedImage displayImage;
     private BufferedImage virtualImage;
@@ -18,7 +20,7 @@ public final class DisplaySurfaceState {
     public DisplaySurfaceState(DisplayMetrics displayMetrics) {
         this.displayMetrics = displayMetrics;
         this.displayImage = createSurface(displayMetrics.width(), displayMetrics.height());
-        this.virtualImage = createSurface(displayMetrics.width(), displayMetrics.height());
+        this.virtualImage = createVirtualSurface();
     }
 
     public synchronized DisplayMetrics displayMetrics() {
@@ -29,7 +31,7 @@ public final class DisplaySurfaceState {
         disposeCanvasGraphics();
         displayMetrics = nextDisplayMetrics;
         displayImage = createSurface(nextDisplayMetrics.width(), nextDisplayMetrics.height());
-        virtualImage = createSurface(nextDisplayMetrics.width(), nextDisplayMetrics.height());
+        virtualImage = createVirtualSurface();
     }
 
     public synchronized javax.microedition.lcdui.Graphics beginCanvasPaint(boolean spriteCanvas) {
@@ -49,6 +51,7 @@ public final class DisplaySurfaceState {
 
     public synchronized void createFrameBuffer(int width, int height) {
         frameBuffer = createSurface(width, height);
+        ensureVirtualSurface();
     }
 
     public synchronized void disposeFrameBuffer() {
@@ -180,8 +183,8 @@ public final class DisplaySurfaceState {
     private void ensureVirtualSurface() {
         if (virtualImage == null
                 || virtualImage.getWidth() != displayMetrics.width()
-                || virtualImage.getHeight() != displayMetrics.height()) {
-            virtualImage = createSurface(displayMetrics.width(), displayMetrics.height());
+                || virtualImage.getHeight() != virtualSurfaceHeight()) {
+            virtualImage = createVirtualSurface();
         }
     }
 
@@ -220,6 +223,14 @@ public final class DisplaySurfaceState {
             frameBuffer = createSurface(displayMetrics.width(), displayMetrics.height());
         }
         return frameBuffer;
+    }
+
+    private BufferedImage createVirtualSurface() {
+        return createSurface(displayMetrics.width(), virtualSurfaceHeight());
+    }
+
+    private int virtualSurfaceHeight() {
+        return displayMetrics.height() + (frameBuffer == null ? 0 : SPRITE_SCRATCH_ROWS);
     }
 
     private static BufferedImage createSurface(int width, int height) {
