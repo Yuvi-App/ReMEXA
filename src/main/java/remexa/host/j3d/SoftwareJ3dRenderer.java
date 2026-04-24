@@ -3,7 +3,9 @@ package remexa.host.j3d;
 import com.jblend.graphics.j3d.AffineTrans;
 import com.jblend.graphics.j3d.Effect3D;
 import com.jblend.graphics.j3d.Texture;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import javax.microedition.lcdui.Graphics;
 
 public final class SoftwareJ3dRenderer {
@@ -24,8 +26,11 @@ public final class SoftwareJ3dRenderer {
             int clipHeight,
             int screenCenterX,
             int screenCenterY,
-            int screenScaleX,
-            int screenScaleY,
+            float projectionScaleX,
+            float projectionScaleY,
+            boolean perspective,
+            int nearClip,
+            int farClip,
             AffineTrans affineTrans,
             MascotFigure figure,
             Texture fallbackTexture,
@@ -37,14 +42,65 @@ public final class SoftwareJ3dRenderer {
         int[] pixels = new int[surfaceWidth * surfaceHeight];
         float[] depthBuffer = new float[pixels.length];
         Arrays.fill(depthBuffer, Float.NEGATIVE_INFINITY);
+        renderFigureToBuffers(
+                pixels,
+                depthBuffer,
+                surfaceWidth,
+                surfaceHeight,
+                clipX,
+                clipY,
+                clipWidth,
+                clipHeight,
+                screenCenterX,
+                screenCenterY,
+                projectionScaleX,
+                projectionScaleY,
+                perspective,
+                nearClip,
+                farClip,
+                affineTrans,
+                figure,
+                fallbackTexture,
+                effect
+        );
+        graphics.drawRGB(pixels, 0, surfaceWidth, 0, 0, surfaceWidth, surfaceHeight, true);
+    }
 
+    public static void renderFigureToBuffers(
+            int[] pixels,
+            float[] depthBuffer,
+            int surfaceWidth,
+            int surfaceHeight,
+            int clipX,
+            int clipY,
+            int clipWidth,
+            int clipHeight,
+            int screenCenterX,
+            int screenCenterY,
+            float projectionScaleX,
+            float projectionScaleY,
+            boolean perspective,
+            int nearClip,
+            int farClip,
+            AffineTrans affineTrans,
+            MascotFigure figure,
+            Texture fallbackTexture,
+            Effect3D effect
+    ) {
+        if (pixels == null || depthBuffer == null || figure == null || figure.model() == null) {
+            return;
+        }
+        if (pixels.length < surfaceWidth * surfaceHeight || depthBuffer.length < surfaceWidth * surfaceHeight) {
+            throw new IllegalArgumentException("Scene buffers are smaller than the target surface.");
+        }
         float[] posedVertices = figure.vertices();
         int vertexCount = posedVertices.length / 3;
+        float[] viewX = new float[vertexCount];
+        float[] viewY = new float[vertexCount];
+        float[] viewZ = new float[vertexCount];
         float[] screenX = new float[vertexCount];
         float[] screenY = new float[vertexCount];
         float[] depth = new float[vertexCount];
-        float scaleX = screenScaleX / 4096.0f;
-        float scaleY = screenScaleY / 4096.0f;
         Texture sphereMap = effect == null ? null : effect.getSphereMap();
         for (int i = 0; i < vertexCount; i++) {
             int source = i * 3;
@@ -59,11 +115,20 @@ public final class SoftwareJ3dRenderer {
                 ty = transformY(affineTrans, x, y, z);
                 tz = transformZ(affineTrans, x, y, z);
             }
-            // MEXA Canvas3D screen-scale behaves like an orthographic view-space scale,
-            // not a perspective focal-length divide.
-            screenX[i] = screenCenterX + (tx * scaleX);
-            screenY[i] = screenCenterY - (ty * scaleY);
-            depth[i] = -tz;
+            viewX[i] = tx;
+            viewY[i] = ty;
+            viewZ[i] = tz;
+            if (perspective) {
+                screenX[i] = Float.NaN;
+                screenY[i] = Float.NaN;
+                depth[i] = Float.NEGATIVE_INFINITY;
+            } else {
+                // MEXA Canvas3D screen-scale behaves like an orthographic view-space scale,
+                // not a perspective focal-length divide.
+                screenX[i] = screenCenterX + (tx * projectionScaleX);
+                screenY[i] = screenCenterY - (ty * projectionScaleY);
+                depth[i] = -tz;
+            }
         }
 
         for (MbacModel.Polygon polygon : figure.model().polygons()) {
@@ -82,7 +147,33 @@ public final class SoftwareJ3dRenderer {
             int polygonBlendMode = effect != null && !effect.isSemiTransparentEnabled()
                     ? 0
                     : polygon.blendMode();
-            if (indices.length == 3) {
+            if (perspective) {
+                rasterizePerspectivePolygon(
+                        pixels,
+                        depthBuffer,
+                        surfaceWidth,
+                        surfaceHeight,
+                        clipX,
+                        clipY,
+                        clipWidth,
+                        clipHeight,
+                        screenCenterX,
+                        screenCenterY,
+                        projectionScaleX,
+                        projectionScaleY,
+                        nearClip,
+                        farClip,
+                        polygon,
+                        polygonBlendMode,
+                        polygonTexture,
+                        sphereMap,
+                        viewX,
+                        viewY,
+                        viewZ,
+                        indices,
+                        polygon.textureCoords()
+                );
+            } else if (indices.length == 3) {
                 rasterizeTriangle(
                         pixels,
                         depthBuffer,
@@ -103,45 +194,336 @@ public final class SoftwareJ3dRenderer {
                 );
             } else if (indices.length == 4) {
                 float[] uv = polygon.textureCoords();
-                rasterizeTriangle(
-                        pixels,
-                        depthBuffer,
-                        surfaceWidth,
-                        surfaceHeight,
-                        clipX,
-                        clipY,
-                        clipWidth,
-                        clipHeight,
-                        polygon,
-                        polygonBlendMode,
-                        polygonTexture,
-                        sphereMap,
-                        screenX, screenY, depth,
-                        indices[0], indices[1], indices[3],
-                        uv,
-                        0, 2, 6
+                boolean stripOrderedQuad = isSelfIntersectingQuad(
+                        screenX[indices[0]], screenY[indices[0]],
+                        screenX[indices[1]], screenY[indices[1]],
+                        screenX[indices[2]], screenY[indices[2]],
+                        screenX[indices[3]], screenY[indices[3]]
                 );
-                rasterizeTriangle(
-                        pixels,
-                        depthBuffer,
-                        surfaceWidth,
-                        surfaceHeight,
-                        clipX,
-                        clipY,
-                        clipWidth,
-                        clipHeight,
-                        polygon,
-                        polygonBlendMode,
-                        polygonTexture,
-                        sphereMap,
-                        screenX, screenY, depth,
-                        indices[0], indices[3], indices[2],
-                        uv,
-                        0, 6, 4
-                );
+                if (stripOrderedQuad) {
+                    rasterizeTriangle(
+                            pixels,
+                            depthBuffer,
+                            surfaceWidth,
+                            surfaceHeight,
+                            clipX,
+                            clipY,
+                            clipWidth,
+                            clipHeight,
+                            polygon,
+                            polygonBlendMode,
+                            polygonTexture,
+                            sphereMap,
+                            screenX, screenY, depth,
+                            indices[0], indices[1], indices[2],
+                            uv,
+                            0, 2, 4
+                    );
+                    rasterizeTriangle(
+                            pixels,
+                            depthBuffer,
+                            surfaceWidth,
+                            surfaceHeight,
+                            clipX,
+                            clipY,
+                            clipWidth,
+                            clipHeight,
+                            polygon,
+                            polygonBlendMode,
+                            polygonTexture,
+                            sphereMap,
+                            screenX, screenY, depth,
+                            indices[1], indices[3], indices[2],
+                            uv,
+                            2, 6, 4
+                    );
+                } else {
+                    rasterizeTriangle(
+                            pixels,
+                            depthBuffer,
+                            surfaceWidth,
+                            surfaceHeight,
+                            clipX,
+                            clipY,
+                            clipWidth,
+                            clipHeight,
+                            polygon,
+                            polygonBlendMode,
+                            polygonTexture,
+                            sphereMap,
+                            screenX, screenY, depth,
+                            indices[0], indices[1], indices[2],
+                            uv,
+                            0, 2, 4
+                    );
+                    rasterizeTriangle(
+                            pixels,
+                            depthBuffer,
+                            surfaceWidth,
+                            surfaceHeight,
+                            clipX,
+                            clipY,
+                            clipWidth,
+                            clipHeight,
+                            polygon,
+                            polygonBlendMode,
+                            polygonTexture,
+                            sphereMap,
+                            screenX, screenY, depth,
+                            indices[0], indices[2], indices[3],
+                            uv,
+                            0, 4, 6
+                    );
+                }
             }
         }
-        graphics.drawRGB(pixels, 0, surfaceWidth, 0, 0, surfaceWidth, surfaceHeight, true);
+    }
+
+    private static void rasterizePerspectivePolygon(
+            int[] pixels,
+            float[] depthBuffer,
+            int surfaceWidth,
+            int surfaceHeight,
+            int clipX,
+            int clipY,
+            int clipWidth,
+            int clipHeight,
+            int screenCenterX,
+            int screenCenterY,
+            float projectionScaleX,
+            float projectionScaleY,
+            int nearClip,
+            int farClip,
+            MbacModel.Polygon polygon,
+            int polygonBlendMode,
+            Texture texture,
+            Texture sphereMap,
+            float[] viewX,
+            float[] viewY,
+            float[] viewZ,
+            int[] indices,
+            float[] uv
+    ) {
+        List<PolygonVertex> vertices = new ArrayList<>(indices.length);
+        for (int i = 0; i < indices.length; i++) {
+            int vertexIndex = indices[i];
+            float u = uv == null ? 0.0f : uv[i * 2];
+            float v = uv == null ? 0.0f : uv[i * 2 + 1];
+            vertices.add(new PolygonVertex(
+                    viewX[vertexIndex],
+                    viewY[vertexIndex],
+                    viewZ[vertexIndex],
+                    u,
+                    v
+            ));
+        }
+        if (vertices.size() == 3) {
+            rasterizePerspectiveTriangle(
+                    pixels,
+                    depthBuffer,
+                    surfaceWidth,
+                    surfaceHeight,
+                    clipX,
+                    clipY,
+                    clipWidth,
+                    clipHeight,
+                    screenCenterX,
+                    screenCenterY,
+                    projectionScaleX,
+                    projectionScaleY,
+                    nearClip,
+                    farClip,
+                    polygon,
+                    polygonBlendMode,
+                    texture,
+                    sphereMap,
+                    vertices.get(0),
+                    vertices.get(1),
+                    vertices.get(2),
+                    uv != null
+            );
+            return;
+        }
+        if (vertices.size() == 4) {
+            boolean stripOrderedQuad = isStripOrderedQuad(vertices, uv, screenCenterX, screenCenterY, projectionScaleX, projectionScaleY);
+            if (stripOrderedQuad) {
+                rasterizePerspectiveTriangle(
+                        pixels, depthBuffer, surfaceWidth, surfaceHeight, clipX, clipY, clipWidth, clipHeight,
+                        screenCenterX, screenCenterY, projectionScaleX, projectionScaleY, nearClip, farClip,
+                        polygon, polygonBlendMode, texture, sphereMap,
+                        vertices.get(0), vertices.get(1), vertices.get(2), uv != null
+                );
+                rasterizePerspectiveTriangle(
+                        pixels, depthBuffer, surfaceWidth, surfaceHeight, clipX, clipY, clipWidth, clipHeight,
+                        screenCenterX, screenCenterY, projectionScaleX, projectionScaleY, nearClip, farClip,
+                        polygon, polygonBlendMode, texture, sphereMap,
+                        vertices.get(1), vertices.get(3), vertices.get(2), uv != null
+                );
+            } else {
+                rasterizePerspectiveTriangle(
+                        pixels, depthBuffer, surfaceWidth, surfaceHeight, clipX, clipY, clipWidth, clipHeight,
+                        screenCenterX, screenCenterY, projectionScaleX, projectionScaleY, nearClip, farClip,
+                        polygon, polygonBlendMode, texture, sphereMap,
+                        vertices.get(0), vertices.get(1), vertices.get(2), uv != null
+                );
+                rasterizePerspectiveTriangle(
+                        pixels, depthBuffer, surfaceWidth, surfaceHeight, clipX, clipY, clipWidth, clipHeight,
+                        screenCenterX, screenCenterY, projectionScaleX, projectionScaleY, nearClip, farClip,
+                        polygon, polygonBlendMode, texture, sphereMap,
+                        vertices.get(0), vertices.get(2), vertices.get(3), uv != null
+                );
+            }
+            return;
+        }
+        List<PolygonVertex> clipped = clipPerspectivePolygon(vertices, nearClip, farClip);
+        if (clipped.size() < 3) {
+            return;
+        }
+        List<ProjectedVertex> projected = projectPolygon(clipped, screenCenterX, screenCenterY, projectionScaleX, projectionScaleY);
+        if (projected.size() < 3) {
+            return;
+        }
+        ProjectedVertex first = projected.get(0);
+        for (int i = 1; i < projected.size() - 1; i++) {
+            rasterizeTriangleProjected(
+                    pixels,
+                    depthBuffer,
+                    surfaceWidth,
+                    surfaceHeight,
+                    clipX,
+                    clipY,
+                    clipWidth,
+                    clipHeight,
+                    polygon,
+                    polygonBlendMode,
+                    texture,
+                    sphereMap,
+                    first,
+                    projected.get(i),
+                    projected.get(i + 1),
+                    uv != null
+            );
+        }
+    }
+
+    private static void rasterizePerspectiveTriangle(
+            int[] pixels,
+            float[] depthBuffer,
+            int surfaceWidth,
+            int surfaceHeight,
+            int clipX,
+            int clipY,
+            int clipWidth,
+            int clipHeight,
+            int screenCenterX,
+            int screenCenterY,
+            float projectionScaleX,
+            float projectionScaleY,
+            int nearClip,
+            int farClip,
+            MbacModel.Polygon polygon,
+            int polygonBlendMode,
+            Texture texture,
+            Texture sphereMap,
+            PolygonVertex v0,
+            PolygonVertex v1,
+            PolygonVertex v2,
+            boolean textured
+    ) {
+        List<PolygonVertex> clipped = new ArrayList<>(3);
+        clipped.add(v0);
+        clipped.add(v1);
+        clipped.add(v2);
+        clipped = clipPerspectivePolygon(clipped, nearClip, farClip);
+        if (clipped.size() < 3) {
+            return;
+        }
+        List<ProjectedVertex> projected = projectPolygon(clipped, screenCenterX, screenCenterY, projectionScaleX, projectionScaleY);
+        if (projected.size() < 3) {
+            return;
+        }
+        ProjectedVertex first = projected.get(0);
+        for (int i = 1; i < projected.size() - 1; i++) {
+            rasterizeTriangleProjected(
+                    pixels,
+                    depthBuffer,
+                    surfaceWidth,
+                    surfaceHeight,
+                    clipX,
+                    clipY,
+                    clipWidth,
+                    clipHeight,
+                    polygon,
+                    polygonBlendMode,
+                    texture,
+                    sphereMap,
+                    first,
+                    projected.get(i),
+                    projected.get(i + 1),
+                    textured
+            );
+        }
+    }
+
+    private static List<PolygonVertex> clipPerspectivePolygon(List<PolygonVertex> vertices, int nearClip, int farClip) {
+        List<PolygonVertex> clipped = vertices;
+        clipped = clipAgainstNearPlane(clipped, Math.max(DEPTH_EPSILON, nearClip > 0 ? nearClip : DEPTH_EPSILON));
+        if (clipped.size() < 3) {
+            return clipped;
+        }
+        if (farClip > 0) {
+            clipped = clipAgainstFarPlane(clipped, farClip);
+        }
+        return clipped;
+    }
+
+    private static List<ProjectedVertex> projectPolygon(
+            List<PolygonVertex> vertices,
+            int screenCenterX,
+            int screenCenterY,
+            float projectionScaleX,
+            float projectionScaleY
+    ) {
+        List<ProjectedVertex> projected = new ArrayList<>(vertices.size());
+        for (PolygonVertex vertex : vertices) {
+            ProjectedVertex projectedVertex = projectVertex(vertex, screenCenterX, screenCenterY, projectionScaleX, projectionScaleY);
+            if (projectedVertex == null) {
+                return List.of();
+            }
+            projected.add(projectedVertex);
+        }
+        return projected;
+    }
+
+    private static boolean isStripOrderedQuad(
+            List<PolygonVertex> vertices,
+            float[] uv,
+            int screenCenterX,
+            int screenCenterY,
+            float projectionScaleX,
+            float projectionScaleY
+    ) {
+        if (uv != null && uv.length >= 8 && isSelfIntersectingQuad(
+                uv[0], uv[1],
+                uv[2], uv[3],
+                uv[4], uv[5],
+                uv[6], uv[7]
+        )) {
+            return true;
+        }
+        ProjectedVertex p0 = projectVertex(vertices.get(0), screenCenterX, screenCenterY, projectionScaleX, projectionScaleY);
+        ProjectedVertex p1 = projectVertex(vertices.get(1), screenCenterX, screenCenterY, projectionScaleX, projectionScaleY);
+        ProjectedVertex p2 = projectVertex(vertices.get(2), screenCenterX, screenCenterY, projectionScaleX, projectionScaleY);
+        ProjectedVertex p3 = projectVertex(vertices.get(3), screenCenterX, screenCenterY, projectionScaleX, projectionScaleY);
+        if (p0 == null || p1 == null || p2 == null || p3 == null) {
+            return false;
+        }
+        return isSelfIntersectingQuad(
+                p0.screenX(), p0.screenY(),
+                p1.screenX(), p1.screenY(),
+                p2.screenX(), p2.screenY(),
+                p3.screenX(), p3.screenY()
+        );
     }
 
     private static void rasterizeTriangle(
@@ -168,15 +550,58 @@ public final class SoftwareJ3dRenderer {
             int uv1,
             int uv2
     ) {
-        float x0 = screenX[i0];
-        float y0 = screenY[i0];
-        float z0 = depth[i0];
-        float x1 = screenX[i1];
-        float y1 = screenY[i1];
-        float z1 = depth[i1];
-        float x2 = screenX[i2];
-        float y2 = screenY[i2];
-        float z2 = depth[i2];
+        rasterizeTriangleProjected(
+                pixels,
+                depthBuffer,
+                surfaceWidth,
+                surfaceHeight,
+                clipX,
+                clipY,
+                clipWidth,
+                clipHeight,
+                polygon,
+                polygonBlendMode,
+                texture,
+                sphereMap,
+                new ProjectedVertex(screenX[i0], screenY[i0], depth[i0], 0.0f, uv == null ? 0.0f : uv[uv0], uv == null ? 0.0f : uv[uv0 + 1]),
+                new ProjectedVertex(screenX[i1], screenY[i1], depth[i1], 0.0f, uv == null ? 0.0f : uv[uv1], uv == null ? 0.0f : uv[uv1 + 1]),
+                new ProjectedVertex(screenX[i2], screenY[i2], depth[i2], 0.0f, uv == null ? 0.0f : uv[uv2], uv == null ? 0.0f : uv[uv2 + 1]),
+                uv != null
+        );
+    }
+
+    private static void rasterizeTriangleProjected(
+            int[] pixels,
+            float[] depthBuffer,
+            int surfaceWidth,
+            int surfaceHeight,
+            int clipX,
+            int clipY,
+            int clipWidth,
+            int clipHeight,
+            MbacModel.Polygon polygon,
+            int polygonBlendMode,
+            Texture texture,
+            Texture sphereMap,
+            ProjectedVertex v0,
+            ProjectedVertex v1,
+            ProjectedVertex v2,
+            boolean textured
+    ) {
+        float x0 = v0.screenX();
+        float y0 = v0.screenY();
+        float z0 = v0.depth();
+        float x1 = v1.screenX();
+        float y1 = v1.screenY();
+        float z1 = v1.depth();
+        float x2 = v2.screenX();
+        float y2 = v2.screenY();
+        float z2 = v2.depth();
+        if (!Float.isFinite(x0) || !Float.isFinite(y0)
+                || !Float.isFinite(x1) || !Float.isFinite(y1)
+                || !Float.isFinite(x2) || !Float.isFinite(y2)) {
+            return;
+        }
         float area = edgeFunction(x0, y0, x1, y1, x2, y2);
         if (area == 0.0f) {
             return;
@@ -207,13 +632,6 @@ public final class SoftwareJ3dRenderer {
         boolean topLeft20 = isCoverageTopLeftEdge(fx2, fy2, fx0, fy0, flipped);
         boolean topLeft01 = isCoverageTopLeftEdge(fx0, fy0, fx1, fy1, flipped);
 
-        float u0 = uv == null ? 0.0f : uv[uv0];
-        float v0 = uv == null ? 0.0f : uv[uv0 + 1];
-        float u1 = uv == null ? 0.0f : uv[uv1];
-        float v1 = uv == null ? 0.0f : uv[uv1 + 1];
-        float u2 = uv == null ? 0.0f : uv[uv2];
-        float v2 = uv == null ? 0.0f : uv[uv2 + 1];
-
         for (int y = minY; y <= maxY; y++) {
             float py = y + 0.5f;
             int rasterY = (y << RASTER_SUBPIXEL_SHIFT) + (RASTER_SUBPIXEL_SCALE >> 1);
@@ -233,24 +651,32 @@ public final class SoftwareJ3dRenderer {
                         || coverage2 < 0L || (coverage2 == 0L && !topLeft01)) {
                     continue;
                 }
-                float w0 = edgeFunction(x1, y1, x2, y2, px, py);
-                float w1 = edgeFunction(x2, y2, x0, y0, px, py);
-                float w2 = edgeFunction(x0, y0, x1, y1, px, py);
-                w0 /= area;
-                w1 /= area;
-                w2 /= area;
+                float w0 = edgeFunction(x1, y1, x2, y2, px, py) / area;
+                float w1 = edgeFunction(x2, y2, x0, y0, px, py) / area;
+                float w2 = edgeFunction(x0, y0, x1, y1, px, py) / area;
                 float pixelDepth = w0 * z0 + w1 * z1 + w2 * z2;
                 int index = y * surfaceWidth + x;
                 if (pixelDepth < depthBuffer[index] - DEPTH_EPSILON) {
                     continue;
                 }
-                boolean writeDepth = polygonBlendMode == 0;
                 int argb;
-                if (texture != null && uv != null) {
-                    // Canvas3D's screen-scale path is a parallel projection, so textured
-                    // mascot polygons use affine UV interpolation rather than a perspective divide.
-                    float u = (w0 * u0) + (w1 * u1) + (w2 * u2);
-                    float v = (w0 * v0) + (w1 * v1) + (w2 * v2);
+                if (texture != null && textured) {
+                    float u;
+                    float v;
+                    if (v0.reciprocalDepth() > 0.0f || v1.reciprocalDepth() > 0.0f || v2.reciprocalDepth() > 0.0f) {
+                        float rw0 = w0 * v0.reciprocalDepth();
+                        float rw1 = w1 * v1.reciprocalDepth();
+                        float rw2 = w2 * v2.reciprocalDepth();
+                        float reciprocalWeight = rw0 + rw1 + rw2;
+                        if (Math.abs(reciprocalWeight) <= DEPTH_EPSILON) {
+                            continue;
+                        }
+                        u = ((rw0 * v0.u()) + (rw1 * v1.u()) + (rw2 * v2.u())) / reciprocalWeight;
+                        v = ((rw0 * v0.v()) + (rw1 * v1.v()) + (rw2 * v2.v())) / reciprocalWeight;
+                    } else {
+                        u = (w0 * v0.u()) + (w1 * v1.u()) + (w2 * v2.u());
+                        v = (w0 * v0.v()) + (w1 * v1.v()) + (w2 * v2.v());
+                    }
                     argb = texture.sampleColor(u, v, polygon.transparent());
                     if ((argb >>> 24) == 0) {
                         continue;
@@ -260,22 +686,45 @@ public final class SoftwareJ3dRenderer {
                 }
                 argb = applySphereMap(argb, sphereMap, surfaceWidth, surfaceHeight, x, y);
                 pixels[index] = blend(argb, pixels[index], polygonBlendMode);
-                if (writeDepth) {
-                    depthBuffer[index] = pixelDepth;
-                }
+                depthBuffer[index] = pixelDepth;
             }
         }
     }
 
-    private static boolean sameSide(float area, float w0, float w1, float w2, float e0, float e1, float e2) {
-        if (area < 0.0f) {
-            return w0 <= e0 && w1 <= e1 && w2 <= e2;
-        }
-        return w0 >= -e0 && w1 >= -e1 && w2 >= -e2;
-    }
-
     private static float edgeFunction(float ax, float ay, float bx, float by, float px, float py) {
         return (px - ax) * (by - ay) - (py - ay) * (bx - ax);
+    }
+
+    private static boolean isSelfIntersectingQuad(
+            float x0, float y0,
+            float x1, float y1,
+            float x2, float y2,
+            float x3, float y3
+    ) {
+        if (!Float.isFinite(x0) || !Float.isFinite(y0)
+                || !Float.isFinite(x1) || !Float.isFinite(y1)
+                || !Float.isFinite(x2) || !Float.isFinite(y2)
+                || !Float.isFinite(x3) || !Float.isFinite(y3)) {
+            return false;
+        }
+        return segmentsIntersect(x1, y1, x2, y2, x3, y3, x0, y0);
+    }
+
+    private static boolean segmentsIntersect(
+            float ax, float ay,
+            float bx, float by,
+            float cx, float cy,
+            float dx, float dy
+    ) {
+        float abC = edgeFunction(ax, ay, bx, by, cx, cy);
+        float abD = edgeFunction(ax, ay, bx, by, dx, dy);
+        float cdA = edgeFunction(cx, cy, dx, dy, ax, ay);
+        float cdB = edgeFunction(cx, cy, dx, dy, bx, by);
+        return hasOppositeSigns(abC, abD) && hasOppositeSigns(cdA, cdB);
+    }
+
+    private static boolean hasOppositeSigns(float a, float b) {
+        return (a < -DEPTH_EPSILON && b > DEPTH_EPSILON) || (a > DEPTH_EPSILON && b < -DEPTH_EPSILON);
     }
 
     private static int toRasterFixed(float value) {
@@ -374,5 +823,83 @@ public final class SoftwareJ3dRenderer {
         int green = ((((color >>> 8) & 0xFF) + ((sphereColor >>> 8) & 0xFF)) >> 1);
         int blue = (((color & 0xFF) + (sphereColor & 0xFF)) >> 1);
         return (alpha << 24) | (red << 16) | (green << 8) | blue;
+    }
+
+    private static List<PolygonVertex> clipAgainstNearPlane(List<PolygonVertex> vertices, float nearZ) {
+        return clipPolygon(vertices, vertex -> vertex.z() >= nearZ, (start, end) -> interpolateAtZ(start, end, nearZ));
+    }
+
+    private static List<PolygonVertex> clipAgainstFarPlane(List<PolygonVertex> vertices, float farZ) {
+        return clipPolygon(vertices, vertex -> vertex.z() <= farZ, (start, end) -> interpolateAtZ(start, end, farZ));
+    }
+
+    private static List<PolygonVertex> clipPolygon(
+            List<PolygonVertex> vertices,
+            java.util.function.Predicate<PolygonVertex> insideTest,
+            java.util.function.BiFunction<PolygonVertex, PolygonVertex, PolygonVertex> intersection
+    ) {
+        if (vertices.isEmpty()) {
+            return vertices;
+        }
+        List<PolygonVertex> output = new ArrayList<>(vertices.size() + 2);
+        PolygonVertex previous = vertices.get(vertices.size() - 1);
+        boolean previousInside = insideTest.test(previous);
+        for (PolygonVertex current : vertices) {
+            boolean currentInside = insideTest.test(current);
+            if (currentInside != previousInside) {
+                output.add(intersection.apply(previous, current));
+            }
+            if (currentInside) {
+                output.add(current);
+            }
+            previous = current;
+            previousInside = currentInside;
+        }
+        return output;
+    }
+
+    private static PolygonVertex interpolateAtZ(PolygonVertex start, PolygonVertex end, float targetZ) {
+        float delta = end.z() - start.z();
+        if (Math.abs(delta) <= DEPTH_EPSILON) {
+            return start;
+        }
+        float t = (targetZ - start.z()) / delta;
+        return new PolygonVertex(
+                lerp(start.x(), end.x(), t),
+                lerp(start.y(), end.y(), t),
+                targetZ,
+                lerp(start.u(), end.u(), t),
+                lerp(start.v(), end.v(), t)
+        );
+    }
+
+    private static ProjectedVertex projectVertex(
+            PolygonVertex vertex,
+            int screenCenterX,
+            int screenCenterY,
+            float projectionScaleX,
+            float projectionScaleY
+    ) {
+        if (vertex.z() <= DEPTH_EPSILON) {
+            return null;
+        }
+        return new ProjectedVertex(
+                screenCenterX + ((vertex.x() * projectionScaleX) / vertex.z()),
+                screenCenterY - ((vertex.y() * projectionScaleY) / vertex.z()),
+                -vertex.z(),
+                1.0f / vertex.z(),
+                vertex.u(),
+                vertex.v()
+        );
+    }
+
+    private static float lerp(float start, float end, float amount) {
+        return start + ((end - start) * amount);
+    }
+
+    private record PolygonVertex(float x, float y, float z, float u, float v) {
+    }
+
+    private record ProjectedVertex(float screenX, float screenY, float depth, float reciprocalDepth, float u, float v) {
     }
 }

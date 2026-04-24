@@ -1,7 +1,5 @@
 package com.jblend.graphics.j3d;
 
-import remexa.host.j3d.FixedPoint;
-
 public class Vector3D {
     public int x = 0;
     public int y = 0;
@@ -75,7 +73,16 @@ public class Vector3D {
         if (v1 == null || v2 == null) {
             throw new NullPointerException();
         }
-        return FixedPoint.mul(v1.x, v2.x) + FixedPoint.mul(v1.y, v2.y) + FixedPoint.mul(v1.z, v2.z);
+        long result = (long) v1.x * (long) v2.x
+                + (long) v1.y * (long) v2.y
+                + (long) v1.z * (long) v2.z;
+        if (result > Integer.MAX_VALUE) {
+            return Integer.MAX_VALUE;
+        }
+        if (result < Integer.MIN_VALUE) {
+            return Integer.MIN_VALUE;
+        }
+        return (int) result;
     }
 
     public static com.jblend.graphics.j3d.Vector3D outerProduct (com.jblend.graphics.j3d.Vector3D v1, com.jblend.graphics.j3d.Vector3D v2) {

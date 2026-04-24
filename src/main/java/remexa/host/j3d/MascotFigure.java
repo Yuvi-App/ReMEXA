@@ -21,7 +21,8 @@ public final class MascotFigure {
     private MascotActionTableData actionTable;
     private int actionIndex;
     private int time;
-    private int patternMask;
+    private int selectedPatternMask;
+    private int animatedPatternMask;
 
     public MascotFigure(MbacModel model) {
         this.model = model;
@@ -108,7 +109,7 @@ public final class MascotFigure {
     public void setTime(int time) {
         this.time = Math.max(0, time);
         if (actionTable != null) {
-            this.patternMask = actionTable.patternForFrame(actionIndex, this.time, this.patternMask);
+            animatedPatternMask = actionTable.patternForFrame(actionIndex, this.time, 0);
         }
         applyPose();
     }
@@ -118,11 +119,17 @@ public final class MascotFigure {
     }
 
     public void setPattern(int patternMask) {
-        this.patternMask = patternMask;
+        this.selectedPatternMask = patternMask;
     }
 
     public int patternMask() {
-        return patternMask;
+        if (selectedPatternMask != 0 && animatedPatternMask != 0) {
+            return selectedPatternMask | animatedPatternMask;
+        }
+        if (selectedPatternMask != 0) {
+            return selectedPatternMask;
+        }
+        return animatedPatternMask;
     }
 
     private void applyPose() {

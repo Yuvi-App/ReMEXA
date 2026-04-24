@@ -67,7 +67,7 @@ public class Effect3D {
     }
 
     public boolean isSemiTransparentEnabled () {
-        remexa.probes.SdkStubSupport.log("com.jblend.graphics.j3d.Effect3D", "isSemiTransparentEnabled");
+        //remexa.probes.SdkStubSupport.log("com.jblend.graphics.j3d.Effect3D", "isSemiTransparentEnabled");
         return semiTransparentEnabled;
     }
 

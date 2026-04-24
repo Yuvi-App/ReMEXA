@@ -6,6 +6,7 @@ import java.net.URL;
 import java.net.URLClassLoader;
 import java.util.Optional;
 import java.util.jar.JarFile;
+import java.util.concurrent.locks.LockSupport;
 import java.util.function.Consumer;
 import remexa.host.jad.JadDescriptor;
 import remexa.host.profile.DisplayMetrics;
@@ -161,19 +162,11 @@ public final class AppRuntime {
 
         for (var thread : stubbornThreads) {
             DebugLog.log(
-                    LogCategory.HOST,
-                    AppRuntime.class.getName(),
-                    "Force-stopping app thread " + thread.getName()
-            );
-            try {
-                forceStopThread(thread);
-            } catch (UnsupportedOperationException | SecurityException exception) {
-                DebugLog.log(
                         LogCategory.HOST,
                         AppRuntime.class.getName(),
-                        "Failed to force-stop app thread " + thread.getName() + ": " + exception.getMessage()
-                );
-            }
+                    "Escalating shutdown for app thread " + thread.getName()
+            );
+            nudgeThreadForShutdown(thread);
         }
 
         for (var thread : stubbornThreads) {
@@ -313,9 +306,12 @@ public final class AppRuntime {
         }
     }
 
-    @SuppressWarnings("removal")
-    private static void forceStopThread(Thread thread) {
-        thread.stop();
+    private static void nudgeThreadForShutdown(Thread thread) {
+        if (thread == null || !thread.isAlive()) {
+            return;
+        }
+        thread.interrupt();
+        LockSupport.unpark(thread);
     }
 
 }

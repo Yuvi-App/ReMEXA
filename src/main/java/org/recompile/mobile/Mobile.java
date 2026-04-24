@@ -4,6 +4,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Locale;
+import javax.microedition.io.Connector;
 import remexa.host.runtime.MidletRuntime;
 import remexa.probes.DebugLog;
 import remexa.probes.LogCategory;
@@ -36,8 +37,7 @@ public final class Mobile {
     }
 
     public static byte[] getMIDletResourceAsByteArray(String url) throws IOException {
-        String path = normalizeResourcePath(url);
-        try (InputStream input = getMIDletResourceAsStream(path)) {
+        try (InputStream input = getMIDletResourceAsStream(url)) {
             if (input == null) {
                 throw new IOException("Missing MIDlet resource: " + url);
             }
@@ -48,7 +48,20 @@ public final class Mobile {
     }
 
     public static InputStream getMIDletResourceAsStream(String url) {
-        String path = normalizeResourcePath(url);
+        String raw = url == null ? "" : url.trim();
+        if (raw.regionMatches(true, 0, "jar://", 0, "jar://".length())) {
+            try {
+                return Connector.openInputStream(raw);
+            } catch (IOException exception) {
+                DebugLog.log(
+                        LogCategory.AUDIO,
+                        Mobile.class.getName(),
+                        "Jar phrase resource fallback for " + raw + ": " + exception.getMessage()
+                );
+            }
+        }
+
+        String path = normalizeResourcePath(raw);
         InputStream input = MidletRuntime.openResource(path);
         if (input != null) {
             return input;
@@ -78,6 +91,15 @@ public final class Mobile {
 
     private static String normalizeResourcePath(String url) {
         String path = url == null ? "" : url.trim();
+        if (path.regionMatches(true, 0, "jar://", 0, "jar://".length())) {
+            path = path.substring("jar://".length());
+            int separator = path.indexOf('/');
+            if (separator >= 0 && separator < path.length() - 1) {
+                path = path.substring(separator + 1);
+            } else {
+                path = "";
+            }
+        }
         if (path.startsWith("resource:")) {
             path = path.substring("resource:".length());
         }

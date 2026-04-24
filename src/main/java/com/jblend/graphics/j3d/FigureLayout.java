@@ -72,7 +72,14 @@ public class FigureLayout {
     public void setScale (int x_scale, int y_scale) {
         this.scaleX = x_scale;
         this.scaleY = y_scale;
+        this.parallelWidth = 0;
+        this.parallelHeight = 0;
         this.perspective = false;
+        this.perspectiveNear = 0;
+        this.perspectiveFar = 0;
+        this.perspectiveAngle = 0;
+        this.perspectiveWidth = 0;
+        this.perspectiveHeight = 0;
         remexa.probes.SdkStubSupport.log("com.jblend.graphics.j3d.FigureLayout", "setScale", x_scale, y_scale);
     }
 
@@ -90,6 +97,11 @@ public class FigureLayout {
         this.parallelWidth = width;
         this.parallelHeight = height;
         this.perspective = false;
+        this.perspectiveNear = 0;
+        this.perspectiveFar = 0;
+        this.perspectiveAngle = 0;
+        this.perspectiveWidth = 0;
+        this.perspectiveHeight = 0;
         remexa.probes.SdkStubSupport.log("com.jblend.graphics.j3d.FigureLayout", "setParallelSize", width, height);
     }
 
@@ -111,6 +123,8 @@ public class FigureLayout {
 
     public void setPerspective (int zNear, int zFar, int angle) {
         this.perspective = true;
+        this.parallelWidth = 0;
+        this.parallelHeight = 0;
         this.perspectiveNear = zNear;
         this.perspectiveFar = zFar;
         this.perspectiveAngle = angle;
@@ -121,6 +135,8 @@ public class FigureLayout {
 
     public void setPerspective (int zNear, int zFar, int width, int height) {
         this.perspective = true;
+        this.parallelWidth = 0;
+        this.parallelHeight = 0;
         this.perspectiveNear = zNear;
         this.perspectiveFar = zFar;
         this.perspectiveWidth = width;

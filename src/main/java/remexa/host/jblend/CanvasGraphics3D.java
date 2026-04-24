@@ -5,6 +5,7 @@ import com.jblend.graphics.j3d.Figure;
 import com.jblend.graphics.j3d.FigureLayout;
 import com.jblend.graphics.j3d.Graphics3D;
 import com.jblend.graphics.j3d.Texture;
+import java.util.Arrays;
 import javax.microedition.lcdui.Graphics;
 import remexa.host.j3d.SoftwareJ3dRenderer;
 import remexa.probes.SdkStubSupport;
@@ -12,6 +13,9 @@ import remexa.probes.SdkStubSupport;
 public final class CanvasGraphics3D extends Graphics implements Graphics3D {
     private final int surfaceWidth;
     private final int surfaceHeight;
+    private int[] scenePixels;
+    private float[] sceneDepth;
+    private boolean sceneDirty;
 
     public CanvasGraphics3D(java.awt.Graphics2D delegate, int surfaceWidth, int surfaceHeight, boolean disposable) {
         super(delegate, surfaceWidth, surfaceHeight, disposable);
@@ -41,7 +45,11 @@ public final class CanvasGraphics3D extends Graphics implements Graphics3D {
 
     @Override
     public void flush() {
-        // Software-backed canvas graphics draw immediately.
+        if (!sceneDirty || scenePixels == null) {
+            return;
+        }
+        super.drawRGB(scenePixels, 0, surfaceWidth, 0, 0, surfaceWidth, surfaceHeight, true);
+        clearSceneBuffers();
     }
 
     @Override
@@ -52,16 +60,48 @@ public final class CanvasGraphics3D extends Graphics implements Graphics3D {
         var affine = layout.getAffineTrans();
         int centerX = x + layout.getCenterX();
         int centerY = y + layout.getCenterY();
-        int scaleX = layout.getScaleX();
-        int scaleY = layout.getScaleY();
-        if (scaleX == 0) {
-            scaleX = 512;
+        boolean perspective = layout.isPerspective();
+        int nearClip = 0;
+        int farClip = 0;
+        float projectionScaleX;
+        float projectionScaleY;
+        if (perspective) {
+            nearClip = layout.getPerspectiveNear();
+            farClip = layout.getPerspectiveFar();
+            if (layout.getPerspectiveWidth() > 0 && layout.getPerspectiveHeight() > 0) {
+                projectionScaleX = nearClip > 0
+                        ? (surfaceWidth * (float) nearClip) / layout.getPerspectiveWidth()
+                        : 0.0f;
+                projectionScaleY = nearClip > 0
+                        ? (surfaceHeight * (float) nearClip) / layout.getPerspectiveHeight()
+                        : 0.0f;
+            } else {
+                float angleRadians = (float) (layout.getPerspectiveAngle() * (Math.PI * 2.0 / 4096.0));
+                // JSCL's angle-based perspective behaves like a horizontal field-of-view,
+                // matching the explicit near-plane width overload in the Vodafone docs.
+                float focal = angleRadians <= 0.0f || angleRadians >= Math.PI
+                        ? surfaceWidth * 0.5f
+                        : (float) ((surfaceWidth * 0.5f) / Math.tan(angleRadians * 0.5f));
+                projectionScaleX = focal;
+                projectionScaleY = focal;
+            }
+        } else if (layout.getParallelWidth() > 0 || layout.getParallelHeight() > 0) {
+            projectionScaleX = layout.getParallelWidth() > 0
+                    ? (surfaceWidth * 4096.0f) / layout.getParallelWidth()
+                    : 512.0f / 4096.0f;
+            projectionScaleY = layout.getParallelHeight() > 0
+                    ? (surfaceHeight * 4096.0f) / layout.getParallelHeight()
+                    : 512.0f / 4096.0f;
+        } else {
+            int scaleX = layout.getScaleX();
+            int scaleY = layout.getScaleY();
+            projectionScaleX = (scaleX == 0 ? 512 : scaleX) / 4096.0f;
+            projectionScaleY = (scaleY == 0 ? 512 : scaleY) / 4096.0f;
         }
-        if (scaleY == 0) {
-            scaleY = 512;
-        }
-        SoftwareJ3dRenderer.drawFigure(
-                this,
+        ensureSceneBuffers();
+        SoftwareJ3dRenderer.renderFigureToBuffers(
+                scenePixels,
+                sceneDepth,
                 surfaceWidth,
                 surfaceHeight,
                 getClipX(),
@@ -70,12 +110,52 @@ public final class CanvasGraphics3D extends Graphics implements Graphics3D {
                 getClipHeight(),
                 centerX,
                 centerY,
-                scaleX,
-                scaleY,
+                projectionScaleX,
+                projectionScaleY,
+                perspective,
+                nearClip,
+                farClip,
                 affine,
                 figure.mascotFigure(),
                 null,
                 effect
         );
+        sceneDirty = true;
+    }
+
+    @Override
+    public void resetState() {
+        flush();
+        super.resetState();
+    }
+
+    @Override
+    public void dispose() {
+        flush();
+        super.dispose();
+    }
+
+    private void ensureSceneBuffers() {
+        int size = surfaceWidth * surfaceHeight;
+        if (scenePixels == null || scenePixels.length != size) {
+            scenePixels = new int[size];
+        }
+        if (sceneDepth == null || sceneDepth.length != size) {
+            sceneDepth = new float[size];
+        }
+        if (!sceneDirty) {
+            Arrays.fill(scenePixels, 0);
+            Arrays.fill(sceneDepth, Float.NEGATIVE_INFINITY);
+        }
+    }
+
+    private void clearSceneBuffers() {
+        sceneDirty = false;
+        if (scenePixels != null) {
+            Arrays.fill(scenePixels, 0);
+        }
+        if (sceneDepth != null) {
+            Arrays.fill(sceneDepth, Float.NEGATIVE_INFINITY);
+        }
     }
 }

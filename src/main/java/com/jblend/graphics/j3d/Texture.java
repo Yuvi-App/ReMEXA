@@ -84,8 +84,8 @@ public class Texture {
         if (pixels.length == 0 || width <= 0 || height <= 0) {
             return 0;
         }
-        int x = clamp((int) Math.floor(u), 0, width - 1);
-        int y = clamp((int) Math.floor(v), 0, height - 1);
+        int x = forModel ? wrap((int) Math.floor(u), width) : clamp((int) Math.floor(u), 0, width - 1);
+        int y = forModel ? wrap((int) Math.floor(v), height) : clamp((int) Math.floor(v), 0, height - 1);
         if (indexedPixels != null && indexedColorModel != null) {
             int index = indexedPixels[y * width + x];
             if (transparent && index == 0) {
@@ -145,6 +145,14 @@ public class Texture {
 
     private static int clamp(int value, int min, int max) {
         return Math.max(min, Math.min(max, value));
+    }
+
+    private static int wrap(int value, int size) {
+        if (size <= 0) {
+            return 0;
+        }
+        int wrapped = value % size;
+        return wrapped < 0 ? wrapped + size : wrapped;
     }
 
     private record DecodedTexture(Image image, int[] indexedPixels, IndexColorModel indexedColorModel) {
