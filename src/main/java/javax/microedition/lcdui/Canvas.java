@@ -95,6 +95,10 @@ public abstract class Canvas extends Displayable {
         });
     }
 
+    public void repaint(int x, int y, int width, int height) {
+        repaint();
+    }
+
     public void serviceRepaints() {
         MidletRuntime.serviceCanvasRepaints(this);
     }
