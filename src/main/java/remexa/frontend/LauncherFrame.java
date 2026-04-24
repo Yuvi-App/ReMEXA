@@ -79,7 +79,7 @@ public final class LauncherFrame extends JFrame {
         add(content, BorderLayout.CENTER);
         refreshRecents();
         pack();
-        setLocationByPlatform(true);
+        setLocationRelativeTo(null);
     }
 
     private void chooseAndLaunch() {
