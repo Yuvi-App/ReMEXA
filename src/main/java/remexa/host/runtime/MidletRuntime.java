@@ -323,6 +323,14 @@ public final class MidletRuntime {
         return context.descriptor().resolveJarPath().orElse(null);
     }
 
+    public static Path currentSourcePath() {
+        var context = activeContext();
+        if (context == null) {
+            return null;
+        }
+        return context.descriptor().sourcePath();
+    }
+
     public static javax.microedition.lcdui.Graphics currentGraphics() {
         return CURRENT_GRAPHICS.get();
     }

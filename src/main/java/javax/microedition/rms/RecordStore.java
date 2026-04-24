@@ -8,39 +8,66 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Stream;
 import remexa.host.runtime.MidletRuntime;
+import remexa.probes.DebugLog;
+import remexa.probes.LogCategory;
+import remexa.settings.RemexaPreferences;
 
 public final class RecordStore {
     private static final int STORAGE_MAGIC = 0x524d5852;
 
     private final Path storePath;
     private final String name;
+    private final Path legacyContainerPath;
+    private final boolean legacyBacked;
     private final List<RecordEntry> records = new ArrayList<>();
     private long lastModified;
     private int nextRecordId = 1;
     private int version;
 
-    private RecordStore(String name, Path storePath) throws RecordStoreException {
+    private RecordStore(String name, Path storePath, Path legacyContainerPath, boolean legacyBacked, LegacyStoreRecord legacyStore)
+            throws RecordStoreException {
         this.name = name;
         this.storePath = storePath;
-        load();
+        this.legacyContainerPath = legacyContainerPath;
+        this.legacyBacked = legacyBacked;
+        load(legacyStore);
     }
 
     public static RecordStore openRecordStore(String name, boolean createIfNecessary) throws RecordStoreException {
         try {
             Path root = rmsRoot();
-            Files.createDirectories(root);
             Path storePath = root.resolve(sanitize(name) + ".bin");
-            if (!Files.exists(storePath) && !createIfNecessary) {
+
+            LegacyStoreRecord legacyStore = null;
+            Path legacyContainerPath = null;
+            boolean storeFileExists = Files.exists(storePath);
+            if (!storeFileExists) {
+                var legacyContainer = legacyContainerPath();
+                if (legacyContainer.isPresent()) {
+                    legacyContainerPath = legacyContainer.get();
+                    legacyStore = readLegacyStore(legacyContainerPath, name);
+                }
+            }
+
+            if (!storeFileExists && legacyStore == null && !createIfNecessary) {
                 throw new RecordStoreNotFoundException("RecordStore not found: " + name);
             }
-            if (!Files.exists(storePath)) {
+
+            boolean legacyBacked = !storeFileExists && legacyContainerPath != null;
+            if (!legacyBacked && !storeFileExists && createIfNecessary) {
+                Files.createDirectories(root);
                 Files.write(storePath, new byte[0]);
             }
-            return new RecordStore(name, storePath);
+
+            return new RecordStore(name, storePath, legacyContainerPath, legacyBacked, legacyStore);
         } catch (RecordStoreException exception) {
             throw exception;
         } catch (IOException exception) {
@@ -52,10 +79,17 @@ public final class RecordStore {
         try {
             Path root = rmsRoot();
             Path storePath = root.resolve(sanitize(name) + ".bin");
-            if (!Files.exists(storePath)) {
-                throw new RecordStoreNotFoundException("RecordStore not found: " + name);
+            if (Files.exists(storePath)) {
+                Files.delete(storePath);
+                return;
             }
-            Files.delete(storePath);
+
+            var legacyContainer = legacyContainerPath();
+            if (legacyContainer.isPresent() && deleteLegacyStore(legacyContainer.get(), name)) {
+                return;
+            }
+
+            throw new RecordStoreNotFoundException("RecordStore not found: " + name);
         } catch (RecordStoreException exception) {
             throw exception;
         } catch (IOException exception) {
@@ -66,19 +100,29 @@ public final class RecordStore {
     public static String[] listRecordStores() throws RecordStoreException {
         try {
             Path root = rmsRoot();
-            if (!Files.isDirectory(root)) {
-                return null;
+            var names = new LinkedHashSet<String>();
+            if (Files.isDirectory(root)) {
+                try (Stream<Path> stream = Files.list(root)) {
+                    stream
+                            .filter(Files::isRegularFile)
+                            .map(path -> path.getFileName().toString())
+                            .filter(fileName -> fileName.toLowerCase(Locale.ROOT).endsWith(".bin"))
+                            .sorted(Comparator.naturalOrder())
+                            .map(fileName -> fileName.substring(0, fileName.length() - 4))
+                            .forEach(names::add);
+                }
             }
-            try (Stream<Path> stream = Files.list(root)) {
-                String[] stores = stream
-                        .filter(Files::isRegularFile)
-                        .map(path -> path.getFileName().toString())
-                        .filter(fileName -> fileName.toLowerCase(Locale.ROOT).endsWith(".bin"))
-                        .sorted(Comparator.naturalOrder())
-                        .map(fileName -> fileName.substring(0, fileName.length() - 4))
-                        .toArray(String[]::new);
-                return stores.length == 0 ? null : stores;
+
+            var legacyContainer = legacyContainerPath();
+            if (legacyContainer.isPresent()) {
+                for (String legacyName : readLegacyStoreNames(legacyContainer.get())) {
+                    if (!names.contains(sanitize(legacyName))) {
+                        names.add(legacyName);
+                    }
+                }
             }
+
+            return names.isEmpty() ? null : names.toArray(String[]::new);
         } catch (IOException exception) {
             throw new RecordStoreException("Unable to list record stores", exception);
         }
@@ -179,70 +223,128 @@ public final class RecordStore {
         return version;
     }
 
-    private void load() throws RecordStoreException {
+    private void load(LegacyStoreRecord legacyStore) throws RecordStoreException {
         records.clear();
         nextRecordId = 1;
         version = 0;
         try {
-            if (!Files.exists(storePath) || Files.size(storePath) == 0L) {
-                lastModified = System.currentTimeMillis();
+            if (Files.exists(storePath) && Files.size(storePath) > 0L) {
+                loadBinaryStore();
                 return;
             }
-            byte[] data = Files.readAllBytes(storePath);
-            try (DataInputStream in = new DataInputStream(new java.io.ByteArrayInputStream(data))) {
-                int marker = in.readInt();
-                if (marker == STORAGE_MAGIC) {
-                    int formatVersion = in.readUnsignedByte();
-                    if (formatVersion != 1) {
-                        throw new RecordStoreException("Unsupported record store format: " + formatVersion);
-                    }
-                    nextRecordId = in.readInt();
-                    version = in.readInt();
-                    int count = in.readInt();
-                    for (int i = 0; i < count; i++) {
-                        int recordId = in.readInt();
-                        int size = in.readInt();
-                        if (size < 0) {
-                            throw new RecordStoreException("Corrupt record store: negative size");
-                        }
-                        byte[] record = new byte[size];
-                        in.readFully(record);
-                        records.add(new RecordEntry(recordId, record));
-                    }
-                } else {
-                    loadLegacyRecords(marker, in, data);
+            if (legacyStore != null) {
+                loadLegacyStore(legacyStore);
+                if (dumpLegacyMirrorEnabled()) {
+                    writeBinaryStore();
+                    DebugLog.log(
+                            LogCategory.RMS,
+                            RecordStore.class.getName(),
+                            "Dumped legacy RecordStore \"" + name + "\" to " + storePath.getFileName()
+                    );
                 }
-            } catch (IOException exception) {
-                if (data.length > 0) {
-                    records.add(new RecordEntry(nextRecordId++, data));
-                }
+                return;
             }
-            lastModified = Files.getLastModifiedTime(storePath).toMillis();
+            lastModified = Files.exists(storePath)
+                    ? Files.getLastModifiedTime(storePath).toMillis()
+                    : System.currentTimeMillis();
         } catch (IOException exception) {
             throw new RecordStoreException("Unable to load record store", exception);
         }
     }
 
-    private void flush() throws RecordStoreException {
+    private void loadBinaryStore() throws IOException, RecordStoreException {
+        byte[] data = Files.readAllBytes(storePath);
         try {
-            ByteArrayOutputStream out = new ByteArrayOutputStream();
-            try (DataOutputStream dataOut = new DataOutputStream(out)) {
-                dataOut.writeInt(STORAGE_MAGIC);
-                dataOut.writeByte(1);
-                dataOut.writeInt(nextRecordId);
-                dataOut.writeInt(++version);
-                dataOut.writeInt(records.size());
-                for (RecordEntry entry : records) {
-                    dataOut.writeInt(entry.id);
-                    dataOut.writeInt(entry.data.length);
-                    dataOut.write(entry.data);
-                }
+            if (!loadStructuredStoreBytes(data)) {
+                throw new IOException("Unsupported record store bytes");
             }
-            Files.write(storePath, out.toByteArray());
-            lastModified = Files.getLastModifiedTime(storePath).toMillis();
+        } catch (IOException exception) {
+            if (data.length > 0) {
+                records.add(new RecordEntry(nextRecordId++, data));
+            }
+        }
+        lastModified = Files.getLastModifiedTime(storePath).toMillis();
+    }
+
+    private void loadLegacyStore(LegacyStoreRecord legacyStore) {
+        version = Math.max(legacyStore.version(), 0);
+        lastModified = legacyStore.lastModified();
+        records.clear();
+        int maxRecordId = 0;
+        for (LegacyRecord legacyRecord : legacyStore.records()) {
+            records.add(new RecordEntry(legacyRecord.id(), legacyRecord.data().clone()));
+            maxRecordId = Math.max(maxRecordId, legacyRecord.id());
+        }
+        nextRecordId = Math.max(maxRecordId + 1, records.size() + 1);
+        if (records.size() != legacyStore.recordCount()) {
+            DebugLog.log(
+                    LogCategory.RMS,
+                    RecordStore.class.getName(),
+                    "Legacy RMS store \"" + name + "\" declared " + legacyStore.recordCount()
+                            + " record(s) but decoded " + records.size() + '.'
+            );
+        }
+    }
+
+    private void flush() throws RecordStoreException {
+        version++;
+        lastModified = System.currentTimeMillis();
+        try {
+            if (legacyBacked) {
+                writeLegacyStore();
+                if (dumpLegacyMirrorEnabled()) {
+                    writeBinaryStore();
+                }
+            } else {
+                writeBinaryStore();
+            }
         } catch (IOException exception) {
             throw new RecordStoreException("Unable to persist record store", exception);
         }
+    }
+
+    private void writeBinaryStore() throws IOException {
+        Files.createDirectories(storePath.getParent());
+        Files.write(storePath, encodeBinaryStore());
+        lastModified = Files.getLastModifiedTime(storePath).toMillis();
+    }
+
+    private void writeLegacyStore() throws IOException, RecordStoreException {
+        if (legacyContainerPath == null) {
+            writeBinaryStore();
+            return;
+        }
+
+        List<LegacyRecord> legacyRecords = new ArrayList<>(records.size());
+        for (RecordEntry entry : records) {
+            legacyRecords.add(new LegacyRecord(entry.id, entry.data.clone()));
+        }
+        Map<String, LegacyStoreRecord> stores = readLegacyStores(legacyContainerPath);
+        stores.put(name, new LegacyStoreRecord(
+                name,
+                version,
+                lastModified,
+                records.size(),
+                legacyRecords
+        ));
+        writeLegacyStores(legacyContainerPath, stores);
+    }
+
+    private byte[] encodeBinaryStore() throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try (DataOutputStream dataOut = new DataOutputStream(out)) {
+            dataOut.writeInt(STORAGE_MAGIC);
+            dataOut.writeByte(1);
+            dataOut.writeInt(nextRecordId);
+            dataOut.writeInt(version);
+            dataOut.writeInt(records.size());
+            for (RecordEntry entry : records) {
+                dataOut.writeInt(entry.id);
+                dataOut.writeInt(entry.data.length);
+                dataOut.write(entry.data);
+            }
+        }
+        return out.toByteArray();
     }
 
     private void loadLegacyRecords(int count, DataInputStream in, byte[] originalData) throws IOException {
@@ -261,6 +363,69 @@ public final class RecordStore {
         if (records.isEmpty() && originalData.length > 0) {
             records.add(new RecordEntry(nextRecordId++, originalData));
         }
+    }
+
+    private boolean loadStructuredStoreBytes(byte[] data) {
+        if (data == null || data.length < Integer.BYTES) {
+            return false;
+        }
+
+        var parsedRecords = new ArrayList<RecordEntry>();
+        int parsedNextRecordId = nextRecordId;
+        int parsedVersion = version;
+        try (DataInputStream in = new DataInputStream(new java.io.ByteArrayInputStream(data))) {
+            int marker = in.readInt();
+            if (marker == STORAGE_MAGIC) {
+                int formatVersion = in.readUnsignedByte();
+                if (formatVersion != 1) {
+                    return false;
+                }
+                parsedNextRecordId = in.readInt();
+                parsedVersion = in.readInt();
+                int count = in.readInt();
+                if (count < 0) {
+                    return false;
+                }
+                for (int i = 0; i < count; i++) {
+                    int recordId = in.readInt();
+                    int size = in.readInt();
+                    if (size < 0) {
+                        return false;
+                    }
+                    byte[] record = new byte[size];
+                    in.readFully(record);
+                    parsedRecords.add(new RecordEntry(recordId, record));
+                }
+            } else {
+                int count = marker;
+                if (count < 0 || count > 65535) {
+                    return false;
+                }
+                int parsedRecordId = 1;
+                for (int i = 0; i < count; i++) {
+                    int size = in.readInt();
+                    if (size < 0) {
+                        return false;
+                    }
+                    byte[] record = new byte[size];
+                    in.readFully(record);
+                    parsedRecords.add(new RecordEntry(parsedRecordId++, record));
+                }
+                parsedNextRecordId = Math.max(parsedRecordId, parsedRecords.size() + 1);
+            }
+
+            if (in.read() != -1) {
+                return false;
+            }
+        } catch (IOException exception) {
+            return false;
+        }
+
+        records.clear();
+        records.addAll(parsedRecords);
+        nextRecordId = Math.max(parsedNextRecordId, parsedRecords.size() + 1);
+        version = Math.max(parsedVersion, 0);
+        return true;
     }
 
     private RecordEntry entryForId(int recordId) throws InvalidRecordIDException {
@@ -301,6 +466,151 @@ public final class RecordStore {
         return MidletRuntime.appStorageRoot().resolve("rms");
     }
 
+    private static boolean dumpLegacyMirrorEnabled() {
+        return RemexaPreferences.debug().getBoolean(RemexaPreferences.DUMP_RMS_KEY, false);
+    }
+
+    private static Optional<Path> legacyContainerPath() {
+        Path sourcePath = MidletRuntime.currentSourcePath();
+        Path jarPath = MidletRuntime.currentJarPath();
+        Path appDirectory = sourcePath != null ? sourcePath.getParent() : jarPath != null ? jarPath.getParent() : null;
+        if (appDirectory == null) {
+            try {
+                appDirectory = MidletRuntime.appStorageRoot().getParent();
+            } catch (IllegalStateException ignored) {
+                return Optional.empty();
+            }
+        }
+        if (appDirectory == null || !Files.isDirectory(appDirectory)) {
+            return Optional.empty();
+        }
+
+        var candidates = new LinkedHashSet<Path>();
+        addLegacyCandidates(candidates, sourcePath);
+        addLegacyCandidates(candidates, jarPath);
+        for (Path candidate : candidates) {
+            if (candidate != null && Files.isRegularFile(candidate)) {
+                return Optional.of(candidate);
+            }
+        }
+
+        try (Stream<Path> stream = Files.list(appDirectory)) {
+            var rmsFiles = stream
+                    .filter(Files::isRegularFile)
+                    .filter(path -> path.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".rms"))
+                    .sorted()
+                    .toList();
+            if (rmsFiles.size() == 1) {
+                return Optional.of(rmsFiles.getFirst());
+            }
+        } catch (IOException ignored) {
+            return Optional.empty();
+        }
+        return Optional.empty();
+    }
+
+    private static void addLegacyCandidates(LinkedHashSet<Path> candidates, Path sourcePath) {
+        if (sourcePath == null) {
+            return;
+        }
+        Path parent = sourcePath.getParent();
+        Path fileName = sourcePath.getFileName();
+        if (parent == null || fileName == null) {
+            return;
+        }
+        String rawName = fileName.toString();
+        int extensionIndex = rawName.lastIndexOf('.');
+        String baseName = extensionIndex >= 0 ? rawName.substring(0, extensionIndex) : rawName;
+        candidates.add(parent.resolve(baseName + ".rms"));
+        candidates.add(parent.resolve(baseName + ".RMS"));
+    }
+
+    private static List<String> readLegacyStoreNames(Path legacyContainer) throws IOException {
+        return new ArrayList<>(readLegacyStores(legacyContainer).keySet());
+    }
+
+    private static LegacyStoreRecord readLegacyStore(Path legacyContainer, String storeName) throws IOException {
+        return readLegacyStores(legacyContainer).get(storeName);
+    }
+
+    private static Map<String, LegacyStoreRecord> readLegacyStores(Path legacyContainer) throws IOException {
+        Map<String, LegacyStoreRecord> stores = new LinkedHashMap<>();
+        if (!Files.isRegularFile(legacyContainer)) {
+            return stores;
+        }
+        try (DataInputStream in = new DataInputStream(Files.newInputStream(legacyContainer))) {
+            int entryCount = in.readInt();
+            if (entryCount < 0 || entryCount > 4096) {
+                throw new IOException("Invalid legacy RMS entry count: " + entryCount);
+            }
+            for (int index = 0; index < entryCount; index++) {
+                String entryName = in.readUTF();
+                int importedVersion = in.readInt();
+                long importedLastModified = in.readLong();
+                int recordCount = in.readInt();
+                if (recordCount < 0 || recordCount > 65535) {
+                    throw new IOException("Invalid legacy RMS record count: " + recordCount);
+                }
+                List<LegacyRecord> importedRecords = new ArrayList<>(recordCount);
+                for (int recordIndex = 0; recordIndex < recordCount; recordIndex++) {
+                    int recordId = in.readInt();
+                    int dataLength = in.readInt();
+                    if (dataLength < 0) {
+                        throw new IOException("Negative legacy RMS record length: " + dataLength);
+                    }
+                    byte[] recordData = in.readNBytes(dataLength);
+                    if (recordData.length != dataLength) {
+                        throw new IOException("Truncated legacy RMS store: " + entryName);
+                    }
+                    importedRecords.add(new LegacyRecord(recordId, recordData));
+                }
+                stores.put(entryName, new LegacyStoreRecord(
+                        entryName,
+                        Math.max(importedVersion, 0),
+                        importedLastModified,
+                        Math.max(recordCount, 0),
+                        importedRecords
+                ));
+            }
+        } catch (IOException exception) {
+            DebugLog.log(
+                    LogCategory.RMS,
+                    RecordStore.class.getName(),
+                    "Legacy RMS fallback skipped for \"" + legacyContainer.getFileName() + "\": " + exception.getMessage()
+            );
+            throw exception;
+        }
+        return stores;
+    }
+
+    private static void writeLegacyStores(Path legacyContainer, Map<String, LegacyStoreRecord> stores) throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try (DataOutputStream dataOut = new DataOutputStream(out)) {
+            dataOut.writeInt(stores.size());
+            for (LegacyStoreRecord store : stores.values()) {
+                dataOut.writeUTF(store.name());
+                dataOut.writeInt(store.version());
+                dataOut.writeLong(store.lastModified());
+                dataOut.writeInt(store.recordCount());
+                for (LegacyRecord record : store.records()) {
+                    dataOut.writeInt(record.id());
+                    dataOut.writeInt(record.data().length);
+                    dataOut.write(record.data());
+                }
+            }
+        }
+        Files.write(legacyContainer, out.toByteArray());
+    }
+
+    private static boolean deleteLegacyStore(Path legacyContainer, String storeName) throws IOException {
+        Map<String, LegacyStoreRecord> stores = readLegacyStores(legacyContainer);
+        if (stores.remove(storeName) == null) {
+            return false;
+        }
+        writeLegacyStores(legacyContainer, stores);
+        return true;
+    }
+
     private static final class RecordEntry {
         private final int id;
         private byte[] data;
@@ -309,5 +619,20 @@ public final class RecordStore {
             this.id = id;
             this.data = data;
         }
+    }
+
+    private record LegacyStoreRecord(
+            String name,
+            int version,
+            long lastModified,
+            int recordCount,
+            List<LegacyRecord> records
+    ) {
+    }
+
+    private record LegacyRecord(
+            int id,
+            byte[] data
+    ) {
     }
 }

@@ -232,7 +232,21 @@ public final class LauncherFrame extends JFrame {
         }
         settingsMenu.add(hostScaleMenu);
         settingsMenu.addSeparator();
-        var debugMenu = new JMenu("Debug Categories");
+        var debuggingMenu = new JMenu("Debugging");
+        styleMenu(debuggingMenu);
+        var dumpRmsItem = new JCheckBoxMenuItem("Dump RMS", HostUiSettings.dumpRms());
+        styleMenuItem(dumpRmsItem);
+        dumpRmsItem.addActionListener(event -> {
+            HostUiSettings.setDumpRms(dumpRmsItem.isSelected());
+            DebugLog.log(
+                    LogCategory.FRONTEND,
+                    LauncherFrame.class.getName(),
+                    "Debug RMS dump set to " + dumpRmsItem.isSelected()
+            );
+        });
+        debuggingMenu.add(dumpRmsItem);
+        debuggingMenu.addSeparator();
+        var debugMenu = new JMenu("Log Categories");
         styleMenu(debugMenu);
         var categoryItems = new ArrayList<JCheckBoxMenuItem>();
         var toggleAllLogsItem = new JMenuItem();
@@ -268,7 +282,8 @@ public final class LauncherFrame extends JFrame {
             categoryItems.add(categoryItem);
             debugMenu.add(categoryItem);
         }
-        settingsMenu.add(debugMenu);
+        debuggingMenu.add(debugMenu);
+        settingsMenu.add(debuggingMenu);
         menuBar.add(settingsMenu);
         menuBar.add(Box.createHorizontalGlue());
 

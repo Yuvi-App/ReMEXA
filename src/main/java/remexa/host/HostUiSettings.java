@@ -65,4 +65,12 @@ public final class HostUiSettings {
                 LaunchConfig.clampHostScale(hostScale)
         );
     }
+
+    public static boolean dumpRms() {
+        return RemexaPreferences.debug().getBoolean(RemexaPreferences.DUMP_RMS_KEY, false);
+    }
+
+    public static void setDumpRms(boolean enabled) {
+        RemexaPreferences.debug().putBoolean(RemexaPreferences.DUMP_RMS_KEY, enabled);
+    }
 }

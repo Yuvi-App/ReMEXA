@@ -1,11 +1,12 @@
 package javax.microedition.lcdui;
 
 import java.awt.Color;
-import java.awt.image.BufferedImage;
 import java.awt.Graphics2D;
 import java.awt.Polygon;
 import java.awt.Rectangle;
 import java.awt.RenderingHints;
+import java.awt.geom.AffineTransform;
+import java.awt.image.BufferedImage;
 
 public class Graphics {
     public static final int HCENTER = 1;
@@ -152,6 +153,51 @@ public class Graphics {
         delegate.drawImage(image.awtImage(), x + translateX, y + translateY, width, height, null);
     }
 
+    public void drawRegion(Image image, int xSrc, int ySrc, int width, int height, int transform, int xDest, int yDest, int anchor) {
+        drawRegion(image, xSrc, ySrc, width, height, transform, xDest, yDest, width, height, anchor);
+    }
+
+    public void drawRegion(Image image, int xSrc, int ySrc, int width, int height, int transform, int xDest, int yDest, int widthDest, int heightDest, int anchor) {
+        if (image == null || width <= 0 || height <= 0 || widthDest <= 0 || heightDest <= 0) {
+            return;
+        }
+
+        BufferedImage sourceRegion = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D regionGraphics = sourceRegion.createGraphics();
+        try {
+            regionGraphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
+            int clipLeft = Math.max(0, xSrc);
+            int clipTop = Math.max(0, ySrc);
+            int clipRight = Math.min(image.getWidth(), xSrc + width);
+            int clipBottom = Math.min(image.getHeight(), ySrc + height);
+            if (clipLeft < clipRight && clipTop < clipBottom) {
+                int destLeft = clipLeft - xSrc;
+                int destTop = clipTop - ySrc;
+                regionGraphics.drawImage(
+                        image.awtImage(),
+                        destLeft,
+                        destTop,
+                        destLeft + (clipRight - clipLeft),
+                        destTop + (clipBottom - clipTop),
+                        clipLeft,
+                        clipTop,
+                        clipRight,
+                        clipBottom,
+                        null
+                );
+            }
+        } finally {
+            regionGraphics.dispose();
+        }
+
+        BufferedImage transformed = transformRegion(sourceRegion, transform);
+        int drawWidth = widthDest;
+        int drawHeight = heightDest;
+        int drawX = anchoredX(xDest + translateX, anchor, drawWidth);
+        int drawY = anchoredYForImage(yDest + translateY, anchor, drawHeight);
+        delegate.drawImage(transformed, drawX, drawY, drawWidth, drawHeight, null);
+    }
+
     public void drawRGB(int[] rgbData, int offset, int scanlength, int x, int y, int width, int height, boolean processAlpha) {
         if (rgbData == null || width <= 0 || height <= 0) {
             return;
@@ -275,5 +321,42 @@ public class Graphics {
 
     private static int clamp(int value) {
         return Math.max(0, Math.min(255, value));
+    }
+
+    private static BufferedImage transformRegion(BufferedImage image, int transform) {
+        int sourceWidth = image.getWidth();
+        int sourceHeight = image.getHeight();
+        int targetWidth = swapsAxes(transform) ? sourceHeight : sourceWidth;
+        int targetHeight = swapsAxes(transform) ? sourceWidth : sourceHeight;
+        BufferedImage transformed = new BufferedImage(targetWidth, targetHeight, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D graphics = transformed.createGraphics();
+        try {
+            graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
+            graphics.transform(transformMatrix(transform, sourceWidth, sourceHeight));
+            graphics.drawImage(image, 0, 0, null);
+        } finally {
+            graphics.dispose();
+        }
+        return transformed;
+    }
+
+    private static boolean swapsAxes(int transform) {
+        return switch (transform) {
+            case 4, 5, 6, 7 -> true;
+            default -> false;
+        };
+    }
+
+    private static AffineTransform transformMatrix(int transform, int width, int height) {
+        return switch (transform) {
+            case 1 -> new AffineTransform(1, 0, 0, -1, 0, height);
+            case 2 -> new AffineTransform(-1, 0, 0, 1, width, 0);
+            case 3 -> new AffineTransform(-1, 0, 0, -1, width, height);
+            case 4 -> new AffineTransform(0, -1, -1, 0, height, width);
+            case 5 -> new AffineTransform(0, 1, -1, 0, height, 0);
+            case 6 -> new AffineTransform(0, -1, 1, 0, 0, width);
+            case 7 -> new AffineTransform(0, 1, 1, 0, 0, 0);
+            default -> new AffineTransform();
+        };
     }
 }

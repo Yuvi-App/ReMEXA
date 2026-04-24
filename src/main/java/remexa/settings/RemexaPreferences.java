@@ -6,6 +6,7 @@ public final class RemexaPreferences {
     public static final String ROOT_PATH = "remexa";
 
     public static final String UI_NODE = "ui";
+    public static final String DEBUG_NODE = "debug";
     public static final String LOG_NODE = "log";
     public static final String RECENT_JADS_NODE = "recent-jads";
 
@@ -14,6 +15,7 @@ public final class RemexaPreferences {
     public static final String JSKY_PHONE_TYPE_KEY = "jskyPhoneType";
     public static final String VODAFONE_PHONE_TYPE_KEY = "vodafonePhoneType";
     public static final String HOST_SCALE_KEY = "hostScale";
+    public static final String DUMP_RMS_KEY = "dumpRms";
     public static final String LOG_ENABLED_PREFIX = "enabled.";
     public static final String RECENT_ENTRY_PREFIX = "entry.";
 
@@ -28,6 +30,10 @@ public final class RemexaPreferences {
 
     public static Preferences log() {
         return ROOT.node(LOG_NODE);
+    }
+
+    public static Preferences debug() {
+        return ROOT.node(DEBUG_NODE);
     }
 
     public static Preferences recentJads() {
