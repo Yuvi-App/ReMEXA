@@ -64,7 +64,7 @@ public class Image {
     }
 
     public Graphics getGraphics() {
-        return new CanvasGraphics3D(awtImage.createGraphics(), getWidth(), getHeight(), true, awtImage);
+        return new CanvasGraphics3D(awtImage.createGraphics(), getWidth(), getHeight(), true);
     }
 
     public void getRGB(int[] rgbData, int offset, int scanlength, int x, int y, int width, int height) {
