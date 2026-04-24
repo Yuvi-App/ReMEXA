@@ -7,12 +7,19 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.RandomAccessFile;
 import java.io.ByteArrayInputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.Locale;
+import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
+import com.j_phone.io.InputRandomAccess;
+import com.j_phone.io.StorageConnection;
 import javax.microedition.rms.RecordStore;
 import javax.microedition.rms.RecordStoreException;
 import org.recompile.mobile.Mobile;
@@ -45,6 +52,9 @@ public final class Connector {
         String scheme = extractScheme(target);
         if ("jar".equals(scheme)) {
             return new JarStoreConnection(target);
+        }
+        if ("file".equals(scheme)) {
+            return new FileStorageConnection(target, mode);
         }
         if ("http".equals(scheme) || "https".equals(scheme)) {
             return new HttpConnectionAdapter(target, mode, timeouts);
@@ -468,6 +478,438 @@ public final class Connector {
             case READ_WRITE -> "READ_WRITE";
             default -> Integer.toString(mode);
         };
+    }
+
+    private static final class FileStorageConnection implements StorageConnection {
+        private final com.j_phone.io.StoragePathSupport.StorageTarget target;
+        private final int mode;
+        private boolean closed;
+        private boolean streamOpen;
+
+        private FileStorageConnection(String name, int mode) throws IOException {
+            this.target = com.j_phone.io.StoragePathSupport.resolve(name);
+            this.mode = mode;
+        }
+
+        @Override
+        public boolean exists() throws IOException {
+            ensureOpen();
+            return Files.exists(target.realPath());
+        }
+
+        @Override
+        public int getType() throws IOException {
+            ensureOpen();
+            Path path = target.realPath();
+            if (Files.isDirectory(path)) {
+                return StorageConnection.TYPE_FOLDER;
+            }
+            String lowerName = path.getFileName() == null ? "" : path.getFileName().toString().toLowerCase(Locale.ROOT);
+            if (lowerName.endsWith(".zip")) {
+                return StorageConnection.TYPE_ZIP;
+            }
+            if (lowerName.endsWith(".htm") || lowerName.endsWith(".html")) {
+                return StorageConnection.TYPE_HTML;
+            }
+            if (lowerName.endsWith(".png")) {
+                return StorageConnection.TYPE_PNG;
+            }
+            if (lowerName.endsWith(".mng")) {
+                return StorageConnection.TYPE_MNG;
+            }
+            if (lowerName.endsWith(".jpg") || lowerName.endsWith(".jpe") || lowerName.endsWith(".jpeg") || lowerName.endsWith(".jpz")) {
+                return StorageConnection.TYPE_JPEG;
+            }
+            if (lowerName.endsWith(".mmf") || lowerName.endsWith(".smaf")) {
+                return StorageConnection.TYPE_SMAF;
+            }
+            if (lowerName.endsWith(".smd")) {
+                return StorageConnection.TYPE_SMD;
+            }
+            if (lowerName.endsWith(".txt")) {
+                return StorageConnection.TYPE_TXT;
+            }
+            if (lowerName.endsWith(".vcf")) {
+                return StorageConnection.TYPE_VCARD;
+            }
+            if (lowerName.endsWith(".vbm")) {
+                return StorageConnection.TYPE_VBOOKMARK;
+            }
+            if (lowerName.endsWith(".vcs")) {
+                return StorageConnection.TYPE_VCALENDAR;
+            }
+            if (lowerName.endsWith(".vmg")) {
+                return StorageConnection.TYPE_VMESSAGE;
+            }
+            if (lowerName.endsWith(".vnt")) {
+                return StorageConnection.TYPE_VNOTE;
+            }
+            if (lowerName.endsWith(".eml")) {
+                return StorageConnection.TYPE_EML;
+            }
+            if (lowerName.endsWith(".mp4") || lowerName.endsWith(".m4v")) {
+                return StorageConnection.TYPE_MP4;
+            }
+            if (lowerName.endsWith(".gif")) {
+                return StorageConnection.TYPE_GIF;
+            }
+            if (lowerName.endsWith(".svg")) {
+                return StorageConnection.TYPE_SVG;
+            }
+            if (lowerName.endsWith(".swf")) {
+                return StorageConnection.TYPE_SWF;
+            }
+            if (lowerName.endsWith(".amr")) {
+                return StorageConnection.TYPE_AMR;
+            }
+            if (lowerName.endsWith(".mp3")) {
+                return StorageConnection.TYPE_MP3;
+            }
+            if (lowerName.endsWith(".jar") || lowerName.endsWith(".jad") || lowerName.endsWith(".class")) {
+                return StorageConnection.TYPE_JAVA;
+            }
+            if (lowerName.endsWith(".pdf")) {
+                return StorageConnection.TYPE_PDF;
+            }
+            if (lowerName.endsWith(".doc") || lowerName.endsWith(".docx")) {
+                return StorageConnection.TYPE_WORD;
+            }
+            if (lowerName.endsWith(".xls") || lowerName.endsWith(".xlsx")) {
+                return StorageConnection.TYPE_EXCEL;
+            }
+            if (lowerName.endsWith(".ppt") || lowerName.endsWith(".pptx")) {
+                return StorageConnection.TYPE_POWERPOINT;
+            }
+            return StorageConnection.TYPE_OTHER;
+        }
+
+        @Override
+        public String getTypeString() throws IOException {
+            return switch (getType()) {
+                case StorageConnection.TYPE_FOLDER -> "folder";
+                case StorageConnection.TYPE_ZIP -> "zip";
+                case StorageConnection.TYPE_HTML -> "html";
+                case StorageConnection.TYPE_PNG -> "png";
+                case StorageConnection.TYPE_MNG -> "mng";
+                case StorageConnection.TYPE_JPEG -> "jpeg";
+                case StorageConnection.TYPE_SMAF -> "smaf";
+                case StorageConnection.TYPE_SMD -> "smd";
+                case StorageConnection.TYPE_TXT -> "txt";
+                case StorageConnection.TYPE_VCARD -> "vcard";
+                case StorageConnection.TYPE_VBOOKMARK -> "vbookmark";
+                case StorageConnection.TYPE_VCALENDAR -> "vcalendar";
+                case StorageConnection.TYPE_VMESSAGE -> "vmessage";
+                case StorageConnection.TYPE_VNOTE -> "vnote";
+                case StorageConnection.TYPE_EML -> "eml";
+                case StorageConnection.TYPE_MP4 -> "mp4";
+                case StorageConnection.TYPE_GIF -> "gif";
+                case StorageConnection.TYPE_SVG -> "svg";
+                case StorageConnection.TYPE_SWF -> "swf";
+                case StorageConnection.TYPE_AMR -> "amr";
+                case StorageConnection.TYPE_MP3 -> "mp3";
+                case StorageConnection.TYPE_JAVA -> "java";
+                case StorageConnection.TYPE_PDF -> "pdf";
+                case StorageConnection.TYPE_WORD -> "word";
+                case StorageConnection.TYPE_EXCEL -> "excel";
+                case StorageConnection.TYPE_POWERPOINT -> "powerpoint";
+                default -> "other";
+            };
+        }
+
+        @Override
+        public long getLength() throws IOException {
+            ensureOpen();
+            if (!Files.exists(target.realPath()) || Files.isDirectory(target.realPath())) {
+                return 0L;
+            }
+            return Files.size(target.realPath());
+        }
+
+        @Override
+        public boolean isFolder() throws IOException {
+            ensureOpen();
+            return Files.isDirectory(target.realPath());
+        }
+
+        @Override
+        public boolean isFile() throws IOException {
+            ensureOpen();
+            return Files.isRegularFile(target.realPath());
+        }
+
+        @Override
+        public boolean isCopyrighted() {
+            return false;
+        }
+
+        @Override
+        public int getCopyrightedDataVersion() {
+            return 0;
+        }
+
+        @Override
+        public String getCopyrightedDataContentType() {
+            return null;
+        }
+
+        @Override
+        public String getCopyrightedDataHeader(String name) {
+            return null;
+        }
+
+        @Override
+        public String[] list() throws IOException {
+            ensureOpen();
+            if (!Files.isDirectory(target.realPath())) {
+                throw new IOException("Storage path is not a folder: " + target.logicalPath());
+            }
+            try (Stream<Path> children = Files.list(target.realPath())) {
+                return children
+                        .sorted()
+                        .map(path -> {
+                            String childName = path.getFileName() == null ? "" : path.getFileName().toString();
+                            return Files.isDirectory(path) ? childName + "/" : childName;
+                        })
+                        .toArray(String[]::new);
+            }
+        }
+
+        @Override
+        public boolean createFolder() throws IOException {
+            ensureOpen();
+            if (Files.exists(target.realPath())) {
+                return Files.isDirectory(target.realPath());
+            }
+            Files.createDirectories(target.realPath());
+            return true;
+        }
+
+        @Override
+        public boolean renameTo(String newName) throws IOException {
+            ensureOpen();
+            if (newName == null || newName.isBlank()) {
+                throw new IOException("New name is empty.");
+            }
+            if (newName.indexOf('/') >= 0 || newName.indexOf('\\') >= 0) {
+                throw new IOException("New name must not contain path separators.");
+            }
+            Path current = target.realPath();
+            Path parent = current.getParent();
+            if (parent == null) {
+                throw new IOException("Cannot rename storage root.");
+            }
+            Files.move(current, parent.resolve(newName));
+            return true;
+        }
+
+        @Override
+        public boolean delete() throws IOException {
+            ensureOpen();
+            if (!Files.exists(target.realPath())) {
+                return false;
+            }
+            deleteRecursively(target.realPath());
+            return true;
+        }
+
+        @Override
+        public InputStream openInputStream() throws IOException {
+            ensureOpen();
+            ensureReadable();
+            ensureNoOpenStream();
+            if (!Files.isRegularFile(target.realPath())) {
+                throw new IOException("Storage file does not exist: " + target.logicalPath());
+            }
+            return registerStream(Files.newInputStream(target.realPath(), StandardOpenOption.READ));
+        }
+
+        @Override
+        public InputRandomAccess openInputRandomAccess() throws IOException {
+            ensureOpen();
+            ensureReadable();
+            ensureNoOpenStream();
+            if (!Files.isRegularFile(target.realPath())) {
+                throw new IOException("Storage file does not exist: " + target.logicalPath());
+            }
+            streamOpen = true;
+            return new FileInputRandomAccess(target.realPath(), this::onStreamClosed);
+        }
+
+        @Override
+        public OutputStream openOutputStream() throws IOException {
+            ensureOpen();
+            ensureWritable();
+            ensureNoOpenStream();
+            if (target.directoryHint()) {
+                throw new IOException("Cannot open output stream for folder path: " + target.logicalPath());
+            }
+            Path parent = target.realPath().getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
+            return registerStream(Files.newOutputStream(
+                    target.realPath(),
+                    StandardOpenOption.CREATE,
+                    StandardOpenOption.TRUNCATE_EXISTING,
+                    StandardOpenOption.WRITE));
+        }
+
+        @Override
+        public String getApplicationDescription(String attribute) {
+            return null;
+        }
+
+        @Override
+        public void close() {
+            closed = true;
+        }
+
+        private <T extends java.io.Closeable> T registerStream(T stream) {
+            streamOpen = true;
+            if (stream instanceof InputStream inputStream) {
+                return (T) new StorageInputStream(inputStream, this::onStreamClosed);
+            }
+            if (stream instanceof OutputStream outputStream) {
+                return (T) new StorageOutputStream(outputStream, this::onStreamClosed);
+            }
+            return stream;
+        }
+
+        private void onStreamClosed() {
+            streamOpen = false;
+        }
+
+        private void ensureOpen() throws IOException {
+            if (closed) {
+                throw new IOException("Connection is closed.");
+            }
+        }
+
+        private void ensureReadable() throws IOException {
+            if (mode != READ && mode != READ_WRITE) {
+                throw new IOException("Connection is not open for input.");
+            }
+        }
+
+        private void ensureWritable() throws IOException {
+            if (mode != WRITE && mode != READ_WRITE) {
+                throw new IOException("Connection is not open for output.");
+            }
+        }
+
+        private void ensureNoOpenStream() throws IOException {
+            if (streamOpen) {
+                throw new IOException("A storage stream is already open.");
+            }
+        }
+
+        private static void deleteRecursively(Path path) throws IOException {
+            if (Files.isDirectory(path)) {
+                try (Stream<Path> children = Files.list(path)) {
+                    for (Path child : children.toList()) {
+                        deleteRecursively(child);
+                    }
+                }
+            }
+            Files.deleteIfExists(path);
+        }
+    }
+
+    private static final class StorageInputStream extends FilterInputStream {
+        private final Runnable onClose;
+        private boolean closed;
+
+        private StorageInputStream(InputStream input, Runnable onClose) {
+            super(input);
+            this.onClose = onClose;
+        }
+
+        @Override
+        public void close() throws IOException {
+            if (closed) {
+                return;
+            }
+            closed = true;
+            try {
+                super.close();
+            } finally {
+                onClose.run();
+            }
+        }
+    }
+
+    private static final class StorageOutputStream extends FilterOutputStream {
+        private final Runnable onClose;
+        private boolean closed;
+
+        private StorageOutputStream(OutputStream output, Runnable onClose) {
+            super(output);
+            this.onClose = onClose;
+        }
+
+        @Override
+        public void close() throws IOException {
+            if (closed) {
+                return;
+            }
+            closed = true;
+            try {
+                super.close();
+            } finally {
+                onClose.run();
+            }
+        }
+    }
+
+    private static final class FileInputRandomAccess extends InputRandomAccess {
+        private final RandomAccessFile delegate;
+        private final Runnable onClose;
+        private boolean closed;
+
+        private FileInputRandomAccess(Path path, Runnable onClose) throws IOException {
+            this.delegate = new RandomAccessFile(path.toFile(), "r");
+            this.onClose = onClose;
+        }
+
+        @Override
+        public int read() throws IOException {
+            return delegate.read();
+        }
+
+        @Override
+        public int read(byte[] buffer, int offset, int length) throws IOException {
+            return delegate.read(buffer, offset, length);
+        }
+
+        @Override
+        public long getPosition() throws IOException {
+            return delegate.getFilePointer();
+        }
+
+        @Override
+        public long setPosition(int from, long position) throws IOException {
+            long destination = switch (from) {
+                case com.j_phone.io.RandomAccess.SEEK_SET -> position;
+                case com.j_phone.io.RandomAccess.SEEK_CUR -> delegate.getFilePointer() + position;
+                case com.j_phone.io.RandomAccess.SEEK_END -> delegate.length() + position;
+                default -> throw new IOException("Unsupported seek origin: " + from);
+            };
+            delegate.seek(Math.max(0L, destination));
+            return delegate.getFilePointer();
+        }
+
+        @Override
+        public void close() throws IOException {
+            if (closed) {
+                return;
+            }
+            closed = true;
+            try {
+                delegate.close();
+            } finally {
+                onClose.run();
+            }
+        }
     }
 
     private static final class JarStoreConnection implements InputConnection {
