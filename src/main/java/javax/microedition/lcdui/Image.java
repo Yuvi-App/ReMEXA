@@ -39,21 +39,19 @@ public class Image {
         return createImage(1, 1);
     }
 
-    public static Image createImage(String name) {
+    public static Image createImage(String name) throws IOException {
         try (InputStream stream = MidletRuntime.openResource(name)) {
             if (stream == null) {
-                DebugLog.log(LogCategory.UI, Image.class.getName(), "Resource not found: " + name);
-                return createImage(1, 1);
+                throw new IOException("Resource not found: " + name);
             }
             var decoded = ImageIO.read(stream);
             if (decoded == null) {
-                DebugLog.log(LogCategory.UI, Image.class.getName(), "Unsupported image format: " + name);
-                return createImage(1, 1);
+                throw new IOException("Unsupported image format: " + name);
             }
             return new Image(decoded);
         } catch (IOException exception) {
             DebugLog.log(LogCategory.UI, Image.class.getName(), "Failed to load image " + name + ": " + exception.getMessage());
-            return createImage(1, 1);
+            throw exception;
         }
     }
 
@@ -66,7 +64,7 @@ public class Image {
     }
 
     public Graphics getGraphics() {
-        return new CanvasGraphics3D(awtImage.createGraphics(), getWidth(), getHeight(), true);
+        return new CanvasGraphics3D(awtImage.createGraphics(), getWidth(), getHeight(), true, awtImage);
     }
 
     public void getRGB(int[] rgbData, int offset, int scanlength, int x, int y, int width, int height) {
