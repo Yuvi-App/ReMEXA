@@ -41,6 +41,9 @@ public final class LaunchProfileResolver {
             if (looksLikeVodafonePlatform(platform) || looksLikeVodafoneVendor(descriptor)) {
                 return AppProfile.vodafone(normalizedOcl, resolveVodafonePhoneType(platform));
             }
+            if (looksLikeVodafoneOcl(normalizedOcl)) {
+                return AppProfile.vodafone(normalizedOcl, resolveVodafonePhoneType(platform));
+            }
             return AppProfile.jsky(normalizedOcl, resolveJskyPhoneType(platform));
         }
         return AppProfile.generic();
@@ -60,6 +63,47 @@ public final class LaunchProfileResolver {
         }
         var separator = ocl.indexOf(',');
         return separator >= 0 ? ocl.substring(0, separator).trim() : ocl.trim();
+    }
+
+    private static boolean looksLikeVodafoneOcl(String ocl) {
+        if (ocl == null || ocl.isBlank()) {
+            return false;
+        }
+        var normalized = ocl.trim().toUpperCase(java.util.Locale.ROOT);
+        if (!normalized.startsWith("JSCL-")) {
+            return false;
+        }
+        var version = normalized.substring("JSCL-".length()).trim();
+        return compareVersion(version, "1.2.0") >= 0;
+    }
+
+    private static int compareVersion(String left, String right) {
+        var leftParts = left.split("[^0-9]+");
+        var rightParts = right.split("[^0-9]+");
+        var maxLength = Math.max(leftParts.length, rightParts.length);
+        for (var index = 0; index < maxLength; index++) {
+            var leftValue = parseVersionPart(leftParts, index);
+            var rightValue = parseVersionPart(rightParts, index);
+            if (leftValue != rightValue) {
+                return Integer.compare(leftValue, rightValue);
+            }
+        }
+        return 0;
+    }
+
+    private static int parseVersionPart(String[] parts, int index) {
+        if (index >= parts.length) {
+            return 0;
+        }
+        var part = parts[index];
+        if (part == null || part.isBlank()) {
+            return 0;
+        }
+        try {
+            return Integer.parseInt(part);
+        } catch (NumberFormatException ignored) {
+            return 0;
+        }
     }
 
     private static Optional<String> resolveDeclaredPlatform(JadDescriptor descriptor) {
