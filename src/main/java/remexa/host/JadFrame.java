@@ -428,10 +428,11 @@ public final class JadFrame extends JFrame {
                         || displayable instanceof com.j_phone.amuse.ACanvas
                         || displayable instanceof com.j_phone.amuse.j3d.Canvas3D;
         var softKeyIndex = HostKeyMapper.toSoftKeyIndex(awtKeyCode);
-        if (softKeyIndex >= 0) {
+        if (softKeyIndex >= 0 && hasBoundSoftKey(displayable, softKeyIndex)) {
             if (!release) {
                 MidletRuntime.dispatchSoftKey(softKeyIndex);
             }
+            return;
         }
 
         var phoneKeyCode = HostKeyMapper.toPhoneKeyCode(awtKeyCode, jPhoneDirectionalLayout);
@@ -440,6 +441,17 @@ public final class JadFrame extends JFrame {
         }
 
         dispatchPhoneKey(phoneKeyCode, release);
+    }
+
+    private static boolean hasBoundSoftKey(javax.microedition.lcdui.Displayable displayable, int softKeyIndex) {
+        if (displayable == null) {
+            return false;
+        }
+        Command[] softKeys = displayable.softKeyCommands();
+        return softKeys != null
+                && softKeyIndex >= 0
+                && softKeyIndex < softKeys.length
+                && softKeys[softKeyIndex] != null;
     }
 
     private void dispatchPhoneKey(int phoneKeyCode, boolean release) {
