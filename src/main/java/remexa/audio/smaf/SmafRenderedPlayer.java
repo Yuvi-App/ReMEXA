@@ -125,7 +125,7 @@ public final class SmafRenderedPlayer implements AutoCloseable {
             workerToJoin = worker;
             lock.notifyAll();
         }
-        if (workerToJoin != null) {
+        if (workerToJoin != null && workerToJoin != Thread.currentThread()) {
             try {
                 workerToJoin.join(2_000L);
             } catch (InterruptedException ignored) {
@@ -201,13 +201,19 @@ public final class SmafRenderedPlayer implements AutoCloseable {
             }
 
             if (completionListener != null) {
-                completionListener.eventOccurred(-1);
+                dispatchCompletion(completionListener);
                 continue;
             }
 
             scaleIntoChunk(audio.pcm16Le(), startFrame, framesToWrite, leftGain, rightGain, chunkBuffer);
             line.write(chunkBuffer, 0, framesToWrite * 4);
         }
+    }
+
+    private static void dispatchCompletion(PhraseTrackListener listener) {
+        Thread callbackThread = new Thread(() -> listener.eventOccurred(-1), "remexa-smaf-callback");
+        callbackThread.setDaemon(true);
+        callbackThread.start();
     }
 
     private void ensureLineLocked() {

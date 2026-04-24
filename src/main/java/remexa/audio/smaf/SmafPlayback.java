@@ -338,7 +338,7 @@ public final class SmafPlayback implements AutoCloseable {
         sequencer.setSequence(playbackSequence);
         sequencer.addMetaEventListener(message -> {
             if (message.getType() == 0x2F && listener != null) {
-                listener.eventOccurred(-1);
+                dispatchCompletion(listener);
             }
         });
         if (hasPcmPayload) {
@@ -1491,6 +1491,12 @@ public final class SmafPlayback implements AutoCloseable {
                                        boolean oddLowBank,
                                        boolean arpeggioLayer,
                                        VoiceRole role) {
+    }
+
+    private static void dispatchCompletion(PhraseTrackListener listener) {
+        Thread callbackThread = new Thread(() -> listener.eventOccurred(-1), "remexa-smaf-callback");
+        callbackThread.setDaemon(true);
+        callbackThread.start();
     }
 
     private enum VoiceRole {
