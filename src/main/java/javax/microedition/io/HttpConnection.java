@@ -2,7 +2,7 @@ package javax.microedition.io;
 
 import java.io.IOException;
 
-public interface HttpConnection extends StreamConnection {
+public interface HttpConnection extends ContentConnection {
     String GET = "GET";
     String POST = "POST";
     String HEAD = "HEAD";
@@ -29,8 +29,6 @@ public interface HttpConnection extends StreamConnection {
 
     long getLastModified() throws IOException;
 
-    long getLength();
-
     int getPort();
 
     String getProtocol();
@@ -46,8 +44,6 @@ public interface HttpConnection extends StreamConnection {
     int getResponseCode() throws IOException;
 
     String getResponseMessage() throws IOException;
-
-    String getType();
 
     String getURL();
 
