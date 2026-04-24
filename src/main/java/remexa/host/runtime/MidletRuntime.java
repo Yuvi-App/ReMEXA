@@ -331,6 +331,14 @@ public final class MidletRuntime {
         return context.descriptor().sourcePath();
     }
 
+    public static String currentAppTitle() {
+        var context = activeContext();
+        if (context == null) {
+            return "Unknown Game";
+        }
+        return context.descriptor().title();
+    }
+
     public static javax.microedition.lcdui.Graphics currentGraphics() {
         return CURRENT_GRAPHICS.get();
     }

@@ -48,20 +48,21 @@ public final class RecordStore {
 
             LegacyStoreRecord legacyStore = null;
             Path legacyContainerPath = null;
-            boolean storeFileExists = Files.exists(storePath);
-            if (!storeFileExists) {
-                var legacyContainer = legacyContainerPath();
-                if (legacyContainer.isPresent()) {
-                    legacyContainerPath = legacyContainer.get();
-                    legacyStore = readLegacyStore(legacyContainerPath, name);
-                }
+            var legacyContainer = legacyContainerPath();
+            if (legacyContainer.isPresent()) {
+                legacyContainerPath = legacyContainer.get();
+                legacyStore = readLegacyStore(legacyContainerPath, name);
             }
+            boolean storeFileExists = Files.exists(storePath);
+            boolean legacyBacked = legacyContainerPath != null;
 
-            if (!storeFileExists && legacyStore == null && !createIfNecessary) {
+            if (legacyBacked && legacyStore == null && !createIfNecessary) {
+                throw new RecordStoreNotFoundException("RecordStore not found: " + name);
+            }
+            if (!legacyBacked && !storeFileExists && !createIfNecessary) {
                 throw new RecordStoreNotFoundException("RecordStore not found: " + name);
             }
 
-            boolean legacyBacked = !storeFileExists && legacyContainerPath != null;
             if (!legacyBacked && !storeFileExists && createIfNecessary) {
                 Files.createDirectories(root);
                 Files.write(storePath, new byte[0]);
@@ -77,15 +78,19 @@ public final class RecordStore {
 
     public static void deleteRecordStore(String name) throws RecordStoreException {
         try {
+            var legacyContainer = legacyContainerPath();
             Path root = rmsRoot();
             Path storePath = root.resolve(sanitize(name) + ".bin");
-            if (Files.exists(storePath)) {
-                Files.delete(storePath);
-                return;
+            if (legacyContainer.isPresent()) {
+                if (deleteLegacyStore(legacyContainer.get(), name)) {
+                    Files.deleteIfExists(storePath);
+                    return;
+                }
+                throw new RecordStoreNotFoundException("RecordStore not found: " + name);
             }
 
-            var legacyContainer = legacyContainerPath();
-            if (legacyContainer.isPresent() && deleteLegacyStore(legacyContainer.get(), name)) {
+            if (Files.exists(storePath)) {
+                Files.delete(storePath);
                 return;
             }
 
@@ -99,6 +104,12 @@ public final class RecordStore {
 
     public static String[] listRecordStores() throws RecordStoreException {
         try {
+            var legacyContainer = legacyContainerPath();
+            if (legacyContainer.isPresent()) {
+                var legacyNames = readLegacyStoreNames(legacyContainer.get());
+                return legacyNames.isEmpty() ? null : legacyNames.toArray(String[]::new);
+            }
+
             Path root = rmsRoot();
             var names = new LinkedHashSet<String>();
             if (Files.isDirectory(root)) {
@@ -110,15 +121,6 @@ public final class RecordStore {
                             .sorted(Comparator.naturalOrder())
                             .map(fileName -> fileName.substring(0, fileName.length() - 4))
                             .forEach(names::add);
-                }
-            }
-
-            var legacyContainer = legacyContainerPath();
-            if (legacyContainer.isPresent()) {
-                for (String legacyName : readLegacyStoreNames(legacyContainer.get())) {
-                    if (!names.contains(sanitize(legacyName))) {
-                        names.add(legacyName);
-                    }
                 }
             }
 
@@ -228,20 +230,25 @@ public final class RecordStore {
         nextRecordId = 1;
         version = 0;
         try {
-            if (Files.exists(storePath) && Files.size(storePath) > 0L) {
-                loadBinaryStore();
+            if (legacyBacked) {
+                if (legacyStore != null) {
+                    loadLegacyStore(legacyStore);
+                    if (dumpLegacyMirrorEnabled()) {
+                        writeBinaryStore();
+                        DebugLog.log(
+                                LogCategory.RMS,
+                                RecordStore.class.getName(),
+                                "Dumped legacy RecordStore \"" + name + "\" to " + storePath
+                        );
+                    }
+                    return;
+                }
+                lastModified = System.currentTimeMillis();
                 return;
             }
-            if (legacyStore != null) {
-                loadLegacyStore(legacyStore);
-                if (dumpLegacyMirrorEnabled()) {
-                    writeBinaryStore();
-                    DebugLog.log(
-                            LogCategory.RMS,
-                            RecordStore.class.getName(),
-                            "Dumped legacy RecordStore \"" + name + "\" to " + storePath.getFileName()
-                    );
-                }
+
+            if (Files.exists(storePath) && Files.size(storePath) > 0L) {
+                loadBinaryStore();
                 return;
             }
             lastModified = Files.exists(storePath)
@@ -463,7 +470,20 @@ public final class RecordStore {
     }
 
     private static Path rmsRoot() {
-        return MidletRuntime.appStorageRoot().resolve("rms");
+        return appDataRmsRoot().resolve(sanitizeAppFolderName(MidletRuntime.currentAppTitle()));
+    }
+
+    private static Path appDataRmsRoot() {
+        String appData = System.getenv("APPDATA");
+        if (appData != null && !appData.isBlank()) {
+            return Path.of(appData, "ReMEXA", "rms");
+        }
+        return Path.of(System.getProperty("user.home"), ".remexa", "rms");
+    }
+
+    private static String sanitizeAppFolderName(String title) {
+        String sanitized = title == null ? "" : title.replaceAll("[^A-Za-z0-9._ -]", "_").trim();
+        return sanitized.isEmpty() ? "Unknown Game" : sanitized;
     }
 
     private static boolean dumpLegacyMirrorEnabled() {

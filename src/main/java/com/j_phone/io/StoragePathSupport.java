@@ -11,7 +11,6 @@ import java.util.Locale;
 
 public final class StoragePathSupport {
     private static final Path STORAGE_ROOT = initStorageRoot();
-    private static final Path INTERNAL_ROOT = STORAGE_ROOT.resolve("ms");
     private static final Path EXTERNAL_ROOT = STORAGE_ROOT.resolve("mc");
 
     private StoragePathSupport() {
@@ -26,7 +25,7 @@ public final class StoragePathSupport {
 
         String rootSegment = segments.get(0).toLowerCase(Locale.ROOT);
         Path storageRoot = switch (rootSegment) {
-            case "ms" -> ensureRoot(INTERNAL_ROOT);
+            case "ms" -> ensureRoot(EXTERNAL_ROOT);
             case "mc" -> ensureRoot(EXTERNAL_ROOT);
             default -> throw new IOException("Unsupported storage root: " + logicalPath);
         };
@@ -52,6 +51,10 @@ public final class StoragePathSupport {
         }
         FileStore store = Files.getFileStore(existing);
         return store.getUsableSpace();
+    }
+
+    public static Path storageRoot() throws IOException {
+        return ensureRoot(STORAGE_ROOT);
     }
 
     private static Path initStorageRoot() {

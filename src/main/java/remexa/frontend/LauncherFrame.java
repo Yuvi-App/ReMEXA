@@ -1,9 +1,11 @@
 package remexa.frontend;
 
+import com.j_phone.io.StoragePathSupport;
 import java.awt.BasicStroke;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
+import java.awt.Desktop;
 import java.awt.Dimension;
 import java.awt.FileDialog;
 import java.awt.Font;
@@ -13,6 +15,8 @@ import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.datatransfer.DataFlavor;
 import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -232,6 +236,11 @@ public final class LauncherFrame extends JFrame {
         }
         settingsMenu.add(hostScaleMenu);
         settingsMenu.addSeparator();
+        var openStorageFolderItem = new JMenuItem("Open Storage Folder");
+        styleMenuItem(openStorageFolderItem);
+        openStorageFolderItem.addActionListener(event -> openStorageFolder());
+        settingsMenu.add(openStorageFolderItem);
+        settingsMenu.addSeparator();
         var debuggingMenu = new JMenu("Debugging");
         styleMenu(debuggingMenu);
         var dumpRmsItem = new JCheckBoxMenuItem("Dump RMS", HostUiSettings.dumpRms());
@@ -340,6 +349,52 @@ public final class LauncherFrame extends JFrame {
 
     private void updateToggleAllLogsItem(JMenuItem item) {
         item.setText(LogSettings.areAllEnabled() ? "Disable All Debug Logs" : "Enable All Debug Logs");
+    }
+
+    private void openStorageFolder() {
+        try {
+            Path storageFolder = StoragePathSupport.storageRoot().toAbsolutePath().normalize();
+            Files.createDirectories(storageFolder);
+            openFolderInExplorer(storageFolder);
+            DebugLog.log(
+                    LogCategory.FRONTEND,
+                    LauncherFrame.class.getName(),
+                    "Opened storage folder: " + storageFolder
+            );
+        } catch (IOException exception) {
+            DebugLog.log(
+                    LogCategory.FRONTEND,
+                    LauncherFrame.class.getName(),
+                    "Failed to open storage folder: " + exception.getMessage()
+            );
+            JOptionPane.showMessageDialog(
+                    LauncherFrame.this,
+                    exception.getMessage(),
+                    "Open Storage Folder Failed",
+                    JOptionPane.ERROR_MESSAGE
+            );
+        }
+    }
+
+    private static void openFolderInExplorer(Path folder) throws IOException {
+        if (Desktop.isDesktopSupported()) {
+            var desktop = Desktop.getDesktop();
+            if (desktop.isSupported(Desktop.Action.OPEN)) {
+                desktop.open(folder.toFile());
+                return;
+            }
+        }
+
+        String osName = System.getProperty("os.name", "").toLowerCase();
+        if (osName.contains("win")) {
+            new ProcessBuilder("explorer.exe", folder.toString()).start();
+            return;
+        }
+        if (osName.contains("mac")) {
+            new ProcessBuilder("open", folder.toString()).start();
+            return;
+        }
+        new ProcessBuilder("xdg-open", folder.toString()).start();
     }
 
     private final class JadTransferHandler extends TransferHandler {
