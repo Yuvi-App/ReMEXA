@@ -9,6 +9,7 @@ public class Displayable {
     private String title;
     private Ticker ticker;
     private CommandListener commandListener;
+    private boolean shown;
 
     public String getTitle() {
         return title;
@@ -42,6 +43,10 @@ public class Displayable {
 
     public CommandListener getCommandListener() {
         return commandListener;
+    }
+
+    public boolean isShown() {
+        return shown;
     }
 
     public void fireCommand(int index) {
@@ -102,5 +107,13 @@ public class Displayable {
                 || commandType == Command.CANCEL
                 || commandType == Command.STOP
                 || commandType == Command.EXIT;
+    }
+
+    final void fireShown() {
+        shown = true;
+    }
+
+    final void fireHidden() {
+        shown = false;
     }
 }

@@ -1,5 +1,6 @@
 package javax.microedition.lcdui;
 
+import com.j_phone.system.DeviceControl;
 import javax.microedition.midlet.MIDlet;
 import remexa.host.profile.DisplayMetrics;
 import remexa.host.runtime.MidletRuntime;
@@ -50,11 +51,25 @@ public final class Display {
         return 65536;
     }
 
+    public boolean vibrate(int duration) {
+        SdkStubSupport.log(Display.class.getName(), "vibrate", duration);
+        if (duration <= 0) {
+            DeviceControl.getDefaultDeviceControl().setDeviceActive(DeviceControl.VIBRATION, false);
+            return false;
+        }
+        DeviceControl.getDefaultDeviceControl().setDeviceActive(DeviceControl.VIBRATION, true);
+        return true;
+    }
+
     DisplayMetrics displayMetrics() {
         return MidletRuntime.getDisplayMetrics(midlet);
     }
 
     private static void initializeDisplayable(Displayable displayable) {
+        if (displayable == null) {
+            return;
+        }
+        displayable.fireShown();
         if (displayable instanceof com.j_phone.amuse.ACanvas aCanvas) {
             aCanvas.attachHostGraphics();
             ((Canvas) aCanvas).fireShowNotify();
@@ -69,6 +84,9 @@ public final class Display {
     private static void deactivateDisplayable(Displayable previous, Displayable next) {
         if (previous == next) {
             return;
+        }
+        if (previous != null) {
+            previous.fireHidden();
         }
         if (previous instanceof Canvas canvas) {
             canvas.fireHideNotify();

@@ -355,6 +355,10 @@ public abstract class Canvas extends Displayable {
         hideNotify();
     }
 
+    protected final boolean containsAnyPressedKey(int... keyCodes) {
+        return containsAnyKey(keyCodes);
+    }
+
     private boolean containsAnyKey(int... keyCodes) {
         for (var keyCode : keyCodes) {
             if (pressedKeys.contains(keyCode)) {
