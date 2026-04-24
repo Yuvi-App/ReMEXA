@@ -5,6 +5,7 @@ import java.util.Locale;
 public final class LaunchConfig {
     public static final String FONT_TYPE_PROPERTY = "remexa.fontType";
     public static final String JSKY_PHONE_TYPE_PROPERTY = "remexa.jskyPhoneType";
+    public static final String VODAFONE_PHONE_TYPE_PROPERTY = "remexa.vodafonePhoneType";
     public static final String HOST_SCALE_PROPERTY = "remexa.hostScale";
     public static final int MIN_HOST_SCALE = 1;
     public static final int MAX_HOST_SCALE = 5;
@@ -116,6 +117,63 @@ public final class LaunchConfig {
     public static void applyJskyPhoneType(JskyPhoneType jskyPhoneType) {
         var resolved = jskyPhoneType == null ? JskyPhoneType.GENERIC : jskyPhoneType;
         System.setProperty(JSKY_PHONE_TYPE_PROPERTY, resolved.id());
+    }
+
+    public enum VodafonePhoneType {
+        GENERIC("generic", "Vodafone Generic", "Vodafone-Generic"),
+        V604SH("v604sh", "V604SH", "V604SH");
+
+        private final String id;
+        private final String label;
+        private final String platformName;
+
+        VodafonePhoneType(String id, String label, String platformName) {
+            this.id = id;
+            this.label = label;
+            this.platformName = platformName;
+        }
+
+        public String id() {
+            return id;
+        }
+
+        public String platformName() {
+            return platformName;
+        }
+
+        @Override
+        public String toString() {
+            return label;
+        }
+
+        public static VodafonePhoneType fromId(String candidate) {
+            if (candidate == null) {
+                return null;
+            }
+            var normalized = candidate.trim().toLowerCase(Locale.ROOT);
+            for (var type : values()) {
+                if (type.id.equals(normalized)
+                        || type.platformName.toLowerCase(Locale.ROOT).equals(normalized)
+                        || type.label.toLowerCase(Locale.ROOT).equals(normalized)) {
+                    return type;
+                }
+            }
+            return null;
+        }
+
+        public static VodafonePhoneType normalize(String candidate) {
+            var type = fromId(candidate);
+            return type == null ? GENERIC : type;
+        }
+
+        public static VodafonePhoneType resolveConfigured() {
+            return normalize(System.getProperty(VODAFONE_PHONE_TYPE_PROPERTY, GENERIC.id));
+        }
+    }
+
+    public static void applyVodafonePhoneType(VodafonePhoneType vodafonePhoneType) {
+        var resolved = vodafonePhoneType == null ? VodafonePhoneType.GENERIC : vodafonePhoneType;
+        System.setProperty(VODAFONE_PHONE_TYPE_PROPERTY, resolved.id());
     }
 
     public static Integer parseHostScale(String candidate) {

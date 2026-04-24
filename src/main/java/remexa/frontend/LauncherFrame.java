@@ -191,6 +191,25 @@ public final class LauncherFrame extends JFrame {
             jskyPhoneMenu.add(phoneItem);
         }
         settingsMenu.add(jskyPhoneMenu);
+        var vodafonePhoneMenu = new JMenu("Vodafone Phone Type");
+        styleMenu(vodafonePhoneMenu);
+        var vodafonePhoneGroup = new ButtonGroup();
+        for (var phoneType : LaunchConfig.VodafonePhoneType.values()) {
+            var phoneItem = new JRadioButtonMenuItem(phoneType.toString(), HostUiSettings.vodafonePhoneType() == phoneType);
+            styleMenuItem(phoneItem);
+            vodafonePhoneGroup.add(phoneItem);
+            phoneItem.addActionListener(event -> {
+                HostUiSettings.setVodafonePhoneType(phoneType);
+                LaunchConfig.applyVodafonePhoneType(phoneType);
+                DebugLog.log(
+                        LogCategory.FRONTEND,
+                        LauncherFrame.class.getName(),
+                        "Vodafone phone type set to " + phoneType.platformName()
+                );
+            });
+            vodafonePhoneMenu.add(phoneItem);
+        }
+        settingsMenu.add(vodafonePhoneMenu);
         settingsMenu.addSeparator();
         var hostScaleMenu = new JMenu("Host Scale");
         styleMenu(hostScaleMenu);

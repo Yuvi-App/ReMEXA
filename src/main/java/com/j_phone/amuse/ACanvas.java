@@ -29,6 +29,10 @@ public abstract class ACanvas extends javax.microedition.lcdui.Canvas implements
         }
         palette = new int[numPalettes];
         patterns = new byte[numPatterns][];
+        remexa.host.runtime.MidletRuntime.updateDisplayMetrics(
+                this,
+                new remexa.host.profile.DisplayMetrics(fw, fh, "ACanvas framebuffer")
+        );
         remexa.host.runtime.MidletRuntime.createAmuseFrameBuffer(this, fw, fh);
     }
 

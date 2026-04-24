@@ -17,6 +17,10 @@ public final class LaunchProfileResolver {
             "App-Display-Size",
             "AppSize"
     );
+    private static final List<String> PLATFORM_KEYS = List.of(
+            "microedition.platform",
+            "Platform"
+    );
     private static final Pattern SIZE_PATTERN = Pattern.compile("(\\d+)\\D+(\\d+)");
 
     private LaunchProfileResolver() {
@@ -32,7 +36,12 @@ public final class LaunchProfileResolver {
     private static AppProfile resolveProfile(JadDescriptor descriptor) {
         var ocl = descriptor.property("MIDlet-OCL").orElse("");
         if (isJskyFamily(ocl)) {
-            return AppProfile.jsky(primaryOclToken(ocl), LaunchConfig.JskyPhoneType.resolveConfigured());
+            var normalizedOcl = primaryOclToken(ocl);
+            var platform = resolveDeclaredPlatform(descriptor).orElse("");
+            if (looksLikeVodafonePlatform(platform) || looksLikeVodafoneVendor(descriptor)) {
+                return AppProfile.vodafone(normalizedOcl, resolveVodafonePhoneType(platform));
+            }
+            return AppProfile.jsky(normalizedOcl, resolveJskyPhoneType(platform));
         }
         return AppProfile.generic();
     }
@@ -51,6 +60,44 @@ public final class LaunchProfileResolver {
         }
         var separator = ocl.indexOf(',');
         return separator >= 0 ? ocl.substring(0, separator).trim() : ocl.trim();
+    }
+
+    private static Optional<String> resolveDeclaredPlatform(JadDescriptor descriptor) {
+        for (var key : PLATFORM_KEYS) {
+            var value = descriptor.property(key)
+                    .map(String::trim)
+                    .filter(candidate -> !candidate.isEmpty());
+            if (value.isPresent()) {
+                return value;
+            }
+        }
+        return Optional.empty();
+    }
+
+    private static boolean looksLikeVodafonePlatform(String platform) {
+        if (platform == null || platform.isBlank()) {
+            return false;
+        }
+        var normalized = platform.trim().toUpperCase(java.util.Locale.ROOT);
+        return normalized.startsWith("V") || normalized.contains("VODAFONE");
+    }
+
+    private static boolean looksLikeVodafoneVendor(JadDescriptor descriptor) {
+        return descriptor.property("MIDlet-Vendor")
+                .map(String::trim)
+                .map(value -> value.toUpperCase(java.util.Locale.ROOT))
+                .filter(value -> value.contains("VODAFONE") || value.contains("SOFTBANK"))
+                .isPresent();
+    }
+
+    private static LaunchConfig.JskyPhoneType resolveJskyPhoneType(String platform) {
+        var declared = LaunchConfig.JskyPhoneType.fromId(platform);
+        return declared == null ? LaunchConfig.JskyPhoneType.resolveConfigured() : declared;
+    }
+
+    private static LaunchConfig.VodafonePhoneType resolveVodafonePhoneType(String platform) {
+        var declared = LaunchConfig.VodafonePhoneType.fromId(platform);
+        return declared == null ? LaunchConfig.VodafonePhoneType.resolveConfigured() : declared;
     }
 
     private static Optional<DisplayMetrics> resolveDisplayMetrics(JadDescriptor descriptor, AppProfile profile) {

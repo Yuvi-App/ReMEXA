@@ -39,6 +39,20 @@ public final class HostUiSettings {
         RemexaPreferences.ui().put(RemexaPreferences.JSKY_PHONE_TYPE_KEY, resolved.id());
     }
 
+    public static LaunchConfig.VodafonePhoneType vodafonePhoneType() {
+        return LaunchConfig.VodafonePhoneType.normalize(
+                RemexaPreferences.ui().get(
+                        RemexaPreferences.VODAFONE_PHONE_TYPE_KEY,
+                        LaunchConfig.VodafonePhoneType.GENERIC.id()
+                )
+        );
+    }
+
+    public static void setVodafonePhoneType(LaunchConfig.VodafonePhoneType vodafonePhoneType) {
+        var resolved = vodafonePhoneType == null ? LaunchConfig.VodafonePhoneType.GENERIC : vodafonePhoneType;
+        RemexaPreferences.ui().put(RemexaPreferences.VODAFONE_PHONE_TYPE_KEY, resolved.id());
+    }
+
     public static int hostScale() {
         return LaunchConfig.normalizeHostScale(
                 RemexaPreferences.ui().get(RemexaPreferences.HOST_SCALE_KEY, "3")

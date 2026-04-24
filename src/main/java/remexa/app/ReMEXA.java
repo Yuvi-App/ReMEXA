@@ -27,6 +27,7 @@ public final class ReMEXA {
         var launchRequest = parseLaunchRequest(arguments);
         LaunchConfig.applyFontType(launchRequest.fontType() == null ? HostUiSettings.fontType() : launchRequest.fontType());
         LaunchConfig.applyJskyPhoneType(launchRequest.jskyPhoneType() == null ? HostUiSettings.jskyPhoneType() : launchRequest.jskyPhoneType());
+        LaunchConfig.applyVodafonePhoneType(launchRequest.vodafonePhoneType() == null ? HostUiSettings.vodafonePhoneType() : launchRequest.vodafonePhoneType());
         LaunchConfig.applyHostScale(launchRequest.hostScale() == null ? HostUiSettings.hostScale() : launchRequest.hostScale());
         if (launchRequest.directLaunchRequested()) {
             if (launchRequest.jadPath() == null) {
@@ -172,6 +173,7 @@ public final class ReMEXA {
         boolean exitAfterCapture = false;
         LaunchConfig.FontType fontType = null;
         LaunchConfig.JskyPhoneType jskyPhoneType = null;
+        LaunchConfig.VodafonePhoneType vodafonePhoneType = null;
         Integer hostScale = null;
 
         for (int index = 0; index < arguments.size(); index++) {
@@ -183,12 +185,12 @@ public final class ReMEXA {
             if ("--font".equals(argument)) {
                 if (index + 1 >= arguments.size()) {
                     System.err.println("ReMEXA launch failed: --font requires 'bitmap' or 'system'.");
-                    return new LaunchRequest(null, showHostDetails, true, null, 0, false, null, null, hostScale);
+                    return new LaunchRequest(null, showHostDetails, true, null, 0, false, null, null, null, hostScale);
                 }
                 var candidate = LaunchConfig.FontType.fromId(arguments.get(++index));
                 if (candidate == null) {
                     System.err.println("ReMEXA launch failed: unsupported font type. Use 'bitmap' or 'system'.");
-                    return new LaunchRequest(null, showHostDetails, true, null, 0, false, null, null, hostScale);
+                    return new LaunchRequest(null, showHostDetails, true, null, 0, false, null, null, null, hostScale);
                 }
                 fontType = candidate;
                 continue;
@@ -196,25 +198,38 @@ public final class ReMEXA {
             if ("--jsky-phone".equals(argument)) {
                 if (index + 1 >= arguments.size()) {
                     System.err.println("ReMEXA launch failed: --jsky-phone requires 'JSKY-Generic' or 'J-SH53'.");
-                    return new LaunchRequest(null, showHostDetails, true, null, 0, false, fontType, null, hostScale);
+                    return new LaunchRequest(null, showHostDetails, true, null, 0, false, fontType, null, null, hostScale);
                 }
                 var candidate = LaunchConfig.JskyPhoneType.fromId(arguments.get(++index));
                 if (candidate == null) {
                     System.err.println("ReMEXA launch failed: unsupported JSKY phone type. Use 'JSKY-Generic' or 'J-SH53'.");
-                    return new LaunchRequest(null, showHostDetails, true, null, 0, false, fontType, null, hostScale);
+                    return new LaunchRequest(null, showHostDetails, true, null, 0, false, fontType, null, null, hostScale);
                 }
                 jskyPhoneType = candidate;
+                continue;
+            }
+            if ("--vodafone-phone".equals(argument)) {
+                if (index + 1 >= arguments.size()) {
+                    System.err.println("ReMEXA launch failed: --vodafone-phone requires 'Vodafone-Generic' or 'V604SH'.");
+                    return new LaunchRequest(null, showHostDetails, true, null, 0, false, fontType, jskyPhoneType, null, hostScale);
+                }
+                var candidate = LaunchConfig.VodafonePhoneType.fromId(arguments.get(++index));
+                if (candidate == null) {
+                    System.err.println("ReMEXA launch failed: unsupported Vodafone phone type. Use 'Vodafone-Generic' or 'V604SH'.");
+                    return new LaunchRequest(null, showHostDetails, true, null, 0, false, fontType, jskyPhoneType, null, hostScale);
+                }
+                vodafonePhoneType = candidate;
                 continue;
             }
             if ("--host-scale".equals(argument)) {
                 if (index + 1 >= arguments.size()) {
                     System.err.println("ReMEXA launch failed: --host-scale requires a value from 1 to 5.");
-                    return new LaunchRequest(null, showHostDetails, true, null, 0, false, fontType, jskyPhoneType, null);
+                    return new LaunchRequest(null, showHostDetails, true, null, 0, false, fontType, jskyPhoneType, vodafonePhoneType, null);
                 }
                 var candidate = LaunchConfig.parseHostScale(arguments.get(++index));
                 if (candidate == null) {
                     System.err.println("ReMEXA launch failed: unsupported host scale. Use 1 to 5.");
-                    return new LaunchRequest(null, showHostDetails, true, null, 0, false, fontType, jskyPhoneType, null);
+                    return new LaunchRequest(null, showHostDetails, true, null, 0, false, fontType, jskyPhoneType, vodafonePhoneType, null);
                 }
                 hostScale = candidate;
                 continue;
@@ -222,7 +237,7 @@ public final class ReMEXA {
             if ("--capture-frame".equals(argument)) {
                 if (index + 1 >= arguments.size()) {
                     System.err.println("ReMEXA launch failed: --capture-frame requires an output path.");
-                    return new LaunchRequest(null, showHostDetails, true, null, 0, false, fontType, jskyPhoneType, hostScale);
+                    return new LaunchRequest(null, showHostDetails, true, null, 0, false, fontType, jskyPhoneType, vodafonePhoneType, hostScale);
                 }
                 captureFramePath = Path.of(arguments.get(++index));
                 continue;
@@ -230,7 +245,7 @@ public final class ReMEXA {
             if ("--capture-after-ms".equals(argument)) {
                 if (index + 1 >= arguments.size()) {
                     System.err.println("ReMEXA launch failed: --capture-after-ms requires a numeric value.");
-                    return new LaunchRequest(null, showHostDetails, true, null, 0, false, fontType, jskyPhoneType, hostScale);
+                    return new LaunchRequest(null, showHostDetails, true, null, 0, false, fontType, jskyPhoneType, vodafonePhoneType, hostScale);
                 }
                 captureDelayMs = Integer.parseInt(arguments.get(++index));
                 continue;
@@ -243,7 +258,7 @@ public final class ReMEXA {
                 directLaunchRequested = true;
                 if (index + 1 >= arguments.size()) {
                     System.err.println("ReMEXA launch failed: --run-jad requires a JAD path.");
-                    return new LaunchRequest(null, showHostDetails, true, captureFramePath, captureDelayMs, exitAfterCapture, fontType, jskyPhoneType, hostScale);
+                    return new LaunchRequest(null, showHostDetails, true, captureFramePath, captureDelayMs, exitAfterCapture, fontType, jskyPhoneType, vodafonePhoneType, hostScale);
                 }
                 directJad = Path.of(arguments.get(++index));
                 continue;
@@ -254,7 +269,7 @@ public final class ReMEXA {
             }
         }
 
-        return new LaunchRequest(directJad, showHostDetails, directLaunchRequested, captureFramePath, captureDelayMs, exitAfterCapture, fontType, jskyPhoneType, hostScale);
+        return new LaunchRequest(directJad, showHostDetails, directLaunchRequested, captureFramePath, captureDelayMs, exitAfterCapture, fontType, jskyPhoneType, vodafonePhoneType, hostScale);
     }
 
     private record LaunchRequest(
@@ -266,6 +281,7 @@ public final class ReMEXA {
             boolean exitAfterCapture,
             LaunchConfig.FontType fontType,
             LaunchConfig.JskyPhoneType jskyPhoneType,
+            LaunchConfig.VodafonePhoneType vodafonePhoneType,
             Integer hostScale
     ) {
     }
