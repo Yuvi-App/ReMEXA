@@ -6,6 +6,8 @@ import remexa.host.j3d.MascotFigure;
 import remexa.host.j3d.MascotLoader;
 import remexa.host.j3d.MbacModel;
 import remexa.host.runtime.MidletRuntime;
+import remexa.probes.DebugLog;
+import remexa.probes.LogCategory;
 
 public class Figure {
     private final MbacModel model;
@@ -20,12 +22,20 @@ public class Figure {
         if (data == null) {
             throw new NullPointerException();
         }
+        MbacModel loadedModel = null;
         try {
-            this.model = MascotLoader.loadFigure(data);
-            this.mascotFigure = new MascotFigure(this.model);
-        } catch (IOException exception) {
-            throw new RuntimeException("Failed to load figure", exception);
+            loadedModel = MascotLoader.loadFigure(data);
+        } catch (Exception exception) {
+            DebugLog.log(
+                    LogCategory.J3D,
+                    Figure.class.getName(),
+                    "Failed to load figure bytes=" + data.length
+                            + " firstBytes=" + previewBytes(data)
+                            + ": " + exception
+            );
         }
+        this.model = loadedModel;
+        this.mascotFigure = new MascotFigure(this.model);
     }
 
     public Figure (java.lang.String name) throws java.io.IOException {
@@ -77,5 +87,17 @@ public class Figure {
 
     public MascotFigure mascotFigure() {
         return mascotFigure;
+    }
+
+    private static String previewBytes(byte[] data) {
+        int count = Math.min(data.length, 8);
+        var builder = new StringBuilder(count * 3);
+        for (int i = 0; i < count; i++) {
+            if (i > 0) {
+                builder.append(' ');
+            }
+            builder.append(String.format("%02X", data[i] & 0xFF));
+        }
+        return builder.toString();
     }
 }

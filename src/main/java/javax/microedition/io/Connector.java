@@ -97,6 +97,36 @@ public final class Connector {
         return name.substring(0, separator).toLowerCase(Locale.ROOT);
     }
 
+    private static InputStream wrapLegacyResourceStream(InputStream input) {
+        return input == null ? null : new LegacyResourceInputStream(input);
+    }
+
+    private static final class LegacyResourceInputStream extends FilterInputStream {
+        private LegacyResourceInputStream(InputStream in) {
+            super(in);
+        }
+
+        @Override
+        public int read(byte[] buffer, int offset, int length) throws IOException {
+            if (length == 0) {
+                return 0;
+            }
+            int firstRead = super.read(buffer, offset, length);
+            if (firstRead <= 0) {
+                return firstRead;
+            }
+            int totalRead = firstRead;
+            while (totalRead < length) {
+                int count = super.read(buffer, offset + totalRead, length - totalRead);
+                if (count <= 0) {
+                    break;
+                }
+                totalRead += count;
+            }
+            return totalRead;
+        }
+    }
+
     private static final class ResourceConnection implements InputConnection {
         private final String resourceName;
         private boolean closed;
@@ -112,7 +142,7 @@ public final class Connector {
             if (input == null) {
                 throw new IOException("Missing resource: " + resourceName);
             }
-            return input;
+            return wrapLegacyResourceStream(input);
         }
 
         @Override

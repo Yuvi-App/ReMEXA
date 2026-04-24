@@ -3,6 +3,7 @@ package remexa.host.runtime;
 import com.j_phone.amuse.ACanvas;
 import com.jblend.graphics.sprite.SpriteCanvas;
 import java.awt.image.BufferedImage;
+import java.io.FilterInputStream;
 import java.io.InputStream;
 import java.nio.file.Path;
 import java.util.Collections;
@@ -254,7 +255,7 @@ public final class MidletRuntime {
         if (threadContext != null) {
             var stream = threadContext.getResourceAsStream(normalizedName);
             if (stream != null) {
-                return stream;
+                return wrapLegacyResourceStream(stream);
             }
         }
 
@@ -265,7 +266,37 @@ public final class MidletRuntime {
         if (context == null) {
             return null;
         }
-        return context.classLoader().getResourceAsStream(normalizedName);
+        return wrapLegacyResourceStream(context.classLoader().getResourceAsStream(normalizedName));
+    }
+
+    private static InputStream wrapLegacyResourceStream(InputStream stream) {
+        return stream == null ? null : new LegacyResourceInputStream(stream);
+    }
+
+    private static final class LegacyResourceInputStream extends FilterInputStream {
+        private LegacyResourceInputStream(InputStream in) {
+            super(in);
+        }
+
+        @Override
+        public int read(byte[] buffer, int offset, int length) throws java.io.IOException {
+            if (length == 0) {
+                return 0;
+            }
+            int firstRead = super.read(buffer, offset, length);
+            if (firstRead <= 0) {
+                return firstRead;
+            }
+            int totalRead = firstRead;
+            while (totalRead < length) {
+                int count = super.read(buffer, offset + totalRead, length - totalRead);
+                if (count <= 0) {
+                    break;
+                }
+                totalRead += count;
+            }
+            return totalRead;
+        }
     }
 
     public static BufferedImage currentFrameSnapshot() {

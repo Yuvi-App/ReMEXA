@@ -55,10 +55,10 @@ public final class CanvasGraphics3D extends Graphics implements Graphics3D {
         int scaleX = layout.getScaleX();
         int scaleY = layout.getScaleY();
         if (scaleX == 0) {
-            scaleX = 4096;
+            scaleX = 512;
         }
         if (scaleY == 0) {
-            scaleY = 4096;
+            scaleY = 512;
         }
         SoftwareJ3dRenderer.drawFigure(
                 this,

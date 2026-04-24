@@ -69,7 +69,8 @@ public final class MascotActionTableData {
             if (destination == null) {
                 return;
             }
-            for (int i = 0; i < boneActions.length; i++) {
+            int boneCount = Math.min(boneActions.length, destination.length / 12);
+            for (int i = 0; i < boneCount; i++) {
                 BoneAction boneAction = boneActions[i];
                 int offset = i * 12;
                 if (boneAction == null) {
@@ -77,6 +78,9 @@ public final class MascotActionTableData {
                     continue;
                 }
                 boneAction.writeMatrix(frame, destination, offset);
+            }
+            for (int i = boneCount * 12; i < destination.length; i += 12) {
+                System.arraycopy(IDENTITY_AFFINE, 0, destination, i, 12);
             }
         }
     }

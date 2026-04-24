@@ -4,8 +4,8 @@ public class FigureLayout {
     private AffineTrans affineTrans = new AffineTrans();
     private AffineTrans[] affineTransArray = new AffineTrans[0];
     private int selectedAffineIndex = -1;
-    private int scaleX = 4096;
-    private int scaleY = 4096;
+    private int scaleX = 512;
+    private int scaleY = 512;
     private int parallelWidth;
     private int parallelHeight;
     private int centerX;

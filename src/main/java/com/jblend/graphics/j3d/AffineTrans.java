@@ -156,7 +156,10 @@ public class AffineTrans {
         if (position == null || look == null || up == null) {
             throw new NullPointerException();
         }
-        Vector3D forward = new Vector3D(look.x - position.x, look.y - position.y, look.z - position.z);
+        // JSCL's `look` parameter represents the view direction vector rather than
+        // an absolute target point. Some Vodafone titles, including SD Gundam's
+        // scrolling battle camera, pass an offset direction directly here.
+        Vector3D forward = new Vector3D(look.x, look.y, look.z);
         forward.unit();
         Vector3D side = Vector3D.outerProduct(forward, up);
         side.unit();
