@@ -388,6 +388,10 @@ public final class JadFrame extends JFrame {
             return;
         }
 
+        dispatchPhoneKey(phoneKeyCode, release);
+    }
+
+    private void dispatchPhoneKey(int phoneKeyCode, boolean release) {
         if (release) {
             MidletRuntime.dispatchKeyReleased(phoneKeyCode);
         } else {

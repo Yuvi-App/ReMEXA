@@ -147,6 +147,15 @@ public abstract class ACanvas extends javax.microedition.lcdui.Canvas implements
         remexa.host.runtime.MidletRuntime.amuseFlush(this, tx, ty);
     }
 
+    @Override
+    public void repaint() {
+        if (hostGraphics == null) {
+            attachHostGraphics();
+            return;
+        }
+        paint(hostGraphics);
+    }
+
     public final void sequenceStart () {
         remexa.probes.SdkStubSupport.log("com.j_phone.amuse.ACanvas", "sequenceStart");
     }

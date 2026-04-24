@@ -163,18 +163,48 @@ public abstract class Canvas extends Displayable {
     }
 
     public final int deviceKeyStateMask() {
+        return deviceKeyStateMask(false);
+    }
+
+    public final int deviceKeyStateMask(boolean eightDirectionsEnabled) {
+        var up = containsAnyKey(KEYCODE_UP, UP);
+        var left = containsAnyKey(KEYCODE_LEFT, LEFT);
+        var right = containsAnyKey(KEYCODE_RIGHT, RIGHT);
+        var down = containsAnyKey(KEYCODE_DOWN, DOWN);
         var state = 0;
-        if (containsAnyKey(KEYCODE_UP, UP)) {
-            state |= 0x1000;
+        if (eightDirectionsEnabled) {
+            if (up && right) {
+                state |= 0x800000;
+            }
+            if (up && left) {
+                state |= 0x400000;
+            }
+            if (down && right) {
+                state |= 0x200000;
+            }
+            if (down && left) {
+                state |= 0x100000;
+            }
         }
-        if (containsAnyKey(KEYCODE_LEFT, LEFT)) {
-            state |= 0x2000;
+        if (!eightDirectionsEnabled || (state & 0x800000) == 0 && (state & 0x400000) == 0) {
+            if (up) {
+                state |= 0x1000;
+            }
         }
-        if (containsAnyKey(KEYCODE_RIGHT, RIGHT)) {
-            state |= 0x4000;
+        if (!eightDirectionsEnabled || (state & 0x400000) == 0 && (state & 0x100000) == 0) {
+            if (left) {
+                state |= 0x2000;
+            }
         }
-        if (containsAnyKey(KEYCODE_DOWN, DOWN)) {
-            state |= 0x8000;
+        if (!eightDirectionsEnabled || (state & 0x800000) == 0 && (state & 0x200000) == 0) {
+            if (right) {
+                state |= 0x4000;
+            }
+        }
+        if (!eightDirectionsEnabled || (state & 0x100000) == 0 && (state & 0x200000) == 0) {
+            if (down) {
+                state |= 0x8000;
+            }
         }
         if (containsAnyKey(KEYCODE_FIRE, (int) '\n', FIRE)) {
             state |= 0x10000;
@@ -191,25 +221,25 @@ public abstract class Canvas extends Displayable {
         if (pressedKeys.contains((int) '9')) {
             state |= 0x0200;
         }
-        if (pressedKeys.contains((int) '8') || containsAnyKey(KEYCODE_DOWN, DOWN)) {
+        if (pressedKeys.contains((int) '8')) {
             state |= 0x0100;
         }
         if (pressedKeys.contains((int) '7')) {
             state |= 0x0080;
         }
-        if (pressedKeys.contains((int) '6') || containsAnyKey(KEYCODE_RIGHT, RIGHT)) {
+        if (pressedKeys.contains((int) '6')) {
             state |= 0x0040;
         }
-        if (pressedKeys.contains((int) '5') || containsAnyKey(KEYCODE_FIRE, (int) '\n', FIRE)) {
+        if (pressedKeys.contains((int) '5')) {
             state |= 0x0020;
         }
-        if (pressedKeys.contains((int) '4') || containsAnyKey(KEYCODE_LEFT, LEFT)) {
+        if (pressedKeys.contains((int) '4')) {
             state |= 0x0010;
         }
         if (pressedKeys.contains((int) '3')) {
             state |= 0x0008;
         }
-        if (pressedKeys.contains((int) '2') || containsAnyKey(KEYCODE_UP, UP)) {
+        if (pressedKeys.contains((int) '2')) {
             state |= 0x0004;
         }
         if (pressedKeys.contains((int) '1')) {

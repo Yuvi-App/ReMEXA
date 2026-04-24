@@ -5,11 +5,13 @@ import java.util.Map;
 import remexa.settings.RemexaPreferences;
 
 public final class LogSettings {
+    private static final boolean DEFAULT_LOG_ENABLED = false;
+
     private LogSettings() {
     }
 
     public static boolean isEnabled(LogCategory category) {
-        return RemexaPreferences.log().getBoolean(key(category), true);
+        return RemexaPreferences.log().getBoolean(key(category), DEFAULT_LOG_ENABLED);
     }
 
     public static void setEnabled(LogCategory category, boolean enabled) {

@@ -333,7 +333,7 @@ public final class MidletRuntime {
         ensureThreadActive();
         var displayable = currentDisplayable();
         if (displayable instanceof Canvas canvas) {
-            return canvas.phoneKeyStateMask(eightDirectionsEnabled);
+            return canvas.deviceKeyStateMask(eightDirectionsEnabled);
         }
         return 0;
     }
