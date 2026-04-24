@@ -61,6 +61,8 @@ public final class JadFrame extends JFrame {
     private final boolean showHostDetails;
     private final Timer refreshTimer;
     private final AtomicBoolean disposed = new AtomicBoolean();
+    private final AtomicBoolean fatalFailure = new AtomicBoolean();
+    private final Object closeHandlerLock = new Object();
     private final int hostScale;
     private Runnable closeHandler;
 
@@ -87,13 +89,13 @@ public final class JadFrame extends JFrame {
             DebugLog.addListener(listener);
         }
         refreshSoftKeyLabels();
-        refreshTimer = new Timer(33, event -> {
+        refreshTimer = new Timer(33, event -> runHostAction("refresh timer", () -> {
             refreshSoftKeyLabels();
             if (showHostDetails) {
                 refreshLogToggleButton();
             }
             renderSurface.repaint();
-        });
+        }));
         refreshTimer.start();
     }
 
@@ -119,26 +121,38 @@ public final class JadFrame extends JFrame {
         if (!disposed.compareAndSet(false, true)) {
             return;
         }
-        var shutdownTask = closeHandler;
-        closeHandler = null;
+        Runnable shutdownTask;
+        synchronized (closeHandlerLock) {
+            shutdownTask = closeHandler;
+            closeHandler = null;
+        }
         refreshTimer.stop();
         if (showHostDetails) {
             DebugLog.removeListener(listener);
         }
         super.dispose();
-        if (shutdownTask != null) {
-            var shutdownThread = new Thread(shutdownTask, "remexa-app-shutdown");
-            shutdownThread.setDaemon(true);
-            shutdownThread.start();
-        }
+        runCloseHandlerAsync(shutdownTask);
     }
 
     public void setCloseHandler(Runnable closeHandler) {
-        this.closeHandler = closeHandler;
+        if (closeHandler == null) {
+            return;
+        }
+        synchronized (closeHandlerLock) {
+            if (!disposed.get()) {
+                this.closeHandler = closeHandler;
+                return;
+            }
+        }
+        runCloseHandlerAsync(closeHandler);
+    }
+
+    public void exitOnFatalException(String activity, Throwable throwable) {
+        handleFatalFailure(activity, throwable);
     }
 
     private void appendLog(LogEvent event) {
-        SwingUtilities.invokeLater(() -> {
+        SwingUtilities.invokeLater(() -> runHostAction("debug log update", () -> {
             logArea.append(
                     TIME_FORMAT.format(event.timestamp()) +
                             " [" + event.category() + "] " +
@@ -148,11 +162,11 @@ public final class JadFrame extends JFrame {
                             System.lineSeparator()
             );
             logArea.setCaretPosition(logArea.getDocument().getLength());
-        });
+        }));
     }
 
     public void updateDisplayMetrics(DisplayMetrics displayMetrics) {
-        SwingUtilities.invokeLater(() -> {
+        SwingUtilities.invokeLater(() -> runHostAction("display resize", () -> {
             if (showHostDetails) {
                 renderInfoLabel.setText(
                         "Active display: " + displayMetrics.dimensions() +
@@ -163,7 +177,7 @@ public final class JadFrame extends JFrame {
             renderSurface.setPreferredSize(new Dimension(scaledWidth(displayMetrics), scaledHeight(displayMetrics)));
             renderSurface.revalidate();
             pack();
-        });
+        }));
     }
 
     private void buildDetailedLayout(JadDescriptor descriptor, LaunchProfile launchProfile) {
@@ -204,7 +218,7 @@ public final class JadFrame extends JFrame {
     private void configureLogToggleButton() {
         logToggleButton.setFocusable(false);
         logToggleButton.setFont(new Font("Segoe UI", Font.BOLD, 12));
-        logToggleButton.addActionListener(event -> toggleAllLogs());
+        logToggleButton.addActionListener(event -> runHostAction("log toggle", this::toggleAllLogs));
         refreshLogToggleButton();
     }
 
@@ -365,9 +379,46 @@ public final class JadFrame extends JFrame {
         actionMap.put(actionId, new javax.swing.AbstractAction() {
             @Override
             public void actionPerformed(ActionEvent event) {
-                dispatchHostKey(keyCode, release);
+                runHostAction("input dispatch", () -> dispatchHostKey(keyCode, release));
             }
         });
+    }
+
+    private void runHostAction(String activity, Runnable action) {
+        try {
+            action.run();
+        } catch (Throwable throwable) {
+            handleFatalFailure(activity, throwable);
+        }
+    }
+
+    private void handleFatalFailure(String activity, Throwable throwable) {
+        if (throwable == null || MidletRuntime.isExpectedShutdownThrowable(throwable)) {
+            return;
+        }
+        if (!fatalFailure.compareAndSet(false, true)) {
+            return;
+        }
+        System.err.println("ReMEXA fatal JadFrame exception during " + activity + ": " + throwable);
+        throwable.printStackTrace(System.err);
+        if (SwingUtilities.isEventDispatchThread()) {
+            updateStatus("Host failure");
+            dispose();
+            return;
+        }
+        SwingUtilities.invokeLater(() -> {
+            updateStatus("Host failure");
+            dispose();
+        });
+    }
+
+    private void runCloseHandlerAsync(Runnable shutdownTask) {
+        if (shutdownTask == null) {
+            return;
+        }
+        var shutdownThread = new Thread(shutdownTask, "remexa-app-shutdown");
+        shutdownThread.setDaemon(true);
+        shutdownThread.start();
     }
 
     private void dispatchHostKey(int awtKeyCode, boolean release) {
@@ -421,7 +472,7 @@ public final class JadFrame extends JFrame {
         return new Dimension(scaledWidth(displayMetrics), scaledHeight(displayMetrics) + SOFT_KEY_BAR_HEIGHT);
     }
 
-    private static final class RenderSurfacePanel extends JPanel {
+    private final class RenderSurfacePanel extends JPanel {
         private RenderSurfacePanel() {
             setOpaque(true);
             setBackground(Color.BLACK);
@@ -429,34 +480,38 @@ public final class JadFrame extends JFrame {
 
         @Override
         protected void paintComponent(Graphics graphics) {
-            super.paintComponent(graphics);
-            var frame = MidletRuntime.currentFrameSnapshot();
-            if (frame == null) {
-                return;
-            }
-
-            var g2 = (Graphics2D) graphics.create();
             try {
-                g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
-                g2.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_SPEED);
-                var frameWidth = frame.getWidth();
-                var frameHeight = frame.getHeight();
-                if (frameWidth <= 0 || frameHeight <= 0) {
+                super.paintComponent(graphics);
+                var frame = MidletRuntime.currentFrameSnapshot();
+                if (frame == null) {
                     return;
                 }
 
-                var scale = Math.min(
-                        (double) getWidth() / frameWidth,
-                        (double) getHeight() / frameHeight
-                );
-                var drawWidth = Math.max(1, (int) Math.round(frameWidth * scale));
-                var drawHeight = Math.max(1, (int) Math.round(frameHeight * scale));
-                var drawX = (getWidth() - drawWidth) / 2;
-                var drawY = (getHeight() - drawHeight) / 2;
+                var g2 = (Graphics2D) graphics.create();
+                try {
+                    g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
+                    g2.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_SPEED);
+                    var frameWidth = frame.getWidth();
+                    var frameHeight = frame.getHeight();
+                    if (frameWidth <= 0 || frameHeight <= 0) {
+                        return;
+                    }
 
-                g2.drawImage(frame, drawX, drawY, drawWidth, drawHeight, null);
-            } finally {
-                g2.dispose();
+                    var scale = Math.min(
+                            (double) getWidth() / frameWidth,
+                            (double) getHeight() / frameHeight
+                    );
+                    var drawWidth = Math.max(1, (int) Math.round(frameWidth * scale));
+                    var drawHeight = Math.max(1, (int) Math.round(frameHeight * scale));
+                    var drawX = (getWidth() - drawWidth) / 2;
+                    var drawY = (getHeight() - drawHeight) / 2;
+
+                    g2.drawImage(frame, drawX, drawY, drawWidth, drawHeight, null);
+                } finally {
+                    g2.dispose();
+                }
+            } catch (Throwable throwable) {
+                handleFatalFailure("render surface repaint", throwable);
             }
         }
     }

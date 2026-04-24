@@ -83,15 +83,22 @@ public final class JadLauncher {
         var frame = new JadFrame(descriptor, launchProfile, showHostDetails());
         JadIconLoader.load(descriptor).ifPresent(frame::setAppIcon);
         var shutdownOnce = new AtomicBoolean();
+        Thread.UncaughtExceptionHandler previousDefaultHandler = null;
         try {
             frame.showFrame();
             frame.updateStatus("Loading " + descriptor.title());
             var result = runtime.launch(descriptor, launchProfile, frame::updateDisplayMetrics);
-            frame.setCloseHandler(() -> shutdownLaunch(result, shutdownOnce));
+            previousDefaultHandler = installExitOnUncaughtException(frame, descriptor, result.classLoader());
+            var restoredDefaultHandler = previousDefaultHandler;
+            frame.setCloseHandler(() -> {
+                restoreDefaultExceptionHandler(restoredDefaultHandler);
+                shutdownLaunch(result, shutdownOnce);
+            });
             frame.updateStatus("Loaded " + result.entryClass());
             scheduleCaptureIfRequested(frame);
             DebugLog.log(LogCategory.HOST, JadLauncher.class.getName(), "Loaded entry class: " + result.entryClass());
         } catch (LaunchException exception) {
+            restoreDefaultExceptionHandler(previousDefaultHandler);
             if (consoleLaunch) {
                 frame.dispose();
             } else {
@@ -156,5 +163,33 @@ public final class JadLauncher {
             frame.dispose();
             System.exit(0);
         }
+    }
+
+    private Thread.UncaughtExceptionHandler installExitOnUncaughtException(
+            JadFrame frame,
+            JadDescriptor descriptor,
+            ClassLoader appClassLoader
+    ) {
+        var previousHandler = Thread.getDefaultUncaughtExceptionHandler();
+        Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
+            if (!MidletRuntime.isExpectedShutdownThrowable(throwable)
+                    && appClassLoader != null
+                    && thread.getContextClassLoader() == appClassLoader) {
+                DebugLog.log(
+                        LogCategory.HOST,
+                        JadLauncher.class.getName(),
+                        "Uncaught app exception in " + descriptor.title() + " on " + thread.getName() + ": " + throwable
+                );
+                frame.exitOnFatalException("uncaught app exception", throwable);
+            }
+            if (previousHandler != null) {
+                previousHandler.uncaughtException(thread, throwable);
+            }
+        });
+        return previousHandler;
+    }
+
+    private void restoreDefaultExceptionHandler(Thread.UncaughtExceptionHandler handler) {
+        Thread.setDefaultUncaughtExceptionHandler(handler);
     }
 }
