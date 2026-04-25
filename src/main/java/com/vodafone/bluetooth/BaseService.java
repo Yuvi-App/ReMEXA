@@ -41,10 +41,14 @@ public class BaseService {
         if (svc == null) {
             throw new NullPointerException("svc");
         }
-        boolean seedMatches = java.util.Objects.equals(seed1, svc.seed1)
-                && java.util.Objects.equals(seed2, svc.seed2);
+        boolean seedMatches = normalizeSeed(seed1).equals(normalizeSeed(svc.seed1))
+                && normalizeSeed(seed2).equals(normalizeSeed(svc.seed2));
         boolean idMatches = !serviceId.isEmpty() && serviceId.equals(svc.serviceId);
         return seedMatches || idMatches;
+    }
+
+    private static String normalizeSeed(String value) {
+        return value == null || value.isBlank() ? "" : value;
     }
 
     public String getServiceID() {

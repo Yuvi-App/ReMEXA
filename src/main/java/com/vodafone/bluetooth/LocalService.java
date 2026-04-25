@@ -1,5 +1,7 @@
 package com.vodafone.bluetooth;
 
+import remexa.bluetooth.VirtualBluetoothRuntime;
+
 public class LocalService extends BaseService {
     public LocalService() {
         remexa.probes.SdkStubSupport.log("com.vodafone.bluetooth.LocalService", "LocalService");
@@ -23,5 +25,16 @@ public class LocalService extends BaseService {
     public final void setServiceName(String name) throws java.io.IOException {
         remexa.probes.SdkStubSupport.log("com.vodafone.bluetooth.LocalService", "setServiceName", name);
         setServiceNameInternal(name);
+    }
+
+    VirtualBluetoothRuntime.ServiceInfo serviceInfo() {
+        return new VirtualBluetoothRuntime.ServiceInfo(
+                "",
+                "",
+                getServiceID(),
+                getServiceName(),
+                seed1(),
+                seed2()
+        );
     }
 }

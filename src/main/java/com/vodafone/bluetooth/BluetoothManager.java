@@ -1,5 +1,8 @@
 package com.vodafone.bluetooth;
 
+import java.io.IOException;
+import remexa.bluetooth.VirtualBluetoothRuntime;
+
 public class BluetoothManager {
     private static final BluetoothManager INSTANCE = new BluetoothManager();
 
@@ -10,7 +13,7 @@ public class BluetoothManager {
 
     public final String getFriendlyName() {
         remexa.probes.SdkStubSupport.log("com.vodafone.bluetooth.BluetoothManager", "getFriendlyName");
-        return "ReMEXA";
+        return VirtualBluetoothRuntime.getInstance().localFriendlyName();
     }
 
     public final int getMaxDevices() {
@@ -24,7 +27,14 @@ public class BluetoothManager {
         if (lsn == null) {
             throw new NullPointerException("lsn");
         }
-        lsn.terminatedDeviceSeek(SeekListener.COMPLETED);
+        try {
+            var device = new Device(VirtualBluetoothRuntime.getInstance().discoverRemoteDevice());
+            lsn.foundDevice(device, 512);
+            lsn.terminatedDeviceSeek(SeekListener.COMPLETED);
+        } catch (IOException exception) {
+            lsn.terminatedDeviceSeek(SeekListener.ERROR);
+            throw exception;
+        }
     }
 
     public final boolean stopDeviceSeek() {

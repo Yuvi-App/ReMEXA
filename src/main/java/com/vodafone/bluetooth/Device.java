@@ -1,21 +1,33 @@
 package com.vodafone.bluetooth;
 
+import java.io.IOException;
+import java.util.ArrayList;
+import remexa.bluetooth.VirtualBluetoothRuntime;
+
 public class Device {
+    private final VirtualBluetoothRuntime.DeviceInfo deviceInfo;
     private final String bluetoothAddress;
+    private final String friendlyName;
 
     protected Device() {
-        this("");
+        this(new VirtualBluetoothRuntime.DeviceInfo("", "ReMEXA Device"));
         remexa.probes.SdkStubSupport.log("com.vodafone.bluetooth.Device", "Device");
     }
 
     public Device(String bdaddr) throws NullPointerException, IllegalArgumentException {
-        this.bluetoothAddress = bdaddr == null ? "" : bdaddr;
+        this(new VirtualBluetoothRuntime.DeviceInfo(bdaddr == null ? "" : bdaddr, bdaddr == null ? "ReMEXA Device" : bdaddr));
         remexa.probes.SdkStubSupport.log("com.vodafone.bluetooth.Device", "Device", bdaddr);
+    }
+
+    Device(VirtualBluetoothRuntime.DeviceInfo deviceInfo) {
+        this.deviceInfo = deviceInfo;
+        this.bluetoothAddress = deviceInfo.address();
+        this.friendlyName = deviceInfo.friendlyName().isBlank() ? "ReMEXA Device" : deviceInfo.friendlyName();
     }
 
     public final String getFriendlyName() {
         remexa.probes.SdkStubSupport.log("com.vodafone.bluetooth.Device", "getFriendlyName");
-        return bluetoothAddress.isEmpty() ? "ReMEXA Device" : bluetoothAddress;
+        return friendlyName;
     }
 
     public final void startServiceSeek(BaseService[] svcList, SeekListener lsn)
@@ -24,7 +36,32 @@ public class Device {
         if (lsn == null) {
             throw new NullPointerException("lsn");
         }
-        lsn.terminatedServiceSeek(this, SeekListener.SERVICE_NOT_FOUND);
+        try {
+            var discovered = VirtualBluetoothRuntime.getInstance().discoverServices(deviceInfo);
+            var matches = new ArrayList<RemoteService>();
+            for (var serviceInfo : discovered) {
+                var remoteService = new RemoteService(this, serviceInfo);
+                if (svcList == null || svcList.length == 0) {
+                    matches.add(remoteService);
+                    continue;
+                }
+                for (var filter : svcList) {
+                    if (filter != null && filter.matches(remoteService)) {
+                        matches.add(remoteService);
+                        break;
+                    }
+                }
+            }
+            if (!matches.isEmpty()) {
+                lsn.foundService(matches.toArray(RemoteService[]::new));
+                lsn.terminatedServiceSeek(this, SeekListener.COMPLETED);
+                return;
+            }
+            lsn.terminatedServiceSeek(this, SeekListener.SERVICE_NOT_FOUND);
+        } catch (IOException exception) {
+            lsn.terminatedServiceSeek(this, SeekListener.ERROR);
+            throw exception;
+        }
     }
 
     public final boolean stopServiceSeek() {

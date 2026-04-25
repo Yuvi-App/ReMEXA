@@ -16,6 +16,11 @@ public final class RemexaPreferences {
     public static final String VODAFONE_PHONE_TYPE_KEY = "vodafonePhoneType";
     public static final String MEXA_PHONE_TYPE_KEY = "mexaPhoneType";
     public static final String HOST_SCALE_KEY = "hostScale";
+    public static final String BLUETOOTH_BACKEND_KEY = "bluetoothBackend";
+    public static final String BLUETOOTH_ROLE_KEY = "bluetoothRole";
+    public static final String BLUETOOTH_LOCAL_NAME_KEY = "bluetoothLocalName";
+    public static final String BLUETOOTH_REMOTE_HOST_KEY = "bluetoothRemoteHost";
+    public static final String BLUETOOTH_PORT_KEY = "bluetoothPort";
     public static final String DUMP_RMS_KEY = "dumpRms";
     public static final String LOG_ENABLED_PREFIX = "enabled.";
     public static final String RECENT_ENTRY_PREFIX = "entry.";

@@ -80,6 +80,82 @@ public final class HostUiSettings {
         );
     }
 
+    public static LaunchConfig.BluetoothBackend bluetoothBackend() {
+        return LaunchConfig.BluetoothBackend.normalize(
+                RemexaPreferences.ui().get(
+                        RemexaPreferences.BLUETOOTH_BACKEND_KEY,
+                        LaunchConfig.BluetoothBackend.OFF.id()
+                )
+        );
+    }
+
+    public static void setBluetoothBackend(LaunchConfig.BluetoothBackend backend) {
+        var resolved = backend == null ? LaunchConfig.BluetoothBackend.OFF : backend;
+        RemexaPreferences.ui().put(RemexaPreferences.BLUETOOTH_BACKEND_KEY, resolved.id());
+    }
+
+    public static LaunchConfig.BluetoothRole bluetoothRole() {
+        return LaunchConfig.BluetoothRole.normalize(
+                RemexaPreferences.ui().get(
+                        RemexaPreferences.BLUETOOTH_ROLE_KEY,
+                        LaunchConfig.BluetoothRole.HOST.id()
+                )
+        );
+    }
+
+    public static void setBluetoothRole(LaunchConfig.BluetoothRole role) {
+        var resolved = role == null ? LaunchConfig.BluetoothRole.HOST : role;
+        RemexaPreferences.ui().put(RemexaPreferences.BLUETOOTH_ROLE_KEY, resolved.id());
+    }
+
+    public static String bluetoothLocalName() {
+        return LaunchConfig.normalizeBluetoothLocalName(
+                RemexaPreferences.ui().get(
+                        RemexaPreferences.BLUETOOTH_LOCAL_NAME_KEY,
+                        LaunchConfig.resolveConfiguredBluetoothLocalName()
+                )
+        );
+    }
+
+    public static void setBluetoothLocalName(String localName) {
+        RemexaPreferences.ui().put(
+                RemexaPreferences.BLUETOOTH_LOCAL_NAME_KEY,
+                LaunchConfig.normalizeBluetoothLocalName(localName)
+        );
+    }
+
+    public static String bluetoothRemoteHost() {
+        return LaunchConfig.normalizeBluetoothRemoteHost(
+                RemexaPreferences.ui().get(
+                        RemexaPreferences.BLUETOOTH_REMOTE_HOST_KEY,
+                        LaunchConfig.resolveConfiguredBluetoothRemoteHost()
+                )
+        );
+    }
+
+    public static void setBluetoothRemoteHost(String remoteHost) {
+        RemexaPreferences.ui().put(
+                RemexaPreferences.BLUETOOTH_REMOTE_HOST_KEY,
+                LaunchConfig.normalizeBluetoothRemoteHost(remoteHost)
+        );
+    }
+
+    public static int bluetoothPort() {
+        return LaunchConfig.normalizeBluetoothPort(
+                RemexaPreferences.ui().get(
+                        RemexaPreferences.BLUETOOTH_PORT_KEY,
+                        Integer.toString(LaunchConfig.DEFAULT_BLUETOOTH_PORT)
+                )
+        );
+    }
+
+    public static void setBluetoothPort(int port) {
+        RemexaPreferences.ui().putInt(
+                RemexaPreferences.BLUETOOTH_PORT_KEY,
+                LaunchConfig.clampBluetoothPort(port)
+        );
+    }
+
     public static boolean dumpRms() {
         return RemexaPreferences.debug().getBoolean(RemexaPreferences.DUMP_RMS_KEY, false);
     }

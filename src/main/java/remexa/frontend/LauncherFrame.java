@@ -12,6 +12,9 @@ import java.awt.Font;
 import java.awt.Frame;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
+import java.awt.Insets;
 import java.awt.RenderingHints;
 import java.awt.datatransfer.DataFlavor;
 import java.io.File;
@@ -23,6 +26,7 @@ import java.util.List;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.ButtonGroup;
+import javax.swing.JComboBox;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JMenu;
@@ -33,6 +37,7 @@ import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JRadioButtonMenuItem;
 import javax.swing.SwingConstants;
+import javax.swing.JTextField;
 import javax.swing.TransferHandler;
 import javax.swing.UIManager;
 import javax.swing.border.EmptyBorder;
@@ -256,6 +261,11 @@ public final class LauncherFrame extends JFrame {
         }
         settingsMenu.add(hostScaleMenu);
         settingsMenu.addSeparator();
+        var bluetoothSettingsItem = new JMenuItem("Bluetooth...");
+        styleMenuItem(bluetoothSettingsItem);
+        bluetoothSettingsItem.addActionListener(event -> showBluetoothSettingsDialog());
+        settingsMenu.add(bluetoothSettingsItem);
+        settingsMenu.addSeparator();
         var openStorageFolderItem = new JMenuItem("Open Storage Folder");
         styleMenuItem(openStorageFolderItem);
         openStorageFolderItem.addActionListener(event -> openStorageFolder());
@@ -369,6 +379,135 @@ public final class LauncherFrame extends JFrame {
 
     private void updateToggleAllLogsItem(JMenuItem item) {
         item.setText(LogSettings.areAllEnabled() ? "Disable All Debug Logs" : "Enable All Debug Logs");
+    }
+
+    private void showBluetoothSettingsDialog() {
+        var backendBox = new JComboBox<>(LaunchConfig.BluetoothBackend.values());
+        backendBox.setSelectedItem(HostUiSettings.bluetoothBackend());
+        var roleBox = new JComboBox<>(LaunchConfig.BluetoothRole.values());
+        roleBox.setSelectedItem(HostUiSettings.bluetoothRole());
+        var localNameField = new JTextField(HostUiSettings.bluetoothLocalName(), 18);
+        var remoteHostField = new JTextField(HostUiSettings.bluetoothRemoteHost(), 18);
+        var portField = new JTextField(Integer.toString(HostUiSettings.bluetoothPort()), 8);
+
+        var panel = new JPanel(new GridBagLayout());
+        panel.setOpaque(false);
+        var constraints = new GridBagConstraints();
+        constraints.insets = new Insets(6, 6, 6, 6);
+        constraints.anchor = GridBagConstraints.WEST;
+        constraints.fill = GridBagConstraints.HORIZONTAL;
+        constraints.gridx = 0;
+        constraints.gridy = 0;
+        constraints.weightx = 0;
+        panel.add(new JLabel("Backend"), constraints);
+        constraints.gridx = 1;
+        constraints.weightx = 1;
+        panel.add(backendBox, constraints);
+
+        constraints.gridx = 0;
+        constraints.gridy++;
+        constraints.weightx = 0;
+        panel.add(new JLabel("Role"), constraints);
+        constraints.gridx = 1;
+        constraints.weightx = 1;
+        panel.add(roleBox, constraints);
+
+        constraints.gridx = 0;
+        constraints.gridy++;
+        constraints.weightx = 0;
+        panel.add(new JLabel("Local Name"), constraints);
+        constraints.gridx = 1;
+        constraints.weightx = 1;
+        panel.add(localNameField, constraints);
+
+        constraints.gridx = 0;
+        constraints.gridy++;
+        constraints.weightx = 0;
+        panel.add(new JLabel("Remote Host"), constraints);
+        constraints.gridx = 1;
+        constraints.weightx = 1;
+        panel.add(remoteHostField, constraints);
+
+        constraints.gridx = 0;
+        constraints.gridy++;
+        constraints.weightx = 0;
+        panel.add(new JLabel("Port"), constraints);
+        constraints.gridx = 1;
+        constraints.weightx = 1;
+        panel.add(portField, constraints);
+
+        var note = new JLabel("<html><div style='width:280px;'>Use <b>Host</b> on the machine waiting for peers. Use <b>Client</b> on the joining machine and point <b>Remote Host</b> at the host IP or DNS name.</div></html>");
+        note.setForeground(TEXT_SECONDARY);
+        constraints.gridx = 0;
+        constraints.gridy++;
+        constraints.gridwidth = 2;
+        constraints.weightx = 1;
+        panel.add(note, constraints);
+
+        Runnable updateEnabledState = () -> {
+            var backend = (LaunchConfig.BluetoothBackend) backendBox.getSelectedItem();
+            var role = (LaunchConfig.BluetoothRole) roleBox.getSelectedItem();
+            boolean enabled = backend == LaunchConfig.BluetoothBackend.VIRTUAL_IP;
+            boolean needsRemoteHost = enabled && role == LaunchConfig.BluetoothRole.CLIENT;
+            roleBox.setEnabled(enabled);
+            localNameField.setEnabled(enabled);
+            remoteHostField.setEnabled(needsRemoteHost);
+            portField.setEnabled(enabled);
+        };
+        backendBox.addActionListener(event -> updateEnabledState.run());
+        roleBox.addActionListener(event -> updateEnabledState.run());
+        updateEnabledState.run();
+
+        while (true) {
+            var result = JOptionPane.showConfirmDialog(
+                    this,
+                    panel,
+                    "Bluetooth Over IP",
+                    JOptionPane.OK_CANCEL_OPTION,
+                    JOptionPane.PLAIN_MESSAGE
+            );
+            if (result != JOptionPane.OK_OPTION) {
+                return;
+            }
+
+            var backend = (LaunchConfig.BluetoothBackend) backendBox.getSelectedItem();
+            var role = (LaunchConfig.BluetoothRole) roleBox.getSelectedItem();
+            var normalizedLocalName = LaunchConfig.normalizeBluetoothLocalName(localNameField.getText());
+            var normalizedRemoteHost = LaunchConfig.normalizeBluetoothRemoteHost(remoteHostField.getText());
+            var parsedPort = LaunchConfig.parseBluetoothPort(portField.getText().trim());
+            if (parsedPort == null) {
+                JOptionPane.showMessageDialog(
+                        this,
+                        "Bluetooth port must be a number from 1 to 65535.",
+                        "Invalid Bluetooth Port",
+                        JOptionPane.ERROR_MESSAGE
+                );
+                continue;
+            }
+
+            HostUiSettings.setBluetoothBackend(backend);
+            HostUiSettings.setBluetoothRole(role);
+            HostUiSettings.setBluetoothLocalName(normalizedLocalName);
+            HostUiSettings.setBluetoothRemoteHost(normalizedRemoteHost);
+            HostUiSettings.setBluetoothPort(parsedPort);
+
+            LaunchConfig.applyBluetoothBackend(backend);
+            LaunchConfig.applyBluetoothRole(role);
+            LaunchConfig.applyBluetoothLocalName(normalizedLocalName);
+            LaunchConfig.applyBluetoothRemoteHost(normalizedRemoteHost);
+            LaunchConfig.applyBluetoothPort(parsedPort);
+
+            DebugLog.log(
+                    LogCategory.FRONTEND,
+                    LauncherFrame.class.getName(),
+                    "Bluetooth settings updated: backend=" + backend.id()
+                            + ", role=" + role.id()
+                            + ", localName=" + normalizedLocalName
+                            + ", remoteHost=" + normalizedRemoteHost
+                            + ", port=" + parsedPort
+            );
+            return;
+        }
     }
 
     private void openStorageFolder() {

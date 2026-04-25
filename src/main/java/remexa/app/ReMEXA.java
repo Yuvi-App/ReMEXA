@@ -30,6 +30,11 @@ public final class ReMEXA {
         LaunchConfig.applyVodafonePhoneType(launchRequest.vodafonePhoneType() == null ? HostUiSettings.vodafonePhoneType() : launchRequest.vodafonePhoneType());
         LaunchConfig.applyMexaPhoneType(launchRequest.mexaPhoneType() == null ? HostUiSettings.mexaPhoneType() : launchRequest.mexaPhoneType());
         LaunchConfig.applyHostScale(launchRequest.hostScale() == null ? HostUiSettings.hostScale() : launchRequest.hostScale());
+        LaunchConfig.applyBluetoothBackend(launchRequest.bluetoothBackend() == null ? HostUiSettings.bluetoothBackend() : launchRequest.bluetoothBackend());
+        LaunchConfig.applyBluetoothRole(launchRequest.bluetoothRole() == null ? HostUiSettings.bluetoothRole() : launchRequest.bluetoothRole());
+        LaunchConfig.applyBluetoothLocalName(launchRequest.bluetoothLocalName() == null ? HostUiSettings.bluetoothLocalName() : launchRequest.bluetoothLocalName());
+        LaunchConfig.applyBluetoothRemoteHost(launchRequest.bluetoothRemoteHost() == null ? HostUiSettings.bluetoothRemoteHost() : launchRequest.bluetoothRemoteHost());
+        LaunchConfig.applyBluetoothPort(launchRequest.bluetoothPort() == null ? HostUiSettings.bluetoothPort() : launchRequest.bluetoothPort());
         if (launchRequest.directLaunchRequested()) {
             if (launchRequest.jadPath() == null) {
                 return;
@@ -177,6 +182,11 @@ public final class ReMEXA {
         LaunchConfig.VodafonePhoneType vodafonePhoneType = null;
         LaunchConfig.MexaPhoneType mexaPhoneType = null;
         Integer hostScale = null;
+        LaunchConfig.BluetoothBackend bluetoothBackend = null;
+        LaunchConfig.BluetoothRole bluetoothRole = null;
+        String bluetoothLocalName = null;
+        String bluetoothRemoteHost = null;
+        Integer bluetoothPort = null;
 
         for (int index = 0; index < arguments.size(); index++) {
             var argument = arguments.get(index);
@@ -187,12 +197,12 @@ public final class ReMEXA {
             if ("--font".equals(argument)) {
                 if (index + 1 >= arguments.size()) {
                     System.err.println("ReMEXA launch failed: --font requires 'bitmap' or 'system'.");
-                    return new LaunchRequest(null, showHostDetails, true, null, 0, false, null, null, null, null, hostScale);
+                    return new LaunchRequest(null, showHostDetails, true, null, 0, false, null, null, null, null, hostScale, null, null, null, null, null);
                 }
                 var candidate = LaunchConfig.FontType.fromId(arguments.get(++index));
                 if (candidate == null) {
                     System.err.println("ReMEXA launch failed: unsupported font type. Use 'bitmap' or 'system'.");
-                    return new LaunchRequest(null, showHostDetails, true, null, 0, false, null, null, null, null, hostScale);
+                    return new LaunchRequest(null, showHostDetails, true, null, 0, false, null, null, null, null, hostScale, null, null, null, null, null);
                 }
                 fontType = candidate;
                 continue;
@@ -200,12 +210,12 @@ public final class ReMEXA {
             if ("--jsky-phone".equals(argument)) {
                 if (index + 1 >= arguments.size()) {
                     System.err.println("ReMEXA launch failed: --jsky-phone requires 'JSKY-Generic' or 'J-SH53'.");
-                    return new LaunchRequest(null, showHostDetails, true, null, 0, false, fontType, null, null, null, hostScale);
+                    return new LaunchRequest(null, showHostDetails, true, null, 0, false, fontType, null, null, null, hostScale, null, null, null, null, null);
                 }
                 var candidate = LaunchConfig.JskyPhoneType.fromId(arguments.get(++index));
                 if (candidate == null) {
                     System.err.println("ReMEXA launch failed: unsupported JSKY phone type. Use 'JSKY-Generic' or 'J-SH53'.");
-                    return new LaunchRequest(null, showHostDetails, true, null, 0, false, fontType, null, null, null, hostScale);
+                    return new LaunchRequest(null, showHostDetails, true, null, 0, false, fontType, null, null, null, hostScale, null, null, null, null, null);
                 }
                 jskyPhoneType = candidate;
                 continue;
@@ -213,12 +223,12 @@ public final class ReMEXA {
             if ("--vodafone-phone".equals(argument)) {
                 if (index + 1 >= arguments.size()) {
                     System.err.println("ReMEXA launch failed: --vodafone-phone requires 'Vodafone-Generic' or 'V604SH'.");
-                    return new LaunchRequest(null, showHostDetails, true, null, 0, false, fontType, jskyPhoneType, null, null, hostScale);
+                    return new LaunchRequest(null, showHostDetails, true, null, 0, false, fontType, jskyPhoneType, null, null, hostScale, null, null, null, null, null);
                 }
                 var candidate = LaunchConfig.VodafonePhoneType.fromId(arguments.get(++index));
                 if (candidate == null) {
                     System.err.println("ReMEXA launch failed: unsupported Vodafone phone type. Use 'Vodafone-Generic' or 'V604SH'.");
-                    return new LaunchRequest(null, showHostDetails, true, null, 0, false, fontType, jskyPhoneType, null, null, hostScale);
+                    return new LaunchRequest(null, showHostDetails, true, null, 0, false, fontType, jskyPhoneType, null, null, hostScale, null, null, null, null, null);
                 }
                 vodafonePhoneType = candidate;
                 continue;
@@ -226,12 +236,12 @@ public final class ReMEXA {
             if ("--mexa-phone".equals(argument)) {
                 if (index + 1 >= arguments.size()) {
                     System.err.println("ReMEXA launch failed: --mexa-phone requires 'MEXA-Generic' or '930SH'.");
-                    return new LaunchRequest(null, showHostDetails, true, null, 0, false, fontType, jskyPhoneType, vodafonePhoneType, null, hostScale);
+                    return new LaunchRequest(null, showHostDetails, true, null, 0, false, fontType, jskyPhoneType, vodafonePhoneType, null, hostScale, null, null, null, null, null);
                 }
                 var candidate = LaunchConfig.MexaPhoneType.fromId(arguments.get(++index));
                 if (candidate == null) {
                     System.err.println("ReMEXA launch failed: unsupported MEXA phone type. Use 'MEXA-Generic' or '930SH'.");
-                    return new LaunchRequest(null, showHostDetails, true, null, 0, false, fontType, jskyPhoneType, vodafonePhoneType, null, hostScale);
+                    return new LaunchRequest(null, showHostDetails, true, null, 0, false, fontType, jskyPhoneType, vodafonePhoneType, null, hostScale, null, null, null, null, null);
                 }
                 mexaPhoneType = candidate;
                 continue;
@@ -239,20 +249,75 @@ public final class ReMEXA {
             if ("--host-scale".equals(argument)) {
                 if (index + 1 >= arguments.size()) {
                     System.err.println("ReMEXA launch failed: --host-scale requires a value from 1 to 5.");
-                    return new LaunchRequest(null, showHostDetails, true, null, 0, false, fontType, jskyPhoneType, vodafonePhoneType, mexaPhoneType, null);
+                    return new LaunchRequest(null, showHostDetails, true, null, 0, false, fontType, jskyPhoneType, vodafonePhoneType, mexaPhoneType, null, null, null, null, null, null);
                 }
                 var candidate = LaunchConfig.parseHostScale(arguments.get(++index));
                 if (candidate == null) {
                     System.err.println("ReMEXA launch failed: unsupported host scale. Use 1 to 5.");
-                    return new LaunchRequest(null, showHostDetails, true, null, 0, false, fontType, jskyPhoneType, vodafonePhoneType, mexaPhoneType, null);
+                    return new LaunchRequest(null, showHostDetails, true, null, 0, false, fontType, jskyPhoneType, vodafonePhoneType, mexaPhoneType, null, null, null, null, null, null);
                 }
                 hostScale = candidate;
+                continue;
+            }
+            if ("--bluetooth-backend".equals(argument)) {
+                if (index + 1 >= arguments.size()) {
+                    System.err.println("ReMEXA launch failed: --bluetooth-backend requires 'off' or 'virtual-ip'.");
+                    return new LaunchRequest(null, showHostDetails, true, null, 0, false, fontType, jskyPhoneType, vodafonePhoneType, mexaPhoneType, hostScale, null, null, null, null, null);
+                }
+                var candidate = LaunchConfig.BluetoothBackend.fromId(arguments.get(++index));
+                if (candidate == null) {
+                    System.err.println("ReMEXA launch failed: unsupported Bluetooth backend. Use 'off' or 'virtual-ip'.");
+                    return new LaunchRequest(null, showHostDetails, true, null, 0, false, fontType, jskyPhoneType, vodafonePhoneType, mexaPhoneType, hostScale, null, null, null, null, null);
+                }
+                bluetoothBackend = candidate;
+                continue;
+            }
+            if ("--bluetooth-role".equals(argument)) {
+                if (index + 1 >= arguments.size()) {
+                    System.err.println("ReMEXA launch failed: --bluetooth-role requires 'host' or 'client'.");
+                    return new LaunchRequest(null, showHostDetails, true, null, 0, false, fontType, jskyPhoneType, vodafonePhoneType, mexaPhoneType, hostScale, bluetoothBackend, null, null, null, null);
+                }
+                var candidate = LaunchConfig.BluetoothRole.fromId(arguments.get(++index));
+                if (candidate == null) {
+                    System.err.println("ReMEXA launch failed: unsupported Bluetooth role. Use 'host' or 'client'.");
+                    return new LaunchRequest(null, showHostDetails, true, null, 0, false, fontType, jskyPhoneType, vodafonePhoneType, mexaPhoneType, hostScale, bluetoothBackend, null, null, null, null);
+                }
+                bluetoothRole = candidate;
+                continue;
+            }
+            if ("--bluetooth-local-name".equals(argument)) {
+                if (index + 1 >= arguments.size()) {
+                    System.err.println("ReMEXA launch failed: --bluetooth-local-name requires a value.");
+                    return new LaunchRequest(null, showHostDetails, true, null, 0, false, fontType, jskyPhoneType, vodafonePhoneType, mexaPhoneType, hostScale, bluetoothBackend, bluetoothRole, null, null, null);
+                }
+                bluetoothLocalName = LaunchConfig.normalizeBluetoothLocalName(arguments.get(++index));
+                continue;
+            }
+            if ("--bluetooth-host".equals(argument)) {
+                if (index + 1 >= arguments.size()) {
+                    System.err.println("ReMEXA launch failed: --bluetooth-host requires a value.");
+                    return new LaunchRequest(null, showHostDetails, true, null, 0, false, fontType, jskyPhoneType, vodafonePhoneType, mexaPhoneType, hostScale, bluetoothBackend, bluetoothRole, bluetoothLocalName, null, null);
+                }
+                bluetoothRemoteHost = LaunchConfig.normalizeBluetoothRemoteHost(arguments.get(++index));
+                continue;
+            }
+            if ("--bluetooth-port".equals(argument)) {
+                if (index + 1 >= arguments.size()) {
+                    System.err.println("ReMEXA launch failed: --bluetooth-port requires a numeric value.");
+                    return new LaunchRequest(null, showHostDetails, true, null, 0, false, fontType, jskyPhoneType, vodafonePhoneType, mexaPhoneType, hostScale, bluetoothBackend, bluetoothRole, bluetoothLocalName, bluetoothRemoteHost, null);
+                }
+                var candidate = LaunchConfig.parseBluetoothPort(arguments.get(++index));
+                if (candidate == null) {
+                    System.err.println("ReMEXA launch failed: unsupported Bluetooth port. Use 1 to 65535.");
+                    return new LaunchRequest(null, showHostDetails, true, null, 0, false, fontType, jskyPhoneType, vodafonePhoneType, mexaPhoneType, hostScale, bluetoothBackend, bluetoothRole, bluetoothLocalName, bluetoothRemoteHost, null);
+                }
+                bluetoothPort = candidate;
                 continue;
             }
             if ("--capture-frame".equals(argument)) {
                 if (index + 1 >= arguments.size()) {
                     System.err.println("ReMEXA launch failed: --capture-frame requires an output path.");
-                    return new LaunchRequest(null, showHostDetails, true, null, 0, false, fontType, jskyPhoneType, vodafonePhoneType, mexaPhoneType, hostScale);
+                    return new LaunchRequest(null, showHostDetails, true, null, 0, false, fontType, jskyPhoneType, vodafonePhoneType, mexaPhoneType, hostScale, bluetoothBackend, bluetoothRole, bluetoothLocalName, bluetoothRemoteHost, bluetoothPort);
                 }
                 captureFramePath = Path.of(arguments.get(++index));
                 continue;
@@ -260,7 +325,7 @@ public final class ReMEXA {
             if ("--capture-after-ms".equals(argument)) {
                 if (index + 1 >= arguments.size()) {
                     System.err.println("ReMEXA launch failed: --capture-after-ms requires a numeric value.");
-                    return new LaunchRequest(null, showHostDetails, true, null, 0, false, fontType, jskyPhoneType, vodafonePhoneType, mexaPhoneType, hostScale);
+                    return new LaunchRequest(null, showHostDetails, true, null, 0, false, fontType, jskyPhoneType, vodafonePhoneType, mexaPhoneType, hostScale, bluetoothBackend, bluetoothRole, bluetoothLocalName, bluetoothRemoteHost, bluetoothPort);
                 }
                 captureDelayMs = Integer.parseInt(arguments.get(++index));
                 continue;
@@ -273,7 +338,7 @@ public final class ReMEXA {
                 directLaunchRequested = true;
                 if (index + 1 >= arguments.size()) {
                     System.err.println("ReMEXA launch failed: --run-jad requires a JAD path.");
-                    return new LaunchRequest(null, showHostDetails, true, captureFramePath, captureDelayMs, exitAfterCapture, fontType, jskyPhoneType, vodafonePhoneType, mexaPhoneType, hostScale);
+                    return new LaunchRequest(null, showHostDetails, true, captureFramePath, captureDelayMs, exitAfterCapture, fontType, jskyPhoneType, vodafonePhoneType, mexaPhoneType, hostScale, bluetoothBackend, bluetoothRole, bluetoothLocalName, bluetoothRemoteHost, bluetoothPort);
                 }
                 directJad = Path.of(arguments.get(++index));
                 continue;
@@ -295,7 +360,12 @@ public final class ReMEXA {
                 jskyPhoneType,
                 vodafonePhoneType,
                 mexaPhoneType,
-                hostScale
+                hostScale,
+                bluetoothBackend,
+                bluetoothRole,
+                bluetoothLocalName,
+                bluetoothRemoteHost,
+                bluetoothPort
         );
     }
 
@@ -310,7 +380,12 @@ public final class ReMEXA {
             LaunchConfig.JskyPhoneType jskyPhoneType,
             LaunchConfig.VodafonePhoneType vodafonePhoneType,
             LaunchConfig.MexaPhoneType mexaPhoneType,
-            Integer hostScale
+            Integer hostScale,
+            LaunchConfig.BluetoothBackend bluetoothBackend,
+            LaunchConfig.BluetoothRole bluetoothRole,
+            String bluetoothLocalName,
+            String bluetoothRemoteHost,
+            Integer bluetoothPort
     ) {
     }
 }
