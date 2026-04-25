@@ -450,6 +450,9 @@ public final class MidletRuntime {
         if (context == null) {
             context = CURRENT_CONTEXT.get();
         }
+        if (context == null) {
+            context = activeContext();
+        }
         return Optional.ofNullable(context);
     }
 

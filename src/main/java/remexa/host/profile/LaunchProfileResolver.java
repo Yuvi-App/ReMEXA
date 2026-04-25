@@ -9,13 +9,19 @@ import remexa.host.LaunchConfig;
 public final class LaunchProfileResolver {
     private static final List<String> DISPLAY_KEYS = List.of(
             "MIDlet-Display-Size",
+            "MIDlet-DisplaySize",
             "MIDlet-Screen-Size",
+            "MIDlet-ScreenSize",
             "Display-Size",
             "DisplaySize",
             "Screen-Size",
             "Canvas-Size",
             "App-Display-Size",
-            "AppSize"
+            "AppSize",
+            "MIDxlet-Display-Size",
+            "MIDxlet-DisplaySize",
+            "MIDxlet-Screen-Size",
+            "MIDxlet-ScreenSize"
     );
     private static final List<String> PLATFORM_KEYS = List.of(
             "microedition.platform",
