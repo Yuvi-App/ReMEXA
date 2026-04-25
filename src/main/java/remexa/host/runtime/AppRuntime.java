@@ -4,6 +4,8 @@ import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Optional;
 import java.util.jar.JarFile;
 import java.util.concurrent.locks.LockSupport;
@@ -24,6 +26,7 @@ public final class AppRuntime {
     ) throws LaunchException {
         var jarPath = descriptor.resolveJarPath()
                 .orElseThrow(() -> new LaunchException("No JAR path was found in the JAD."));
+        var mergedDescriptor = mergeDescriptorWithJarManifest(descriptor, jarPath);
         var entryClass = descriptor.entryClassName();
         if (entryClass.isEmpty()) {
             entryClass = entryClassFromJarManifest(jarPath);
@@ -48,7 +51,7 @@ public final class AppRuntime {
             Object instance;
             MIDlet midlet = null;
             SystemPropertyProfile.apply(launchProfile.profile());
-            MidletRuntime.beginInstantiation(descriptor, launchProfile, classLoader, displayListener);
+            MidletRuntime.beginInstantiation(mergedDescriptor, launchProfile, classLoader, displayListener);
             var originalContextClassLoader = Thread.currentThread().getContextClassLoader();
             try {
                 Thread.currentThread().setContextClassLoader(classLoader);
@@ -80,7 +83,7 @@ public final class AppRuntime {
                 }
             }
 
-            return new LaunchResult(descriptor, launchProfile, jarPath.toAbsolutePath().toString(), resolvedEntryClass, classLoader, instance, midlet);
+            return new LaunchResult(mergedDescriptor, launchProfile, jarPath.toAbsolutePath().toString(), resolvedEntryClass, classLoader, instance, midlet);
         } catch (InvocationTargetException exception) {
             if (exception.getTargetException() instanceof MIDletStateChangeException stateChangeException) {
                     throw new LaunchException("MIDlet refused to start.", stateChangeException);
@@ -228,6 +231,30 @@ public final class AppRuntime {
                     AppRuntime.class.getName(),
                     "Failed to dispose phrase player during shutdown: " + exception.getMessage()
             );
+        }
+    }
+
+    private JadDescriptor mergeDescriptorWithJarManifest(JadDescriptor descriptor, java.nio.file.Path jarPath) throws LaunchException {
+        try (var jarFile = new JarFile(jarPath.toFile())) {
+            var manifest = jarFile.getManifest();
+            if (manifest == null) {
+                return descriptor;
+            }
+
+            var mergedProperties = new LinkedHashMap<String, String>();
+            for (Map.Entry<Object, Object> entry : manifest.getMainAttributes().entrySet()) {
+                var key = String.valueOf(entry.getKey());
+                var value = entry.getValue();
+                if (value == null) {
+                    continue;
+                }
+                mergedProperties.put(key, value.toString());
+            }
+            mergedProperties.putAll(descriptor.properties());
+
+            return new JadDescriptor(descriptor.sourcePath(), Map.copyOf(mergedProperties), descriptor.midlets());
+        } catch (IOException exception) {
+            throw new LaunchException("Failed to read JAR manifest.", exception);
         }
     }
 

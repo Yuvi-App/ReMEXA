@@ -428,7 +428,7 @@ public final class JadFrame extends JFrame {
                         || displayable instanceof com.j_phone.amuse.ACanvas
                         || displayable instanceof com.j_phone.amuse.j3d.Canvas3D;
         var softKeyIndex = HostKeyMapper.toSoftKeyIndex(awtKeyCode);
-        if (softKeyIndex >= 0 && hasBoundSoftKey(displayable, softKeyIndex)) {
+        if (softKeyIndex >= 0 && shouldDispatchSoftKeyAsCommand(displayable, softKeyIndex)) {
             if (!release) {
                 MidletRuntime.dispatchSoftKey(softKeyIndex);
             }
@@ -441,6 +441,16 @@ public final class JadFrame extends JFrame {
         }
 
         dispatchPhoneKey(phoneKeyCode, release);
+    }
+
+    private static boolean shouldDispatchSoftKeyAsCommand(javax.microedition.lcdui.Displayable displayable, int softKeyIndex) {
+        // Canvas-based titles often poll the physical soft-key state directly via key events
+        // or DeviceControl.getDeviceState(...). Keep soft keys as key presses there instead
+        // of converting them into command callbacks.
+        if (displayable instanceof javax.microedition.lcdui.Canvas) {
+            return false;
+        }
+        return hasBoundSoftKey(displayable, softKeyIndex);
     }
 
     private static boolean hasBoundSoftKey(javax.microedition.lcdui.Displayable displayable, int softKeyIndex) {

@@ -96,7 +96,14 @@ public abstract class Canvas extends Displayable {
     }
 
     public void repaint(int x, int y, int width, int height) {
-        repaint();
+        MidletRuntime.renderCanvas(this, graphics -> {
+            try {
+                graphics.setClip(x, y, width, height);
+                paint(graphics);
+            } finally {
+                graphics.dispose();
+            }
+        });
     }
 
     public void serviceRepaints() {
