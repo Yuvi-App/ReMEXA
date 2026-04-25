@@ -6,11 +6,15 @@ import javax.sound.sampled.AudioFormat;
 import javax.sound.sampled.AudioSystem;
 import javax.sound.sampled.LineUnavailableException;
 import javax.sound.sampled.SourceDataLine;
+import javax.microedition.media.decoders.SMAFDecoder;
+import java.util.ArrayList;
+import java.util.List;
 
 public final class SmafRenderedPlayer implements AutoCloseable {
     private static final int CHUNK_FRAMES = 1024;
 
     private final SmafRenderedAudio audio;
+    private final List<SMAFDecoder.SequenceUserEvent> userEvents;
     private final Object lock = new Object();
 
     private Thread worker;
@@ -22,11 +26,17 @@ public final class SmafRenderedPlayer implements AutoCloseable {
     private boolean paused;
     private int framePosition;
     private int remainingLoops;
+    private int nextUserEventIndex;
     private int volume = 127;
     private int panpot = 64;
 
     public SmafRenderedPlayer(SmafRenderedAudio audio) {
+        this(audio, List.of());
+    }
+
+    public SmafRenderedPlayer(SmafRenderedAudio audio, List<SMAFDecoder.SequenceUserEvent> userEvents) {
         this.audio = audio;
+        this.userEvents = userEvents == null ? List.of() : List.copyOf(userEvents);
     }
 
     public int getState() {
@@ -60,6 +70,7 @@ public final class SmafRenderedPlayer implements AutoCloseable {
         synchronized (lock) {
             framePosition = 0;
             remainingLoops = loopCount == 0 ? -1 : Math.max(0, loopCount - 1);
+            nextUserEventIndex = 0;
             paused = false;
             playing = true;
             if (line != null) {
@@ -76,6 +87,7 @@ public final class SmafRenderedPlayer implements AutoCloseable {
             paused = false;
             playing = false;
             framePosition = 0;
+            nextUserEventIndex = 0;
             if (line != null) {
                 line.stop();
                 line.flush();
@@ -170,6 +182,7 @@ public final class SmafRenderedPlayer implements AutoCloseable {
             int startFrame;
             float leftGain;
             float rightGain;
+            List<Integer> pendingUserEvents = List.of();
             synchronized (lock) {
                 int available = audio.frameCount() - framePosition;
                 if (available <= 0) {
@@ -178,6 +191,7 @@ public final class SmafRenderedPlayer implements AutoCloseable {
                             remainingLoops--;
                         }
                         framePosition = 0;
+                        nextUserEventIndex = 0;
                         available = audio.frameCount();
                     } else {
                         playing = false;
@@ -198,6 +212,7 @@ public final class SmafRenderedPlayer implements AutoCloseable {
                 leftGain = gain * (pan > 0.0f ? 1.0f - pan : 1.0f);
                 rightGain = gain * (pan < 0.0f ? 1.0f + pan : 1.0f);
                 framePosition += framesToWrite;
+                pendingUserEvents = consumeUserEventsLocked(startFrame, framesToWrite);
             }
 
             if (completionListener != null) {
@@ -207,6 +222,11 @@ public final class SmafRenderedPlayer implements AutoCloseable {
 
             scaleIntoChunk(audio.pcm16Le(), startFrame, framesToWrite, leftGain, rightGain, chunkBuffer);
             line.write(chunkBuffer, 0, framesToWrite * 4);
+            for (int userEventId : pendingUserEvents) {
+                if (listener != null) {
+                    listener.eventOccurred(userEventId);
+                }
+            }
         }
     }
 
@@ -239,6 +259,28 @@ public final class SmafRenderedPlayer implements AutoCloseable {
         line.flush();
         line.close();
         line = null;
+    }
+
+    private List<Integer> consumeUserEventsLocked(int startFrame, int frames) {
+        if (userEvents.isEmpty() || frames <= 0) {
+            return List.of();
+        }
+        long endFrameExclusive = (long) startFrame + frames;
+        List<Integer> pending = new ArrayList<>();
+        while (nextUserEventIndex < userEvents.size()) {
+            SMAFDecoder.SequenceUserEvent userEvent = userEvents.get(nextUserEventIndex);
+            long eventFrame = Math.round(userEvent.tick() * (audio.sampleRate() / 1000.0));
+            if (eventFrame < startFrame) {
+                nextUserEventIndex++;
+                continue;
+            }
+            if (eventFrame >= endFrameExclusive) {
+                break;
+            }
+            pending.add(userEvent.eventId());
+            nextUserEventIndex++;
+        }
+        return pending.isEmpty() ? List.of() : pending;
     }
 
     private static void scaleIntoChunk(byte[] pcm,

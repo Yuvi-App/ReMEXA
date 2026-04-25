@@ -6,6 +6,7 @@ import org.recompile.mobile.Mobile;
 import javax.microedition.media.decoders.SMAFDecoder;
 import javax.sound.midi.MidiDevice;
 import javax.sound.midi.MidiEvent;
+import javax.sound.midi.MetaMessage;
 import javax.sound.midi.MidiMessage;
 import javax.sound.midi.MidiSystem;
 import javax.sound.midi.MidiUnavailableException;
@@ -46,6 +47,8 @@ public final class SmafPlayback implements AutoCloseable {
     private static final String SMAF_SYNTH_AUTO = "auto";
     private static final String SMAF_SYNTH_FUETREK = "fuetrek";
     private static final String SMAF_SYNTH_MIDI = "midi";
+    private static final int USER_EVENT_META_TYPE = 0x7F;
+    private static final byte[] USER_EVENT_META_PREFIX = new byte[]{'R', 'X'};
     public static final int NO_DATA = 1;
     public static final int READY = 2;
     public static final int PLAYING = 3;
@@ -60,6 +63,7 @@ public final class SmafPlayback implements AutoCloseable {
     private final List<byte[]> exclusiveVoices;
     private final List<byte[]> pcmClipData;
     private final List<SMAFDecoder.PcmSequenceTrigger> pcmTriggers;
+    private final List<SMAFDecoder.SequenceUserEvent> userEvents;
     private final boolean hasPcmPayload;
     private final int pcmClipCount;
 
@@ -110,6 +114,7 @@ public final class SmafPlayback implements AutoCloseable {
                          List<byte[]> exclusiveVoices,
                          List<byte[]> pcmClipData,
                          List<SMAFDecoder.PcmSequenceTrigger> pcmTriggers,
+                         List<SMAFDecoder.SequenceUserEvent> userEvents,
                          boolean hasPcmPayload,
                          int pcmClipCount) {
         this.source = source;
@@ -120,6 +125,7 @@ public final class SmafPlayback implements AutoCloseable {
         this.exclusiveVoices = exclusiveVoices;
         this.pcmClipData = pcmClipData;
         this.pcmTriggers = pcmTriggers;
+        this.userEvents = userEvents;
         this.hasPcmPayload = hasPcmPayload;
         this.pcmClipCount = pcmClipCount;
     }
@@ -134,6 +140,7 @@ public final class SmafPlayback implements AutoCloseable {
                 decoded.exclusiveVoices(),
                 decoded.pcmClipData(),
                 decoded.pcmTriggers(),
+                decoded.userEvents(),
                 decoded.hasPcmPayload(),
                 decoded.pcmClipCount());
     }
@@ -254,6 +261,10 @@ public final class SmafPlayback implements AutoCloseable {
         return source.clone();
     }
 
+    public List<SMAFDecoder.SequenceUserEvent> userEvents() {
+        return userEvents;
+    }
+
     public SmafRenderedAudio renderedAudio() throws Exception {
         String synthPreference = normalizeSmafSynthPreference(System.getProperty("remexa.smafSynth", "auto"));
         if (SMAF_SYNTH_MIDI.equals(synthPreference)) {
@@ -320,7 +331,7 @@ public final class SmafPlayback implements AutoCloseable {
         if (audio == null) {
             throw new IOException("FueTrek SMAF rendering is disabled for MIDI-only playback");
         }
-        renderedPlayer = new SmafRenderedPlayer(audio);
+        renderedPlayer = new SmafRenderedPlayer(audio, userEvents);
         renderedPlayer.setListener(listener);
         renderedPlayer.setVolume(volume);
         renderedPlayer.setPanpot(panpot);
@@ -343,6 +354,13 @@ public final class SmafPlayback implements AutoCloseable {
         sequencer.addMetaEventListener(message -> {
             if (message.getType() == 0x2F && listener != null) {
                 dispatchCompletion(listener);
+                return;
+            }
+            if (listener != null) {
+                int userEventId = decodeUserEventMeta(message);
+                if (userEventId >= 0) {
+                    dispatchUserEvent(listener, userEventId);
+                }
             }
         });
         if (hasPcmPayload) {
@@ -708,6 +726,8 @@ public final class SmafPlayback implements AutoCloseable {
             byte[] midiBytes = readAll(SMAFDecoder.SequenceData);
             Sequence sequence = MidiSystem.getSequence(new ByteArrayInputStream(midiBytes));
             Sequence midiSequence = cloneSequence(sequence);
+            List<SMAFDecoder.SequenceUserEvent> userEvents = copySequenceUserEvents(SMAFDecoder.sequenceUserEvents);
+            injectUserEvents(midiSequence, userEvents);
             applySoftbankExvoFallback(source,
                     midiSequence,
                     SMAFDecoder.decodedChannelStates(),
@@ -734,6 +754,7 @@ public final class SmafPlayback implements AutoCloseable {
                     exclusiveVoices,
                     pcmClipData,
                     copyPcmSequenceTriggers(SMAFDecoder.pcmSequenceTriggers),
+                    userEvents,
                     hasPcmPayload,
                     pcmClipCount);
         }
@@ -757,6 +778,41 @@ public final class SmafPlayback implements AutoCloseable {
             copy.add(new SMAFDecoder.SequenceSysExEvent(event.tick(), event.data().clone()));
         }
         return List.copyOf(copy);
+    }
+
+    private static List<SMAFDecoder.SequenceUserEvent> copySequenceUserEvents(List<SMAFDecoder.SequenceUserEvent> sourceEvents) {
+        return List.copyOf(sourceEvents);
+    }
+
+    private static void injectUserEvents(Sequence sequence, List<SMAFDecoder.SequenceUserEvent> userEvents) throws Exception {
+        if (userEvents.isEmpty()) {
+            return;
+        }
+        Track[] tracks = sequence.getTracks();
+        Track targetTrack = tracks.length == 0 ? sequence.createTrack() : tracks[0];
+        for (SMAFDecoder.SequenceUserEvent userEvent : userEvents) {
+            MetaMessage metaMessage = new MetaMessage();
+            byte[] payload = new byte[]{
+                    USER_EVENT_META_PREFIX[0],
+                    USER_EVENT_META_PREFIX[1],
+                    (byte) (userEvent.eventId() & 0xFF)
+            };
+            metaMessage.setMessage(USER_EVENT_META_TYPE, payload, payload.length);
+            targetTrack.add(new MidiEvent(metaMessage, userEvent.tick()));
+        }
+    }
+
+    private static int decodeUserEventMeta(MetaMessage message) {
+        if (message.getType() != USER_EVENT_META_TYPE) {
+            return -1;
+        }
+        byte[] data = message.getData();
+        if (data.length < 3
+                || data[0] != USER_EVENT_META_PREFIX[0]
+                || data[1] != USER_EVENT_META_PREFIX[1]) {
+            return -1;
+        }
+        return data[2] & 0xFF;
     }
 
     private static List<SMAFDecoder.PcmSequenceTrigger> copyPcmSequenceTriggers(List<SMAFDecoder.PcmSequenceTrigger> sourceTriggers) {
@@ -1516,6 +1572,10 @@ public final class SmafPlayback implements AutoCloseable {
         callbackThread.start();
     }
 
+    private static void dispatchUserEvent(PhraseTrackListener listener, int eventId) {
+        listener.eventOccurred(eventId);
+    }
+
     private enum VoiceRole {
         PERCUSSION,
         ARPEGGIO,
@@ -1553,6 +1613,7 @@ public final class SmafPlayback implements AutoCloseable {
                                List<byte[]> exclusiveVoices,
                                List<byte[]> pcmClipData,
                                List<SMAFDecoder.PcmSequenceTrigger> pcmTriggers,
+                               List<SMAFDecoder.SequenceUserEvent> userEvents,
                                boolean hasPcmPayload,
                                int pcmClipCount) {
     }

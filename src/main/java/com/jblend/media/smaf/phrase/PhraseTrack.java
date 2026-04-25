@@ -359,7 +359,7 @@ public final class PhraseTrack {
         }
 
         closeLinkedRenderedPlayback();
-        linkedRenderedPlayer = new SmafRenderedPlayer(SmafRenderedAudio.mix(layers));
+        linkedRenderedPlayer = new SmafRenderedPlayer(SmafRenderedAudio.mix(layers), playback.userEvents());
         linkedRenderedPlayer.setListener(listener);
         linkedRenderedPlayer.setVolume(masterVolume);
         linkedRenderedPlayer.setPanpot(64);

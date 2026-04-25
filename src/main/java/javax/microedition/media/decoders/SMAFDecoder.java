@@ -154,6 +154,7 @@ public final class SMAFDecoder
     public static List<byte[]> startupPackets = new ArrayList<byte[]>();
     public static List<byte[]> exclusiveVoices = new ArrayList<byte[]>();
     public static List<SequenceSysExEvent> sequenceSysExEvents = new ArrayList<SequenceSysExEvent>();
+    public static List<SequenceUserEvent> sequenceUserEvents = new ArrayList<SequenceUserEvent>();
 
     public static synchronized void decodeSMAF(byte[] data)
 	{
@@ -177,6 +178,7 @@ public final class SMAFDecoder
         startupPackets.clear();
         exclusiveVoices.clear();
         sequenceSysExEvents.clear();
+        sequenceUserEvents.clear();
 
         input = data;
 
@@ -1380,18 +1382,10 @@ public final class SMAFDecoder
                  * https://github.com/but80/smaf825/blob/v1/smaf/event/event.go
                  */
 
-                // SEQU chunk format uses the same notation of Handy Phone format for duration and gateTime
-                firstDurByte = (byte) (data[offset++] & 0xFF);
-                if ((firstDurByte & (byte) 0x80) == 0) // Single-byte duration
-                {
-                    duration = firstDurByte;
-                } 
-                else // Dual-byte duration
-                {
-                    byte secondDurByte = (byte) (data[offset++] & 0xFF);
-                    duration = ((firstDurByte & 0x3F) << 7) | (secondDurByte & 0x7F);
-                    duration += 128; // Add 128 to Duration as per the SMAF documentation
-                }
+                // SEQU uses MIDI-style variable-length values for duration and gate time.
+                int[] offsetRef = new int[]{offset};
+                duration = readMidiVariableLength(data, offsetRef);
+                offset = offsetRef[0];
 
                 totalDuration += (duration * timeBasetoMs(TimeBase_D)); // Update total duration
                 byte status = (byte) (data[offset++] & 0xFF); // Read status byte
@@ -1588,9 +1582,19 @@ public final class SMAFDecoder
                         Mobile.log(Mobile.LOG_DEBUG, SMAFDecoder.class.getPackage().getName() + "." + SMAFDecoder.class.getSimpleName() + ": " + "SysEx event received");
                         // TODO: Maybe use this SysEx for something?
                     }
+                    else if (SysEx >= (byte) 0x10 && SysEx <= (byte) 0x1F)
+                    {
+                        int userEventId = SysEx - 0x10;
+                        sequenceUserEvents.add(new SequenceUserEvent(totalDuration, userEventId));
+                        Mobile.log(Mobile.LOG_DEBUG,
+                                SMAFDecoder.class.getPackage().getName() + "." + SMAFDecoder.class.getSimpleName()
+                                        + ": " + "User event received:" + userEventId + " at tick " + totalDuration);
+                    }
                     else 
                     {
-                        Mobile.log(Mobile.LOG_WARNING, SMAFDecoder.class.getPackage().getName() + "." + SMAFDecoder.class.getSimpleName() + ": " + "Unknown event received:" + String.format("%02X", data[offset+1]));
+                        Mobile.log(Mobile.LOG_WARNING,
+                                SMAFDecoder.class.getPackage().getName() + "." + SMAFDecoder.class.getSimpleName()
+                                        + ": " + "Unknown event received:" + String.format("%02X", SysEx));
                     }
                 }
                 else // Note event
@@ -1599,18 +1603,9 @@ public final class SMAFDecoder
                     channel += handyChannelIdx;
                     byte noteValue = (byte) ((status & 15) + ((status >> 4 & 3) + 3) * 12);
 
-                    firstGateByte = (byte) (data[offset++] & 0xFF);
-                    // gateTime works pretty much like duration in how it's read
-                    if ((firstGateByte & (byte) 0x80) == 0) // Single-byte gate time
-                    { 
-                        gateTime = firstGateByte;
-                    } 
-                    else // Dual-byte gate time
-                    { 
-                        byte secondGateByte = (byte) (data[offset++] & 0xFF);
-                        gateTime = ((firstGateByte & 0x3F) << 7) | (secondGateByte & 0x7F);
-                        gateTime += 128; // Add 128 to gate time as per the SMAF documentation
-                    }
+                    offsetRef[0] = offset;
+                    gateTime = readMidiVariableLength(data, offsetRef);
+                    offset = offsetRef[0];
 
                     // As per the documentation, gateTime cannot be zero, this indicates either a corrupted file or a parse error
                     if (gateTime <= 0) 
@@ -1656,6 +1651,26 @@ public final class SMAFDecoder
             case 0x25: return "UTF-32";
             default: return "UTF-8";
         }
+    }
+
+    private static int readMidiVariableLength(byte[] data, int[] offsetRef)
+    {
+        int offset = offsetRef[0];
+        int value = 0;
+        int count = 0;
+        while (offset < data.length)
+        {
+            int next = data[offset++] & 0xFF;
+            value = (value << 7) | (next & 0x7F);
+            count++;
+            if ((next & 0x80) == 0 || count == 4)
+            {
+                offsetRef[0] = offset;
+                return value;
+            }
+        }
+        offsetRef[0] = offset;
+        return value;
     }
 
     private static int timeBasetoMs(byte timeBase) 
@@ -1814,6 +1829,10 @@ public final class SMAFDecoder
     }
 
     public static record SequenceSysExEvent(int tick, byte[] data)
+    {
+    }
+
+    public static record SequenceUserEvent(int tick, int eventId)
     {
     }
 
