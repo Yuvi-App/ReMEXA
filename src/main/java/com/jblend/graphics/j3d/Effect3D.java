@@ -77,7 +77,7 @@ public class Effect3D {
     }
 
     public com.jblend.graphics.j3d.Texture getSphereMap () {
-        remexa.probes.SdkStubSupport.log("com.jblend.graphics.j3d.Effect3D", "getSphereMap");
+        // Hot path - called every figure render, do not log.
         return sphereMap;
     }
 

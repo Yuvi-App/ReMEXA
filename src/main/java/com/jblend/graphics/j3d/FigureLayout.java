@@ -10,6 +10,7 @@ public class FigureLayout {
     private int parallelHeight;
     private int centerX;
     private int centerY;
+    private boolean centerExplicit;
     private boolean perspective;
     private int perspectiveNear;
     private int perspectiveFar;
@@ -27,12 +28,13 @@ public class FigureLayout {
         this.scaleY = y_scale;
         this.centerX = cx;
         this.centerY = cy;
+        this.centerExplicit = true;
         remexa.probes.SdkStubSupport.log("com.jblend.graphics.j3d.FigureLayout", "FigureLayout", trans, x_scale, y_scale, cx, cy);
     }
 
 
     public com.jblend.graphics.j3d.AffineTrans getAffineTrans () {
-        remexa.probes.SdkStubSupport.log("com.jblend.graphics.j3d.FigureLayout", "getAffineTrans");
+        // Hot path - called every frame per figure, do not log.
         if (selectedAffineIndex >= 0 && selectedAffineIndex < affineTransArray.length) {
             return affineTransArray[selectedAffineIndex];
         }
@@ -60,12 +62,10 @@ public class FigureLayout {
     }
 
     public int getScaleX () {
-        remexa.probes.SdkStubSupport.log("com.jblend.graphics.j3d.FigureLayout", "getScaleX");
         return scaleX;
     }
 
     public int getScaleY () {
-        remexa.probes.SdkStubSupport.log("com.jblend.graphics.j3d.FigureLayout", "getScaleY");
         return scaleY;
     }
 
@@ -84,12 +84,10 @@ public class FigureLayout {
     }
 
     public int getParallelWidth () {
-        remexa.probes.SdkStubSupport.log("com.jblend.graphics.j3d.FigureLayout", "getParallelWidth");
         return parallelWidth;
     }
 
     public int getParallelHeight () {
-        remexa.probes.SdkStubSupport.log("com.jblend.graphics.j3d.FigureLayout", "getParallelHeight");
         return parallelHeight;
     }
 
@@ -106,19 +104,22 @@ public class FigureLayout {
     }
 
     public int getCenterX () {
-        remexa.probes.SdkStubSupport.log("com.jblend.graphics.j3d.FigureLayout", "getCenterX");
         return centerX;
     }
 
     public int getCenterY () {
-        remexa.probes.SdkStubSupport.log("com.jblend.graphics.j3d.FigureLayout", "getCenterY");
         return centerY;
     }
 
     public void setCenter (int cx, int cy) {
         this.centerX = cx;
         this.centerY = cy;
+        this.centerExplicit = true;
         remexa.probes.SdkStubSupport.log("com.jblend.graphics.j3d.FigureLayout", "setCenter", cx, cy);
+    }
+
+    public boolean hasExplicitCenter() {
+        return centerExplicit;
     }
 
     public void setPerspective (int zNear, int zFar, int angle) {

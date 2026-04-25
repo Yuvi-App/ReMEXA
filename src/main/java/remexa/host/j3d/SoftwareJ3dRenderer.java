@@ -23,6 +23,9 @@ public final class SoftwareJ3dRenderer {
     private static final int COMMAND_AMBIENT_LIGHT = 0xA0000000;
     private static final int COMMAND_DIRECTION_LIGHT = 0xA1000000;
     private static final int COMMAND_MASK = 0xFF000000;
+    private static final int ENV_ATTR_LIGHTING = 0x01;
+    private static final int ENV_ATTR_SPHERE_MAP = 0x02;
+    private static final int PATTR_COLORKEY = 0x10;
     private static final int PRIMITIVE_LINES = 0x02;
     private static final int PRIMITIVE_TRIANGLES = 0x03;
     private static final int PRIMITIVE_QUADS = 0x04;
@@ -113,8 +116,8 @@ public final class SoftwareJ3dRenderer {
                 state.perspective = false;
                 int width = commandList[cursor++];
                 int height = commandList[cursor++];
-                state.projectionScaleX = width > 0 ? (surfaceWidth * 4096.0f) / width : 0.0f;
-                state.projectionScaleY = height > 0 ? (surfaceHeight * 4096.0f) / height : 0.0f;
+                state.projectionScaleX = width > 0 ? (float) surfaceWidth / width : 0.0f;
+                state.projectionScaleY = height > 0 ? (float) surfaceHeight / height : 0.0f;
                 continue;
             }
             if (command == COMMAND_AMBIENT_LIGHT) {
@@ -264,8 +267,8 @@ public final class SoftwareJ3dRenderer {
                 screenY[i] = Float.NaN;
                 depth[i] = Float.NEGATIVE_INFINITY;
             } else {
-                // MEXA Canvas3D screen-scale behaves like an orthographic view-space scale,
-                // not a perspective focal-length divide.
+                // Figure vertices stay in 12-bit fixed-point through posing/affine transforms.
+                // Parallel projection sizes are also fixed-point, so normalize coordinates first.
                 screenX[i] = screenCenterX + (tx * projectionScaleX);
                 screenY[i] = screenCenterY - (ty * projectionScaleY);
                 depth[i] = -tz;
@@ -335,7 +338,8 @@ public final class SoftwareJ3dRenderer {
                 );
             } else if (indices.length == 4) {
                 float[] uv = polygon.textureCoords();
-                boolean stripOrderedQuad = isSelfIntersectingQuad(
+                boolean stripOrderedQuad = isStripOrderedQuad(
+                        uv,
                         screenX[indices[0]], screenY[indices[0]],
                         screenX[indices[1]], screenY[indices[1]],
                         screenX[indices[2]], screenY[indices[2]],
@@ -851,6 +855,49 @@ public final class SoftwareJ3dRenderer {
         return segmentsIntersect(x1, y1, x2, y2, x3, y3, x0, y0);
     }
 
+    private static boolean isStripOrderedQuad(
+            float[] uv,
+            float x0,
+            float y0,
+            float x1,
+            float y1,
+            float x2,
+            float y2,
+            float x3,
+            float y3
+    ) {
+        return (uv != null
+                && uv.length >= 8
+                && isSelfIntersectingQuad(
+                uv[0], uv[1],
+                uv[2], uv[3],
+                uv[4], uv[5],
+                uv[6], uv[7]
+        )) || isSelfIntersectingQuad(x0, y0, x1, y1, x2, y2, x3, y3);
+    }
+
+    private static boolean isStripOrderedQuad(
+            float u0,
+            float v0,
+            float u1,
+            float v1,
+            float u2,
+            float v2,
+            float u3,
+            float v3,
+            float x0,
+            float y0,
+            float x1,
+            float y1,
+            float x2,
+            float y2,
+            float x3,
+            float y3
+    ) {
+        return isSelfIntersectingQuad(u0, v0, u1, v1, u2, v2, u3, v3)
+                || isSelfIntersectingQuad(x0, y0, x1, y1, x2, y2, x3, y3);
+    }
+
     private static boolean segmentsIntersect(
             float ax, float ay,
             float bx, float by,
@@ -902,9 +949,6 @@ public final class SoftwareJ3dRenderer {
     }
 
     private static int blend(int src, int dst, int blendMode) {
-        if (dst == 0) {
-            return src;
-        }
         return switch (blendMode) {
             case 32 -> average(src, dst);
             case 64 -> add(src, dst);
@@ -1059,6 +1103,8 @@ public final class SoftwareJ3dRenderer {
         }
         int cursor = commandIndex + 1;
         int blendMode = command & 0x60;
+        boolean sphereMapEnabled = (command & ENV_ATTR_SPHERE_MAP) != 0;
+        boolean colorKeyEnabled = (command & PATTR_COLORKEY) != 0;
         switch (primitiveType) {
             case PRIMITIVE_LINES -> {
                 int vertexInts = primitiveCount * 6;
@@ -1131,7 +1177,9 @@ public final class SoftwareJ3dRenderer {
                         command,
                         primitiveCount,
                         3,
-                        blendMode
+                        blendMode,
+                        sphereMapEnabled ? state.sphereMap : null,
+                        colorKeyEnabled
                 );
             }
             case PRIMITIVE_QUADS -> {
@@ -1150,7 +1198,9 @@ public final class SoftwareJ3dRenderer {
                         command,
                         primitiveCount,
                         4,
-                        blendMode
+                        blendMode,
+                        sphereMapEnabled ? state.sphereMap : null,
+                        colorKeyEnabled
                 );
             }
             case PRIMITIVE_POINT_SPRITES -> {
@@ -1185,7 +1235,9 @@ public final class SoftwareJ3dRenderer {
                             vertices[vertexBase + 2],
                             spriteParams,
                             spriteBase,
-                            blendMode
+                            blendMode,
+                            sphereMapEnabled ? state.sphereMap : null,
+                            colorKeyEnabled
                     );
                 }
                 return cursor;
@@ -1211,7 +1263,9 @@ public final class SoftwareJ3dRenderer {
             int command,
             int primitiveCount,
             int verticesPerPrimitive,
-            int blendMode
+            int blendMode,
+            Texture sphereMap,
+            boolean colorKeyEnabled
     ) {
         int vertexInts = primitiveCount * verticesPerPrimitive * 3;
         if (cursor + vertexInts > commandList.length) {
@@ -1276,7 +1330,8 @@ public final class SoftwareJ3dRenderer {
                         state.texture,
                         color,
                         blendMode,
-                        state.sphereMap,
+                        sphereMap,
+                        colorKeyEnabled,
                         texCoords != null
                 );
                 continue;
@@ -1311,7 +1366,8 @@ public final class SoftwareJ3dRenderer {
                         state.texture,
                         color,
                         blendMode,
-                        state.sphereMap,
+                        sphereMap,
+                        colorKeyEnabled,
                         texCoords != null
                 );
             } else {
@@ -1328,7 +1384,8 @@ public final class SoftwareJ3dRenderer {
                         state.texture,
                         color,
                         blendMode,
-                        state.sphereMap,
+                        sphereMap,
+                        colorKeyEnabled,
                         texCoords != null
                 );
             }
@@ -1351,6 +1408,7 @@ public final class SoftwareJ3dRenderer {
             int color,
             int blendMode,
             Texture sphereMap,
+            boolean colorKeyEnabled,
             boolean textured
     ) {
         List<PolygonVertex> clipped = clipPerspectivePolygon(vertices, state.nearClip, state.farClip);
@@ -1386,6 +1444,7 @@ public final class SoftwareJ3dRenderer {
                     texture,
                     sphereMap,
                     color,
+                    colorKeyEnabled,
                     textured,
                     first,
                     projected.get(i),
@@ -1408,12 +1467,17 @@ public final class SoftwareJ3dRenderer {
             int color,
             int blendMode,
             Texture sphereMap,
+            boolean colorKeyEnabled,
             boolean textured
     ) {
         if (projected.length < 4 || projected[0] == null || projected[1] == null || projected[2] == null || projected[3] == null) {
             return;
         }
-        boolean stripOrderedQuad = isSelfIntersectingQuad(
+        boolean stripOrderedQuad = isStripOrderedQuad(
+                projected[0].u(), projected[0].v(),
+                projected[1].u(), projected[1].v(),
+                projected[2].u(), projected[2].v(),
+                projected[3].u(), projected[3].v(),
                 projected[0].screenX(), projected[0].screenY(),
                 projected[1].screenX(), projected[1].screenY(),
                 projected[2].screenX(), projected[2].screenY(),
@@ -1421,14 +1485,14 @@ public final class SoftwareJ3dRenderer {
         );
         if (stripOrderedQuad) {
             rasterizeCommandTriangle(pixels, depthBuffer, surfaceWidth, surfaceHeight, clipX, clipY, clipWidth, clipHeight,
-                    projected[0], projected[1], projected[2], texture, color, blendMode, sphereMap, textured);
+                    projected[0], projected[1], projected[2], texture, color, blendMode, sphereMap, colorKeyEnabled, textured);
             rasterizeCommandTriangle(pixels, depthBuffer, surfaceWidth, surfaceHeight, clipX, clipY, clipWidth, clipHeight,
-                    projected[1], projected[3], projected[2], texture, color, blendMode, sphereMap, textured);
+                    projected[1], projected[3], projected[2], texture, color, blendMode, sphereMap, colorKeyEnabled, textured);
         } else {
             rasterizeCommandTriangle(pixels, depthBuffer, surfaceWidth, surfaceHeight, clipX, clipY, clipWidth, clipHeight,
-                    projected[0], projected[1], projected[2], texture, color, blendMode, sphereMap, textured);
+                    projected[0], projected[1], projected[2], texture, color, blendMode, sphereMap, colorKeyEnabled, textured);
             rasterizeCommandTriangle(pixels, depthBuffer, surfaceWidth, surfaceHeight, clipX, clipY, clipWidth, clipHeight,
-                    projected[0], projected[2], projected[3], texture, color, blendMode, sphereMap, textured);
+                    projected[0], projected[2], projected[3], texture, color, blendMode, sphereMap, colorKeyEnabled, textured);
         }
     }
 
@@ -1448,6 +1512,7 @@ public final class SoftwareJ3dRenderer {
             int color,
             int blendMode,
             Texture sphereMap,
+            boolean colorKeyEnabled,
             boolean textured
     ) {
         if (v0 == null || v1 == null || v2 == null) {
@@ -1466,6 +1531,7 @@ public final class SoftwareJ3dRenderer {
                 texture,
                 sphereMap,
                 color,
+                colorKeyEnabled,
                 textured,
                 v0,
                 v1,
@@ -1488,7 +1554,9 @@ public final class SoftwareJ3dRenderer {
             float z,
             int[] spriteParams,
             int spriteBase,
-            int blendMode
+            int blendMode,
+            Texture sphereMap,
+            boolean colorKeyEnabled
     ) {
         ProjectedVertex center = transformAndProject(state, x, y, z, 0.0f, 0.0f);
         if (center == null || state.texture == null) {
@@ -1534,7 +1602,8 @@ public final class SoftwareJ3dRenderer {
                 state.texture,
                 0xFFFFFFFF,
                 blendMode,
-                state.sphereMap,
+                sphereMap,
+                colorKeyEnabled,
                 true
         );
     }
@@ -1687,6 +1756,7 @@ public final class SoftwareJ3dRenderer {
             Texture texture,
             Texture sphereMap,
             int flatColor,
+            boolean colorKeyEnabled,
             boolean textured,
             ProjectedVertex v0,
             ProjectedVertex v1,
@@ -1782,7 +1852,7 @@ public final class SoftwareJ3dRenderer {
                     // punches holes through the track. Blended command-list effects, however, rely on
                     // that same palette key for billboard/sprite backgrounds, so keep color-keying for
                     // additive/average/subtractive primitives.
-                    argb = texture.sampleColor(u, v, blendMode != 0);
+                    argb = texture.sampleColor(u, v, colorKeyEnabled);
                     if ((argb >>> 24) == 0) {
                         continue;
                     }
@@ -1881,8 +1951,8 @@ public final class SoftwareJ3dRenderer {
                     projectionScaleY = focal;
                 }
             } else if (layout.getParallelWidth() > 0 || layout.getParallelHeight() > 0) {
-                projectionScaleX = layout.getParallelWidth() > 0 ? (surfaceWidth * 4096.0f) / layout.getParallelWidth() : 1.0f;
-                projectionScaleY = layout.getParallelHeight() > 0 ? (surfaceHeight * 4096.0f) / layout.getParallelHeight() : 1.0f;
+                projectionScaleX = layout.getParallelWidth() > 0 ? (float) surfaceWidth / layout.getParallelWidth() : 1.0f;
+                projectionScaleY = layout.getParallelHeight() > 0 ? (float) surfaceHeight / layout.getParallelHeight() : 1.0f;
             } else {
                 int scaleX = layout.getScaleX();
                 int scaleY = layout.getScaleY();
@@ -1893,6 +1963,8 @@ public final class SoftwareJ3dRenderer {
             if (currentTexture == null && textures != null && textures.length > 0) {
                 currentTexture = textures[0];
             }
+            int centerX = layout.hasExplicitCenter() ? originX + layout.getCenterX() : originX + (surfaceWidth / 2);
+            int centerY = layout.hasExplicitCenter() ? originY + layout.getCenterY() : originY + (surfaceHeight / 2);
             return new CommandState(
                     layout,
                     textures,
@@ -1901,8 +1973,8 @@ public final class SoftwareJ3dRenderer {
                     layout.getPerspectiveFar(),
                     layout.getAffineTrans(),
                     currentTexture,
-                    originX + layout.getCenterX(),
-                    originY + layout.getCenterY(),
+                    centerX,
+                    centerY,
                     projectionScaleX,
                     projectionScaleY,
                     perspective

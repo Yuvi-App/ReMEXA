@@ -88,10 +88,14 @@ public class Texture {
         int y = forModel ? wrap((int) Math.floor(v), height) : clamp((int) Math.floor(v), 0, height - 1);
         if (indexedPixels != null && indexedColorModel != null) {
             int index = indexedPixels[y * width + x];
-            if (transparent && index == 0) {
+            int argb = indexedColorModel.getRGB(index);
+            if (transparent && (index == 0 || (argb >>> 24) == 0)) {
                 return 0;
             }
-            return indexedColorModel.getRGB(index);
+            if (!transparent && (argb >>> 24) == 0) {
+                argb |= 0xFF000000;
+            }
+            return argb;
         }
         int argb = pixels[y * width + x];
         if (transparent && (argb == 0xFFFF00FF || (argb >>> 24) == 0)) {

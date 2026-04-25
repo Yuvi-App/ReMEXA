@@ -33,13 +33,10 @@ public final class CanvasGraphics3D extends Graphics implements Graphics3D {
         if (layout == null || effect == null || commandlist == null) {
             throw new NullPointerException();
         }
-        if (textures != null) {
-            for (Texture texture : textures) {
-                if (texture == null) {
-                    throw new NullPointerException();
-                }
-            }
-        }
+        // JSCL allows null slots in the texture array as long as the command
+        // list does not select them via COMMAND_TEXTURE_INDEX. Trial builds
+        // (e.g. Burning Fortress) routinely pass partially-populated arrays
+        // because some textures are downloaded lazily.
         ensureSceneBuffers();
         if (SoftwareJ3dRenderer.renderCommandListToBuffers(
                 scenePixels,
@@ -91,8 +88,8 @@ public final class CanvasGraphics3D extends Graphics implements Graphics3D {
             return;
         }
         var affine = layout.getAffineTrans();
-        int centerX = x + layout.getCenterX();
-        int centerY = y + layout.getCenterY();
+        int centerX = x + (layout.hasExplicitCenter() ? layout.getCenterX() : surfaceWidth / 2);
+        int centerY = y + (layout.hasExplicitCenter() ? layout.getCenterY() : surfaceHeight / 2);
         boolean perspective = layout.isPerspective();
         int nearClip = 0;
         int farClip = 0;
@@ -119,11 +116,15 @@ public final class CanvasGraphics3D extends Graphics implements Graphics3D {
                 projectionScaleY = focal;
             }
         } else if (layout.getParallelWidth() > 0 || layout.getParallelHeight() > 0) {
+            // setParallelSize(W, H) declares the view rectangle in raw vertex
+            // units; pixels-per-vertex-unit = surface / parallelSize. The earlier
+            // *4096 multiplier rasterized figures 4096x oversized — the cause of
+            // Burning Fortress's red-screen-fill on the title.
             projectionScaleX = layout.getParallelWidth() > 0
-                    ? (surfaceWidth * 4096.0f) / layout.getParallelWidth()
+                    ? (float) surfaceWidth / layout.getParallelWidth()
                     : 512.0f / 4096.0f;
             projectionScaleY = layout.getParallelHeight() > 0
-                    ? (surfaceHeight * 4096.0f) / layout.getParallelHeight()
+                    ? (float) surfaceHeight / layout.getParallelHeight()
                     : 512.0f / 4096.0f;
         } else {
             int scaleX = layout.getScaleX();

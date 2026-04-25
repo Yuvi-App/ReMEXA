@@ -39,7 +39,7 @@ public class DeviceControl {
     }
 
     public int getDeviceState (int deviceNo) {
-        remexa.probes.SdkStubSupport.log("com.j_phone.system.DeviceControl", "getDeviceState", deviceNo);
+        // Hot path - polled every frame for input, do not log.
         remexa.host.runtime.MidletRuntime.ensureThreadActive();
         return switch (deviceNo) {
             case KEY_STATE -> remexa.host.runtime.MidletRuntime.currentDeviceKeyState(activeDevices.get(EIGHT_DIRECTIONS));

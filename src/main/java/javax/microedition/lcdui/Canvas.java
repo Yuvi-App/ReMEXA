@@ -220,11 +220,15 @@ public abstract class Canvas extends Displayable {
         if (containsAnyKey(KEYCODE_FIRE, (int) '\n', FIRE)) {
             state |= 0x10000;
         }
+        // J-Phone JSCL reverses the MIDP convention: bit 0x20000 ("SK1" in the
+        // device key state) is the RIGHT softkey, 0x40000 is the LEFT softkey.
+        // Burning Fortress polls b(131072) for its primary "decide/start" action
+        // (right-softkey-labeled), confirming the swap vs. MIDP's SOFT1=left.
         if (pressedKeys.contains(SOFT1)) {
-            state |= 0x20000;
+            state |= 0x40000;
         }
         if (pressedKeys.contains(SOFT2)) {
-            state |= 0x40000;
+            state |= 0x20000;
         }
         if (pressedKeys.contains(SOFT3)) {
             state |= 0x80000;
