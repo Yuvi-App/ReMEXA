@@ -30,12 +30,45 @@ public final class CanvasGraphics3D extends Graphics implements Graphics3D {
 
     @Override
     public void drawCommandList(Texture[] textures, int x, int y, FigureLayout layout, Effect3D effect, int[] commandlist) {
-        SdkStubSupport.log("com.jblend.graphics.j3d.Graphics3D", "drawCommandList", textures, x, y, layout, effect, commandlist);
+        if (layout == null || effect == null || commandlist == null) {
+            throw new NullPointerException();
+        }
+        if (textures != null) {
+            for (Texture texture : textures) {
+                if (texture == null) {
+                    throw new NullPointerException();
+                }
+            }
+        }
+        ensureSceneBuffers();
+        if (SoftwareJ3dRenderer.renderCommandListToBuffers(
+                scenePixels,
+                sceneDepth,
+                surfaceWidth,
+                surfaceHeight,
+                getClipX(),
+                getClipY(),
+                getClipWidth(),
+                getClipHeight(),
+                x,
+                y,
+                layout,
+                effect,
+                textures,
+                null,
+                commandlist
+        )) {
+            sceneDirty = true;
+        }
     }
 
     @Override
     public void drawCommandList(Texture texture, int x, int y, FigureLayout layout, Effect3D effect, int[] commandlist) {
-        SdkStubSupport.log("com.jblend.graphics.j3d.Graphics3D", "drawCommandList", texture, x, y, layout, effect, commandlist);
+        if (texture == null) {
+            drawCommandList((Texture[]) null, x, y, layout, effect, commandlist);
+            return;
+        }
+        drawCommandList(new Texture[]{texture}, x, y, layout, effect, commandlist);
     }
 
     @Override

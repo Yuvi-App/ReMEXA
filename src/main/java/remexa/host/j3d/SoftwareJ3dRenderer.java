@@ -12,8 +12,149 @@ public final class SoftwareJ3dRenderer {
     private static final float DEPTH_EPSILON = 0.000001f;
     private static final int RASTER_SUBPIXEL_SHIFT = 4;
     private static final int RASTER_SUBPIXEL_SCALE = 1 << RASTER_SUBPIXEL_SHIFT;
+    private static final int COMMAND_LIST_VERSION_1_0 = 0xFE000001;
+    private static final int COMMAND_END = 0x80000000;
+    private static final int COMMAND_FLUSH = 0x82000000;
+    private static final int COMMAND_CENTER = 0x85000000;
+    private static final int COMMAND_TEXTURE_INDEX = 0x86000000;
+    private static final int COMMAND_AFFINE_INDEX = 0x87000000;
+    private static final int COMMAND_PARALLEL_SCALE = 0x90000000;
+    private static final int COMMAND_PARALLEL_SIZE = 0x91000000;
+    private static final int COMMAND_AMBIENT_LIGHT = 0xA0000000;
+    private static final int COMMAND_DIRECTION_LIGHT = 0xA1000000;
+    private static final int COMMAND_MASK = 0xFF000000;
+    private static final int PRIMITIVE_LINES = 0x02;
+    private static final int PRIMITIVE_TRIANGLES = 0x03;
+    private static final int PRIMITIVE_QUADS = 0x04;
+    private static final int PRIMITIVE_POINT_SPRITES = 0x05;
 
     private SoftwareJ3dRenderer() {
+    }
+
+    public static boolean renderCommandListToBuffers(
+            int[] pixels,
+            float[] depthBuffer,
+            int surfaceWidth,
+            int surfaceHeight,
+            int clipX,
+            int clipY,
+            int clipWidth,
+            int clipHeight,
+            int originX,
+            int originY,
+            com.jblend.graphics.j3d.FigureLayout layout,
+            Effect3D effect,
+            Texture[] textures,
+            Texture fallbackTexture,
+            int[] commandList
+    ) {
+        if (pixels == null || depthBuffer == null || layout == null || effect == null || commandList == null) {
+            return false;
+        }
+        if (pixels.length < surfaceWidth * surfaceHeight || depthBuffer.length < surfaceWidth * surfaceHeight) {
+            throw new IllegalArgumentException("Scene buffers are smaller than the target surface.");
+        }
+        CommandState state = CommandState.fromLayout(
+                originX,
+                originY,
+                surfaceWidth,
+                surfaceHeight,
+                layout,
+                effect,
+                textures,
+                fallbackTexture
+        );
+        boolean rendered = false;
+        int cursor = 0;
+        while (cursor < commandList.length) {
+            int command = commandList[cursor++];
+            if (command == COMMAND_LIST_VERSION_1_0) {
+                continue;
+            }
+            if (command == COMMAND_END) {
+                break;
+            }
+            if (command == COMMAND_FLUSH) {
+                rendered = true;
+                continue;
+            }
+            if ((command & COMMAND_MASK) == COMMAND_TEXTURE_INDEX) {
+                int textureIndex = command & 0xF;
+                state.texture = textureIndex >= 0 && state.textures != null && textureIndex < state.textures.length
+                        ? state.textures[textureIndex]
+                        : fallbackTexture;
+                continue;
+            }
+            if ((command & COMMAND_MASK) == COMMAND_AFFINE_INDEX) {
+                state.selectAffineIndex(command & 0xFF);
+                continue;
+            }
+            if (command == COMMAND_CENTER) {
+                if (cursor + 1 >= commandList.length) {
+                    break;
+                }
+                state.centerX = originX + commandList[cursor++];
+                state.centerY = originY + commandList[cursor++];
+                continue;
+            }
+            if (command == COMMAND_PARALLEL_SCALE) {
+                if (cursor + 1 >= commandList.length) {
+                    break;
+                }
+                state.perspective = false;
+                state.projectionScaleX = commandList[cursor++] / 4096.0f;
+                state.projectionScaleY = commandList[cursor++] / 4096.0f;
+                continue;
+            }
+            if (command == COMMAND_PARALLEL_SIZE) {
+                if (cursor + 1 >= commandList.length) {
+                    break;
+                }
+                state.perspective = false;
+                int width = commandList[cursor++];
+                int height = commandList[cursor++];
+                state.projectionScaleX = width > 0 ? (surfaceWidth * 4096.0f) / width : 0.0f;
+                state.projectionScaleY = height > 0 ? (surfaceHeight * 4096.0f) / height : 0.0f;
+                continue;
+            }
+            if (command == COMMAND_AMBIENT_LIGHT) {
+                if (cursor >= commandList.length) {
+                    break;
+                }
+                cursor++;
+                continue;
+            }
+            if (command == COMMAND_DIRECTION_LIGHT) {
+                if (cursor + 3 >= commandList.length) {
+                    break;
+                }
+                cursor += 4;
+                continue;
+            }
+            if (command >= 0) {
+                int next = renderPrimitiveCommand(
+                        pixels,
+                        depthBuffer,
+                        surfaceWidth,
+                        surfaceHeight,
+                        clipX,
+                        clipY,
+                        clipWidth,
+                        clipHeight,
+                        state,
+                        commandList,
+                        cursor - 1
+                );
+                if (next <= cursor - 1) {
+                    break;
+                }
+                cursor = next;
+                rendered = true;
+                continue;
+            }
+            break;
+        }
+        return rendered;
     }
 
     public static void drawFigure(
@@ -895,6 +1036,878 @@ public final class SoftwareJ3dRenderer {
 
     private static float lerp(float start, float end, float amount) {
         return start + ((end - start) * amount);
+    }
+
+    private static int renderPrimitiveCommand(
+            int[] pixels,
+            float[] depthBuffer,
+            int surfaceWidth,
+            int surfaceHeight,
+            int clipX,
+            int clipY,
+            int clipWidth,
+            int clipHeight,
+            CommandState state,
+            int[] commandList,
+            int commandIndex
+    ) {
+        int command = commandList[commandIndex];
+        int primitiveType = (command >>> 24) & 0xFF;
+        int primitiveCount = (command >>> 16) & 0xFF;
+        if (primitiveCount <= 0) {
+            return commandIndex + 1;
+        }
+        int cursor = commandIndex + 1;
+        int blendMode = command & 0x60;
+        switch (primitiveType) {
+            case PRIMITIVE_LINES -> {
+                int vertexInts = primitiveCount * 6;
+                if (cursor + vertexInts > commandList.length) {
+                    return commandIndex;
+                }
+                float[] vertices = new float[vertexInts];
+                for (int i = 0; i < vertexInts; i++) {
+                    vertices[i] = commandList[cursor++];
+                }
+                int[] colors = null;
+                if ((command & 0x0800) != 0) {
+                    if (cursor + primitiveCount > commandList.length) {
+                        return commandIndex;
+                    }
+                    colors = new int[primitiveCount];
+                    for (int i = 0; i < primitiveCount; i++) {
+                        colors[i] = commandList[cursor++];
+                    }
+                }
+                for (int i = 0; i < primitiveCount; i++) {
+                    int base = i * 6;
+                    ProjectedVertex v0 = transformAndProject(
+                            state,
+                            vertices[base],
+                            vertices[base + 1],
+                            vertices[base + 2],
+                            0.0f,
+                            0.0f
+                    );
+                    ProjectedVertex v1 = transformAndProject(
+                            state,
+                            vertices[base + 3],
+                            vertices[base + 4],
+                            vertices[base + 5],
+                            0.0f,
+                            0.0f
+                    );
+                    int color = colors == null ? 0xFFFFFFFF : 0xFF000000 | colors[i];
+                    drawLine(
+                            pixels,
+                            depthBuffer,
+                            surfaceWidth,
+                            surfaceHeight,
+                            clipX,
+                            clipY,
+                            clipWidth,
+                            clipHeight,
+                            v0,
+                            v1,
+                            color,
+                            blendMode
+                    );
+                }
+                return cursor;
+            }
+            case PRIMITIVE_TRIANGLES -> {
+                return renderTriangleLikePrimitive(
+                        pixels,
+                        depthBuffer,
+                        surfaceWidth,
+                        surfaceHeight,
+                        clipX,
+                        clipY,
+                        clipWidth,
+                        clipHeight,
+                        state,
+                        commandList,
+                        cursor,
+                        command,
+                        primitiveCount,
+                        3,
+                        blendMode
+                );
+            }
+            case PRIMITIVE_QUADS -> {
+                return renderTriangleLikePrimitive(
+                        pixels,
+                        depthBuffer,
+                        surfaceWidth,
+                        surfaceHeight,
+                        clipX,
+                        clipY,
+                        clipWidth,
+                        clipHeight,
+                        state,
+                        commandList,
+                        cursor,
+                        command,
+                        primitiveCount,
+                        4,
+                        blendMode
+                );
+            }
+            case PRIMITIVE_POINT_SPRITES -> {
+                int vertexInts = primitiveCount * 3;
+                int spriteInts = primitiveCount * 8;
+                if (cursor + vertexInts + spriteInts > commandList.length) {
+                    return commandIndex;
+                }
+                float[] vertices = new float[vertexInts];
+                for (int i = 0; i < vertexInts; i++) {
+                    vertices[i] = commandList[cursor++];
+                }
+                int[] spriteParams = new int[spriteInts];
+                for (int i = 0; i < spriteInts; i++) {
+                    spriteParams[i] = commandList[cursor++];
+                }
+                for (int i = 0; i < primitiveCount; i++) {
+                    int vertexBase = i * 3;
+                    int spriteBase = i * 8;
+                    renderPointSprite(
+                            pixels,
+                            depthBuffer,
+                            surfaceWidth,
+                            surfaceHeight,
+                            clipX,
+                            clipY,
+                            clipWidth,
+                            clipHeight,
+                            state,
+                            vertices[vertexBase],
+                            vertices[vertexBase + 1],
+                            vertices[vertexBase + 2],
+                            spriteParams,
+                            spriteBase,
+                            blendMode
+                    );
+                }
+                return cursor;
+            }
+            default -> {
+                return commandIndex;
+            }
+        }
+    }
+
+    private static int renderTriangleLikePrimitive(
+            int[] pixels,
+            float[] depthBuffer,
+            int surfaceWidth,
+            int surfaceHeight,
+            int clipX,
+            int clipY,
+            int clipWidth,
+            int clipHeight,
+            CommandState state,
+            int[] commandList,
+            int cursor,
+            int command,
+            int primitiveCount,
+            int verticesPerPrimitive,
+            int blendMode
+    ) {
+        int vertexInts = primitiveCount * verticesPerPrimitive * 3;
+        if (cursor + vertexInts > commandList.length) {
+            return cursor - 1;
+        }
+        float[] vertices = new float[vertexInts];
+        for (int i = 0; i < vertexInts; i++) {
+            vertices[i] = commandList[cursor++];
+        }
+        boolean hasTextureCoords = (command & 0x3000) == 0x3000;
+        float[] texCoords = null;
+        if (hasTextureCoords) {
+            int texInts = primitiveCount * verticesPerPrimitive * 2;
+            if (cursor + texInts > commandList.length) {
+                return cursor - 1 - vertexInts;
+            }
+            texCoords = new float[texInts];
+            for (int i = 0; i < texInts; i++) {
+                texCoords[i] = commandList[cursor++];
+            }
+        }
+        int[] colors = null;
+        if ((command & 0x0800) != 0) {
+            if (cursor + primitiveCount > commandList.length) {
+                return cursor - 1 - vertexInts;
+            }
+            colors = new int[primitiveCount];
+            for (int i = 0; i < primitiveCount; i++) {
+                colors[i] = commandList[cursor++];
+            }
+        }
+        for (int i = 0; i < primitiveCount; i++) {
+            int vertexBase = i * verticesPerPrimitive * 3;
+            int texBase = texCoords == null ? 0 : i * verticesPerPrimitive * 2;
+            int color = colors == null ? 0xFFFFFFFF : 0xFF000000 | colors[i];
+            if (state.perspective) {
+                List<PolygonVertex> polygonVertices = new ArrayList<>(verticesPerPrimitive);
+                for (int vertex = 0; vertex < verticesPerPrimitive; vertex++) {
+                    int source = vertexBase + vertex * 3;
+                    float u = texCoords == null ? 0.0f : texCoords[texBase + vertex * 2];
+                    float v = texCoords == null ? 0.0f : texCoords[texBase + vertex * 2 + 1];
+                    polygonVertices.add(transformVertex(
+                            state,
+                            vertices[source],
+                            vertices[source + 1],
+                            vertices[source + 2],
+                            u,
+                            v
+                    ));
+                }
+                rasterizePerspectiveCommandPolygon(
+                        pixels,
+                        depthBuffer,
+                        surfaceWidth,
+                        surfaceHeight,
+                        clipX,
+                        clipY,
+                        clipWidth,
+                        clipHeight,
+                        state,
+                        polygonVertices,
+                        state.texture,
+                        color,
+                        blendMode,
+                        state.sphereMap,
+                        texCoords != null
+                );
+                continue;
+            }
+            ProjectedVertex[] projected = new ProjectedVertex[verticesPerPrimitive];
+            for (int vertex = 0; vertex < verticesPerPrimitive; vertex++) {
+                int source = vertexBase + vertex * 3;
+                float u = texCoords == null ? 0.0f : texCoords[texBase + vertex * 2];
+                float v = texCoords == null ? 0.0f : texCoords[texBase + vertex * 2 + 1];
+                projected[vertex] = transformAndProject(
+                        state,
+                        vertices[source],
+                        vertices[source + 1],
+                        vertices[source + 2],
+                        u,
+                        v
+                );
+            }
+            if (verticesPerPrimitive == 3) {
+                rasterizeCommandTriangle(
+                        pixels,
+                        depthBuffer,
+                        surfaceWidth,
+                        surfaceHeight,
+                        clipX,
+                        clipY,
+                        clipWidth,
+                        clipHeight,
+                        projected[0],
+                        projected[1],
+                        projected[2],
+                        state.texture,
+                        color,
+                        blendMode,
+                        state.sphereMap,
+                        texCoords != null
+                );
+            } else {
+                rasterizeCommandQuad(
+                        pixels,
+                        depthBuffer,
+                        surfaceWidth,
+                        surfaceHeight,
+                        clipX,
+                        clipY,
+                        clipWidth,
+                        clipHeight,
+                        projected,
+                        state.texture,
+                        color,
+                        blendMode,
+                        state.sphereMap,
+                        texCoords != null
+                );
+            }
+        }
+        return cursor;
+    }
+
+    private static void rasterizePerspectiveCommandPolygon(
+            int[] pixels,
+            float[] depthBuffer,
+            int surfaceWidth,
+            int surfaceHeight,
+            int clipX,
+            int clipY,
+            int clipWidth,
+            int clipHeight,
+            CommandState state,
+            List<PolygonVertex> vertices,
+            Texture texture,
+            int color,
+            int blendMode,
+            Texture sphereMap,
+            boolean textured
+    ) {
+        List<PolygonVertex> clipped = clipPerspectivePolygon(vertices, state.nearClip, state.farClip);
+        if (clipped.size() < 3) {
+            return;
+        }
+        List<ProjectedVertex> projected = new ArrayList<>(clipped.size());
+        for (PolygonVertex vertex : clipped) {
+            ProjectedVertex projectedVertex = projectVertex(
+                    vertex,
+                    state.centerX,
+                    state.centerY,
+                    state.projectionScaleX,
+                    state.projectionScaleY
+            );
+            if (projectedVertex == null) {
+                return;
+            }
+            projected.add(projectedVertex);
+        }
+        ProjectedVertex first = projected.get(0);
+        for (int i = 1; i + 1 < projected.size(); i++) {
+            rasterizeTriangleProjected(
+                    pixels,
+                    depthBuffer,
+                    surfaceWidth,
+                    surfaceHeight,
+                    clipX,
+                    clipY,
+                    clipWidth,
+                    clipHeight,
+                    blendMode,
+                    texture,
+                    sphereMap,
+                    color,
+                    textured,
+                    first,
+                    projected.get(i),
+                    projected.get(i + 1)
+            );
+        }
+    }
+
+    private static void rasterizeCommandQuad(
+            int[] pixels,
+            float[] depthBuffer,
+            int surfaceWidth,
+            int surfaceHeight,
+            int clipX,
+            int clipY,
+            int clipWidth,
+            int clipHeight,
+            ProjectedVertex[] projected,
+            Texture texture,
+            int color,
+            int blendMode,
+            Texture sphereMap,
+            boolean textured
+    ) {
+        if (projected.length < 4 || projected[0] == null || projected[1] == null || projected[2] == null || projected[3] == null) {
+            return;
+        }
+        boolean stripOrderedQuad = isSelfIntersectingQuad(
+                projected[0].screenX(), projected[0].screenY(),
+                projected[1].screenX(), projected[1].screenY(),
+                projected[2].screenX(), projected[2].screenY(),
+                projected[3].screenX(), projected[3].screenY()
+        );
+        if (stripOrderedQuad) {
+            rasterizeCommandTriangle(pixels, depthBuffer, surfaceWidth, surfaceHeight, clipX, clipY, clipWidth, clipHeight,
+                    projected[0], projected[1], projected[2], texture, color, blendMode, sphereMap, textured);
+            rasterizeCommandTriangle(pixels, depthBuffer, surfaceWidth, surfaceHeight, clipX, clipY, clipWidth, clipHeight,
+                    projected[1], projected[3], projected[2], texture, color, blendMode, sphereMap, textured);
+        } else {
+            rasterizeCommandTriangle(pixels, depthBuffer, surfaceWidth, surfaceHeight, clipX, clipY, clipWidth, clipHeight,
+                    projected[0], projected[1], projected[2], texture, color, blendMode, sphereMap, textured);
+            rasterizeCommandTriangle(pixels, depthBuffer, surfaceWidth, surfaceHeight, clipX, clipY, clipWidth, clipHeight,
+                    projected[0], projected[2], projected[3], texture, color, blendMode, sphereMap, textured);
+        }
+    }
+
+    private static void rasterizeCommandTriangle(
+            int[] pixels,
+            float[] depthBuffer,
+            int surfaceWidth,
+            int surfaceHeight,
+            int clipX,
+            int clipY,
+            int clipWidth,
+            int clipHeight,
+            ProjectedVertex v0,
+            ProjectedVertex v1,
+            ProjectedVertex v2,
+            Texture texture,
+            int color,
+            int blendMode,
+            Texture sphereMap,
+            boolean textured
+    ) {
+        if (v0 == null || v1 == null || v2 == null) {
+            return;
+        }
+        rasterizeTriangleProjected(
+                pixels,
+                depthBuffer,
+                surfaceWidth,
+                surfaceHeight,
+                clipX,
+                clipY,
+                clipWidth,
+                clipHeight,
+                blendMode,
+                texture,
+                sphereMap,
+                color,
+                textured,
+                v0,
+                v1,
+                v2
+        );
+    }
+
+    private static void renderPointSprite(
+            int[] pixels,
+            float[] depthBuffer,
+            int surfaceWidth,
+            int surfaceHeight,
+            int clipX,
+            int clipY,
+            int clipWidth,
+            int clipHeight,
+            CommandState state,
+            float x,
+            float y,
+            float z,
+            int[] spriteParams,
+            int spriteBase,
+            int blendMode
+    ) {
+        ProjectedVertex center = transformAndProject(state, x, y, z, 0.0f, 0.0f);
+        if (center == null || state.texture == null) {
+            return;
+        }
+        float scaleX = state.projectionScaleX;
+        float scaleY = state.projectionScaleY;
+        if (state.perspective) {
+            // Command-list point sprites use world-space billboard sizes, so they must
+            // shrink with distance just like projected geometry instead of staying at a
+            // fixed screen-space size.
+            scaleX *= center.reciprocalDepth();
+            scaleY *= center.reciprocalDepth();
+        }
+        float halfWidth = Math.abs(spriteParams[spriteBase] * scaleX) * 0.5f;
+        float halfHeight = Math.abs(spriteParams[spriteBase + 1] * scaleY) * 0.5f;
+        if (halfWidth <= DEPTH_EPSILON || halfHeight <= DEPTH_EPSILON) {
+            return;
+        }
+        float angle = (float) (spriteParams[spriteBase + 2] * (Math.PI * 2.0 / 4096.0));
+        float cos = (float) Math.cos(angle);
+        float sin = (float) Math.sin(angle);
+        float left = spriteParams[spriteBase + 3];
+        float top = spriteParams[spriteBase + 4];
+        float right = spriteParams[spriteBase + 5];
+        float bottom = spriteParams[spriteBase + 6];
+        ProjectedVertex[] quad = new ProjectedVertex[]{
+                rotateSpriteCorner(center, -halfWidth, -halfHeight, cos, sin, left, top),
+                rotateSpriteCorner(center, halfWidth, -halfHeight, cos, sin, right, top),
+                rotateSpriteCorner(center, halfWidth, halfHeight, cos, sin, right, bottom),
+                rotateSpriteCorner(center, -halfWidth, halfHeight, cos, sin, left, bottom)
+        };
+        rasterizeCommandQuad(
+                pixels,
+                depthBuffer,
+                surfaceWidth,
+                surfaceHeight,
+                clipX,
+                clipY,
+                clipWidth,
+                clipHeight,
+                quad,
+                state.texture,
+                0xFFFFFFFF,
+                blendMode,
+                state.sphereMap,
+                true
+        );
+    }
+
+    private static ProjectedVertex rotateSpriteCorner(
+            ProjectedVertex center,
+            float offsetX,
+            float offsetY,
+            float cos,
+            float sin,
+            float u,
+            float v
+    ) {
+        float rotatedX = (offsetX * cos) - (offsetY * sin);
+        float rotatedY = (offsetX * sin) + (offsetY * cos);
+        return new ProjectedVertex(
+                center.screenX() + rotatedX,
+                center.screenY() + rotatedY,
+                center.depth(),
+                center.reciprocalDepth(),
+                u,
+                v
+        );
+    }
+
+    private static PolygonVertex transformVertex(
+            CommandState state,
+            float x,
+            float y,
+            float z,
+            float u,
+            float v
+    ) {
+        float tx = x;
+        float ty = y;
+        float tz = z;
+        if (state.affineTrans != null) {
+            tx = transformX(state.affineTrans, x, y, z);
+            ty = transformY(state.affineTrans, x, y, z);
+            tz = transformZ(state.affineTrans, x, y, z);
+        }
+        return new PolygonVertex(tx, ty, tz, u, v);
+    }
+
+    private static ProjectedVertex transformAndProject(
+            CommandState state,
+            float x,
+            float y,
+            float z,
+            float u,
+            float v
+    ) {
+        float tx = x;
+        float ty = y;
+        float tz = z;
+        if (state.affineTrans != null) {
+            tx = transformX(state.affineTrans, x, y, z);
+            ty = transformY(state.affineTrans, x, y, z);
+            tz = transformZ(state.affineTrans, x, y, z);
+        }
+        if (state.perspective) {
+            return projectVertex(new PolygonVertex(tx, ty, tz, u, v), state.centerX, state.centerY, state.projectionScaleX, state.projectionScaleY);
+        }
+        return new ProjectedVertex(
+                state.centerX + (tx * state.projectionScaleX),
+                state.centerY - (ty * state.projectionScaleY),
+                -tz,
+                0.0f,
+                u,
+                v
+        );
+    }
+
+    private static void drawLine(
+            int[] pixels,
+            float[] depthBuffer,
+            int surfaceWidth,
+            int surfaceHeight,
+            int clipX,
+            int clipY,
+            int clipWidth,
+            int clipHeight,
+            ProjectedVertex start,
+            ProjectedVertex end,
+            int color,
+            int blendMode
+    ) {
+        if (start == null || end == null) {
+            return;
+        }
+        int x0 = Math.round(start.screenX());
+        int y0 = Math.round(start.screenY());
+        int x1 = Math.round(end.screenX());
+        int y1 = Math.round(end.screenY());
+        int dx = Math.abs(x1 - x0);
+        int dy = Math.abs(y1 - y0);
+        int steps = Math.max(dx, dy);
+        if (steps == 0) {
+            plot(pixels, depthBuffer, surfaceWidth, surfaceHeight, clipX, clipY, clipWidth, clipHeight, x0, y0, start.depth(), color, blendMode);
+            return;
+        }
+        for (int step = 0; step <= steps; step++) {
+            float amount = step / (float) steps;
+            int x = Math.round(lerp(x0, x1, amount));
+            int y = Math.round(lerp(y0, y1, amount));
+            float depth = lerp(start.depth(), end.depth(), amount);
+            plot(pixels, depthBuffer, surfaceWidth, surfaceHeight, clipX, clipY, clipWidth, clipHeight, x, y, depth, color, blendMode);
+        }
+    }
+
+    private static void plot(
+            int[] pixels,
+            float[] depthBuffer,
+            int surfaceWidth,
+            int surfaceHeight,
+            int clipX,
+            int clipY,
+            int clipWidth,
+            int clipHeight,
+            int x,
+            int y,
+            float depth,
+            int color,
+            int blendMode
+    ) {
+        if (x < clipX || y < clipY || x >= clipX + clipWidth || y >= clipY + clipHeight) {
+            return;
+        }
+        if (x < 0 || y < 0 || x >= surfaceWidth || y >= surfaceHeight) {
+            return;
+        }
+        int index = y * surfaceWidth + x;
+        if (depth < depthBuffer[index] - DEPTH_EPSILON) {
+            return;
+        }
+        pixels[index] = blend(color, pixels[index], blendMode);
+        depthBuffer[index] = depth;
+    }
+
+    private static void rasterizeTriangleProjected(
+            int[] pixels,
+            float[] depthBuffer,
+            int surfaceWidth,
+            int surfaceHeight,
+            int clipX,
+            int clipY,
+            int clipWidth,
+            int clipHeight,
+            int blendMode,
+            Texture texture,
+            Texture sphereMap,
+            int flatColor,
+            boolean textured,
+            ProjectedVertex v0,
+            ProjectedVertex v1,
+            ProjectedVertex v2
+    ) {
+        float x0 = v0.screenX();
+        float y0 = v0.screenY();
+        float z0 = v0.depth();
+        float x1 = v1.screenX();
+        float y1 = v1.screenY();
+        float z1 = v1.depth();
+        float x2 = v2.screenX();
+        float y2 = v2.screenY();
+        float z2 = v2.depth();
+        if (!Float.isFinite(x0) || !Float.isFinite(y0)
+                || !Float.isFinite(x1) || !Float.isFinite(y1)
+                || !Float.isFinite(x2) || !Float.isFinite(y2)) {
+            return;
+        }
+        float area = edgeFunction(x0, y0, x1, y1, x2, y2);
+        if (area == 0.0f) {
+            return;
+        }
+        int minX = Math.max(clipX, Math.max(0, (int) Math.floor(Math.min(x0, Math.min(x1, x2)))));
+        int minY = Math.max(clipY, Math.max(0, (int) Math.floor(Math.min(y0, Math.min(y1, y2)))));
+        int maxX = Math.min(clipX + clipWidth - 1, Math.min(surfaceWidth - 1, (int) Math.ceil(Math.max(x0, Math.max(x1, x2)))));
+        int maxY = Math.min(clipY + clipHeight - 1, Math.min(surfaceHeight - 1, (int) Math.ceil(Math.max(y0, Math.max(y1, y2)))));
+        if (minX > maxX || minY > maxY) {
+            return;
+        }
+        int fx0 = toRasterFixed(x0);
+        int fy0 = toRasterFixed(y0);
+        int fx1 = toRasterFixed(x1);
+        int fy1 = toRasterFixed(y1);
+        int fx2 = toRasterFixed(x2);
+        int fy2 = toRasterFixed(y2);
+        long rasterArea = edgeFixed(fx0, fy0, fx1, fy1, fx2, fy2);
+        if (rasterArea == 0L) {
+            return;
+        }
+        boolean flipped = rasterArea < 0L;
+        boolean topLeft12 = isCoverageTopLeftEdge(fx1, fy1, fx2, fy2, flipped);
+        boolean topLeft20 = isCoverageTopLeftEdge(fx2, fy2, fx0, fy0, flipped);
+        boolean topLeft01 = isCoverageTopLeftEdge(fx0, fy0, fx1, fy1, flipped);
+
+        for (int y = minY; y <= maxY; y++) {
+            float py = y + 0.5f;
+            int rasterY = (y << RASTER_SUBPIXEL_SHIFT) + (RASTER_SUBPIXEL_SCALE >> 1);
+            for (int x = minX; x <= maxX; x++) {
+                float px = x + 0.5f;
+                int rasterX = (x << RASTER_SUBPIXEL_SHIFT) + (RASTER_SUBPIXEL_SCALE >> 1);
+                long coverage0 = edgeFixed(fx1, fy1, fx2, fy2, rasterX, rasterY);
+                long coverage1 = edgeFixed(fx2, fy2, fx0, fy0, rasterX, rasterY);
+                long coverage2 = edgeFixed(fx0, fy0, fx1, fy1, rasterX, rasterY);
+                if (flipped) {
+                    coverage0 = -coverage0;
+                    coverage1 = -coverage1;
+                    coverage2 = -coverage2;
+                }
+                if (coverage0 < 0L || (coverage0 == 0L && !topLeft12)
+                        || coverage1 < 0L || (coverage1 == 0L && !topLeft20)
+                        || coverage2 < 0L || (coverage2 == 0L && !topLeft01)) {
+                    continue;
+                }
+                float w0 = edgeFunction(x1, y1, x2, y2, px, py) / area;
+                float w1 = edgeFunction(x2, y2, x0, y0, px, py) / area;
+                float w2 = edgeFunction(x0, y0, x1, y1, px, py) / area;
+                float pixelDepth = (w0 * z0) + (w1 * z1) + (w2 * z2);
+                int index = y * surfaceWidth + x;
+                if (pixelDepth < depthBuffer[index] - DEPTH_EPSILON) {
+                    continue;
+                }
+                int argb;
+                if (texture != null && textured) {
+                    float u;
+                    float v;
+                    if (v0.reciprocalDepth() > 0.0f || v1.reciprocalDepth() > 0.0f || v2.reciprocalDepth() > 0.0f) {
+                        float rw0 = w0 * v0.reciprocalDepth();
+                        float rw1 = w1 * v1.reciprocalDepth();
+                        float rw2 = w2 * v2.reciprocalDepth();
+                        float reciprocalWeight = rw0 + rw1 + rw2;
+                        if (Math.abs(reciprocalWeight) <= DEPTH_EPSILON) {
+                            continue;
+                        }
+                        u = ((rw0 * v0.u()) + (rw1 * v1.u()) + (rw2 * v2.u())) / reciprocalWeight;
+                        v = ((rw0 * v0.v()) + (rw1 * v1.v()) + (rw2 * v2.v())) / reciprocalWeight;
+                    } else {
+                        u = (w0 * v0.u()) + (w1 * v1.u()) + (w2 * v2.u());
+                        v = (w0 * v0.v()) + (w1 * v1.v()) + (w2 * v2.v());
+                    }
+                    // Command-list road meshes are opaque by default; some games use palette index 0
+                    // as visible black in indexed atlases, so globally color-keying command lists
+                    // punches holes through the track. Blended command-list effects, however, rely on
+                    // that same palette key for billboard/sprite backgrounds, so keep color-keying for
+                    // additive/average/subtractive primitives.
+                    argb = texture.sampleColor(u, v, blendMode != 0);
+                    if ((argb >>> 24) == 0) {
+                        continue;
+                    }
+                } else {
+                    argb = flatColor;
+                }
+                argb = applySphereMap(argb, sphereMap, surfaceWidth, surfaceHeight, x, y);
+                pixels[index] = blend(argb, pixels[index], blendMode);
+                depthBuffer[index] = pixelDepth;
+            }
+        }
+    }
+
+    private static final class CommandState {
+        private final com.jblend.graphics.j3d.FigureLayout layout;
+        private final Texture[] textures;
+        private final Texture sphereMap;
+        private final int nearClip;
+        private final int farClip;
+        private AffineTrans affineTrans;
+        private Texture texture;
+        private int centerX;
+        private int centerY;
+        private float projectionScaleX;
+        private float projectionScaleY;
+        private boolean perspective;
+
+        private CommandState(
+                com.jblend.graphics.j3d.FigureLayout layout,
+                Texture[] textures,
+                Texture sphereMap,
+                int nearClip,
+                int farClip,
+                AffineTrans affineTrans,
+                Texture texture,
+                int centerX,
+                int centerY,
+                float projectionScaleX,
+                float projectionScaleY,
+                boolean perspective
+        ) {
+            this.layout = layout;
+            this.textures = textures;
+            this.sphereMap = sphereMap;
+            this.nearClip = nearClip;
+            this.farClip = farClip;
+            this.affineTrans = affineTrans;
+            this.texture = texture;
+            this.centerX = centerX;
+            this.centerY = centerY;
+            this.projectionScaleX = projectionScaleX;
+            this.projectionScaleY = projectionScaleY;
+            this.perspective = perspective;
+        }
+
+        private void selectAffineIndex(int index) {
+            if (layout == null) {
+                return;
+            }
+            try {
+                layout.selectAffineTrans(index);
+                affineTrans = layout.getAffineTrans();
+            } catch (ArrayIndexOutOfBoundsException ignored) {
+                // Ignore malformed command lists and keep the current transform.
+            }
+        }
+
+        private static CommandState fromLayout(
+                int originX,
+                int originY,
+                int surfaceWidth,
+                int surfaceHeight,
+                com.jblend.graphics.j3d.FigureLayout layout,
+                Effect3D effect,
+                Texture[] textures,
+                Texture fallbackTexture
+        ) {
+            float projectionScaleX;
+            float projectionScaleY;
+            boolean perspective = layout.isPerspective();
+            if (perspective) {
+                int nearClip = layout.getPerspectiveNear();
+                if (layout.getPerspectiveWidth() > 0 && layout.getPerspectiveHeight() > 0) {
+                    projectionScaleX = nearClip > 0
+                            ? (surfaceWidth * (float) nearClip) / layout.getPerspectiveWidth()
+                            : 0.0f;
+                    projectionScaleY = nearClip > 0
+                            ? (surfaceHeight * (float) nearClip) / layout.getPerspectiveHeight()
+                            : 0.0f;
+                } else {
+                    float angleRadians = (float) (layout.getPerspectiveAngle() * (Math.PI * 2.0 / 4096.0));
+                    float focal = angleRadians <= 0.0f || angleRadians >= Math.PI
+                            ? surfaceWidth * 0.5f
+                            : (float) ((surfaceWidth * 0.5f) / Math.tan(angleRadians * 0.5f));
+                    projectionScaleX = focal;
+                    projectionScaleY = focal;
+                }
+            } else if (layout.getParallelWidth() > 0 || layout.getParallelHeight() > 0) {
+                projectionScaleX = layout.getParallelWidth() > 0 ? (surfaceWidth * 4096.0f) / layout.getParallelWidth() : 1.0f;
+                projectionScaleY = layout.getParallelHeight() > 0 ? (surfaceHeight * 4096.0f) / layout.getParallelHeight() : 1.0f;
+            } else {
+                int scaleX = layout.getScaleX();
+                int scaleY = layout.getScaleY();
+                projectionScaleX = (scaleX == 0 ? 512 : scaleX) / 4096.0f;
+                projectionScaleY = (scaleY == 0 ? 512 : scaleY) / 4096.0f;
+            }
+            Texture currentTexture = fallbackTexture;
+            if (currentTexture == null && textures != null && textures.length > 0) {
+                currentTexture = textures[0];
+            }
+            return new CommandState(
+                    layout,
+                    textures,
+                    effect == null ? null : effect.getSphereMap(),
+                    layout.getPerspectiveNear(),
+                    layout.getPerspectiveFar(),
+                    layout.getAffineTrans(),
+                    currentTexture,
+                    originX + layout.getCenterX(),
+                    originY + layout.getCenterY(),
+                    projectionScaleX,
+                    projectionScaleY,
+                    perspective
+            );
+        }
     }
 
     private record PolygonVertex(float x, float y, float z, float u, float v) {
