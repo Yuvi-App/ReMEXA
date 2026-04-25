@@ -6,6 +6,7 @@ public final class LaunchConfig {
     public static final String FONT_TYPE_PROPERTY = "remexa.fontType";
     public static final String JSKY_PHONE_TYPE_PROPERTY = "remexa.jskyPhoneType";
     public static final String VODAFONE_PHONE_TYPE_PROPERTY = "remexa.vodafonePhoneType";
+    public static final String MEXA_PHONE_TYPE_PROPERTY = "remexa.mexaPhoneType";
     public static final String HOST_SCALE_PROPERTY = "remexa.hostScale";
     public static final int MIN_HOST_SCALE = 1;
     public static final int MAX_HOST_SCALE = 5;
@@ -174,6 +175,63 @@ public final class LaunchConfig {
     public static void applyVodafonePhoneType(VodafonePhoneType vodafonePhoneType) {
         var resolved = vodafonePhoneType == null ? VodafonePhoneType.GENERIC : vodafonePhoneType;
         System.setProperty(VODAFONE_PHONE_TYPE_PROPERTY, resolved.id());
+    }
+
+    public enum MexaPhoneType {
+        GENERIC("generic", "MEXA Generic", "MEXA-Generic"),
+        SHARP_930SH("930sh", "930SH", "930SH");
+
+        private final String id;
+        private final String label;
+        private final String platformName;
+
+        MexaPhoneType(String id, String label, String platformName) {
+            this.id = id;
+            this.label = label;
+            this.platformName = platformName;
+        }
+
+        public String id() {
+            return id;
+        }
+
+        public String platformName() {
+            return platformName;
+        }
+
+        @Override
+        public String toString() {
+            return label;
+        }
+
+        public static MexaPhoneType fromId(String candidate) {
+            if (candidate == null) {
+                return null;
+            }
+            var normalized = candidate.trim().toLowerCase(Locale.ROOT);
+            for (var type : values()) {
+                if (type.id.equals(normalized)
+                        || type.platformName.toLowerCase(Locale.ROOT).equals(normalized)
+                        || type.label.toLowerCase(Locale.ROOT).equals(normalized)) {
+                    return type;
+                }
+            }
+            return null;
+        }
+
+        public static MexaPhoneType normalize(String candidate) {
+            var type = fromId(candidate);
+            return type == null ? GENERIC : type;
+        }
+
+        public static MexaPhoneType resolveConfigured() {
+            return normalize(System.getProperty(MEXA_PHONE_TYPE_PROPERTY, GENERIC.id));
+        }
+    }
+
+    public static void applyMexaPhoneType(MexaPhoneType mexaPhoneType) {
+        var resolved = mexaPhoneType == null ? MexaPhoneType.GENERIC : mexaPhoneType;
+        System.setProperty(MEXA_PHONE_TYPE_PROPERTY, resolved.id());
     }
 
     public static Integer parseHostScale(String candidate) {

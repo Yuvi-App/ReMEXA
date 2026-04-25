@@ -215,6 +215,25 @@ public final class LauncherFrame extends JFrame {
             vodafonePhoneMenu.add(phoneItem);
         }
         settingsMenu.add(vodafonePhoneMenu);
+        var mexaPhoneMenu = new JMenu("MEXA Phone Type");
+        styleMenu(mexaPhoneMenu);
+        var mexaPhoneGroup = new ButtonGroup();
+        for (var phoneType : LaunchConfig.MexaPhoneType.values()) {
+            var phoneItem = new JRadioButtonMenuItem(phoneType.toString(), HostUiSettings.mexaPhoneType() == phoneType);
+            styleMenuItem(phoneItem);
+            mexaPhoneGroup.add(phoneItem);
+            phoneItem.addActionListener(event -> {
+                HostUiSettings.setMexaPhoneType(phoneType);
+                LaunchConfig.applyMexaPhoneType(phoneType);
+                DebugLog.log(
+                        LogCategory.FRONTEND,
+                        LauncherFrame.class.getName(),
+                        "MEXA phone type set to " + phoneType.platformName()
+                );
+            });
+            mexaPhoneMenu.add(phoneItem);
+        }
+        settingsMenu.add(mexaPhoneMenu);
         settingsMenu.addSeparator();
         var hostScaleMenu = new JMenu("Host Scale");
         styleMenu(hostScaleMenu);

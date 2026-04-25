@@ -14,6 +14,7 @@ public final class RemexaPreferences {
     public static final String FONT_TYPE_KEY = "fontType";
     public static final String JSKY_PHONE_TYPE_KEY = "jskyPhoneType";
     public static final String VODAFONE_PHONE_TYPE_KEY = "vodafonePhoneType";
+    public static final String MEXA_PHONE_TYPE_KEY = "mexaPhoneType";
     public static final String HOST_SCALE_KEY = "hostScale";
     public static final String DUMP_RMS_KEY = "dumpRms";
     public static final String LOG_ENABLED_PREFIX = "enabled.";

@@ -18,7 +18,11 @@ public record AppProfile(
             "jscl.system.javasetting.volume",
             "jscl.system.javasetting.vibration",
             "jscl.system.wakeupmode",
+            "jscl.system.btswitchsetting",
+            "jscl.system.btjavasetting",
+            "jscl.system.btvisibilitysetting",
             "jscl.system.display.colordepth",
+            "jscl.system.e-fep_startposition",
             "jscl.supports.subdisplay",
             "jscl.supports.subdisplay.dualdraw",
             "jscl.supports.external_storage",
@@ -31,7 +35,12 @@ public record AppProfile(
             "jscl.supports.karaoke",
             "jscl.supports.msensor",
             "jscl.supports.serial",
-            "jscl.supports.suspend_javaexecution"
+            "jscl.supports.suspend_javaexecution",
+            "mexa.system.resumemode",
+            "mexa.supports.irsimple",
+            "mexa.supports.maxobexsize",
+            "mexa.supports.transmissionrate",
+            "mexa.network.configuration"
     );
 
     public static AppProfile generic() {
@@ -71,6 +80,21 @@ public record AppProfile(
         );
     }
 
+    public static AppProfile mexa(String oclVersion, remexa.host.LaunchConfig.MexaPhoneType phoneType) {
+        var normalizedVersion = oclVersion == null || oclVersion.isBlank() ? "JSCL" : oclVersion;
+        var resolvedPhoneType = phoneType == null ? remexa.host.LaunchConfig.MexaPhoneType.GENERIC : phoneType;
+        var fallbackDisplay = resolvedPhoneType == remexa.host.LaunchConfig.MexaPhoneType.SHARP_930SH
+                ? new DisplayMetrics(240, 400, "MEXA 930SH fallback")
+                : new DisplayMetrics(240, 400, "MEXA fallback");
+        return new AppProfile(
+                "mexa-" + normalizedVersion.toLowerCase() + "-" + resolvedPhoneType.id(),
+                "MEXA / " + normalizedVersion + " / " + resolvedPhoneType.platformName(),
+                fallbackDisplay,
+                com.j_phone.system.DeviceControl.STYLE_PORTRAIT,
+                mexaSystemProperties(resolvedPhoneType.platformName())
+        );
+    }
+
     public static Set<String> managedSystemPropertyKeys() {
         return MANAGED_SYSTEM_PROPERTY_KEYS;
     }
@@ -93,7 +117,11 @@ public record AppProfile(
                 Map.entry("jscl.system.javasetting.volume", "5"),
                 Map.entry("jscl.system.javasetting.vibration", "1"),
                 Map.entry("jscl.system.wakeupmode", "1"),
+                Map.entry("jscl.system.btswitchsetting", "false"),
+                Map.entry("jscl.system.btjavasetting", "false"),
+                Map.entry("jscl.system.btvisibilitysetting", "false"),
                 Map.entry("jscl.system.display.colordepth", "565"),
+                Map.entry("jscl.system.e-fep_startposition", "0"),
                 Map.entry("jscl.supports.subdisplay", "false"),
                 Map.entry("jscl.supports.subdisplay.dualdraw", "false"),
                 Map.entry("jscl.supports.external_storage", "false"),
@@ -108,6 +136,16 @@ public record AppProfile(
                 Map.entry("jscl.supports.serial", "false"),
                 Map.entry("jscl.supports.suspend_javaexecution", "false")
         );
+    }
+
+    private static Map<String, String> mexaSystemProperties(String platformName) {
+        var properties = new java.util.LinkedHashMap<String, String>(jsclSystemProperties(platformName));
+        properties.put("mexa.system.resumemode", "0");
+        properties.put("mexa.supports.irsimple", "0");
+        properties.put("mexa.supports.maxobexsize", "0");
+        properties.put("mexa.supports.transmissionrate", "false");
+        properties.put("mexa.network.configuration", "0");
+        return Map.copyOf(properties);
     }
 }
 

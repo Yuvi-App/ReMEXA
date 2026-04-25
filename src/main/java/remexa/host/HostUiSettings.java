@@ -53,6 +53,20 @@ public final class HostUiSettings {
         RemexaPreferences.ui().put(RemexaPreferences.VODAFONE_PHONE_TYPE_KEY, resolved.id());
     }
 
+    public static LaunchConfig.MexaPhoneType mexaPhoneType() {
+        return LaunchConfig.MexaPhoneType.normalize(
+                RemexaPreferences.ui().get(
+                        RemexaPreferences.MEXA_PHONE_TYPE_KEY,
+                        LaunchConfig.MexaPhoneType.GENERIC.id()
+                )
+        );
+    }
+
+    public static void setMexaPhoneType(LaunchConfig.MexaPhoneType mexaPhoneType) {
+        var resolved = mexaPhoneType == null ? LaunchConfig.MexaPhoneType.GENERIC : mexaPhoneType;
+        RemexaPreferences.ui().put(RemexaPreferences.MEXA_PHONE_TYPE_KEY, resolved.id());
+    }
+
     public static int hostScale() {
         return LaunchConfig.normalizeHostScale(
                 RemexaPreferences.ui().get(RemexaPreferences.HOST_SCALE_KEY, "3")

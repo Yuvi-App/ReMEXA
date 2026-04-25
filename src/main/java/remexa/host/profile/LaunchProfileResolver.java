@@ -57,7 +57,9 @@ public final class LaunchProfileResolver {
             var normalizedOcl = primaryOclToken(ocl);
             var platform = resolveDeclaredPlatform(descriptor).orElse("");
             AppProfile profile;
-            if (looksLikeVodafonePlatform(platform) || looksLikeVodafoneVendor(descriptor)) {
+            if (looksLikeMexaPlatform(platform) || looksLikeMexaVendor(descriptor) || looksLikeMexaOcl(normalizedOcl)) {
+                profile = AppProfile.mexa(normalizedOcl, resolveMexaPhoneType(platform));
+            } else if (looksLikeVodafonePlatform(platform) || looksLikeVodafoneVendor(descriptor)) {
                 profile = AppProfile.vodafone(normalizedOcl, resolveVodafonePhoneType(platform));
             } else if (looksLikeVodafoneOcl(normalizedOcl)) {
                 profile = AppProfile.vodafone(normalizedOcl, resolveVodafonePhoneType(platform));
@@ -107,6 +109,18 @@ public final class LaunchProfileResolver {
         }
         var version = normalized.substring("JSCL-".length()).trim();
         return compareVersion(version, "1.2.0") >= 0;
+    }
+
+    private static boolean looksLikeMexaOcl(String ocl) {
+        if (ocl == null || ocl.isBlank()) {
+            return false;
+        }
+        var normalized = ocl.trim().toUpperCase(Locale.ROOT);
+        if (!normalized.startsWith("JSCL-")) {
+            return false;
+        }
+        var version = normalized.substring("JSCL-".length()).trim();
+        return compareVersion(version, "1.3.2") > 0;
     }
 
     private static int compareVersion(String left, String right) {
@@ -166,6 +180,30 @@ public final class LaunchProfileResolver {
                 .isPresent();
     }
 
+    private static boolean looksLikeMexaPlatform(String platform) {
+        if (platform == null || platform.isBlank()) {
+            return false;
+        }
+        var normalized = platform.trim().toUpperCase(Locale.ROOT);
+        if (normalized.contains("MEXA")) {
+            return true;
+        }
+        for (var phoneType : LaunchConfig.MexaPhoneType.values()) {
+            if (normalized.contains(phoneType.platformName().toUpperCase(Locale.ROOT))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean looksLikeMexaVendor(JadDescriptor descriptor) {
+        return descriptor.property("MIDlet-Vendor")
+                .map(String::trim)
+                .map(value -> value.toUpperCase(Locale.ROOT))
+                .filter(value -> value.contains("MEXA"))
+                .isPresent();
+    }
+
     private static AppProfile applyDescriptorCapabilityOverrides(JadDescriptor descriptor, AppProfile profile) {
         var overrides = new LinkedHashMap<String, String>();
         for (var entry : JSCL_CAPABILITY_OVERRIDES.entrySet()) {
@@ -195,6 +233,20 @@ public final class LaunchProfileResolver {
     private static LaunchConfig.VodafonePhoneType resolveVodafonePhoneType(String platform) {
         var declared = LaunchConfig.VodafonePhoneType.fromId(platform);
         return declared == null ? LaunchConfig.VodafonePhoneType.resolveConfigured() : declared;
+    }
+
+    private static LaunchConfig.MexaPhoneType resolveMexaPhoneType(String platform) {
+        var declared = LaunchConfig.MexaPhoneType.fromId(platform);
+        if (declared != null) {
+            return declared;
+        }
+        if (platform != null) {
+            var normalized = platform.trim().toUpperCase(Locale.ROOT);
+            if (normalized.contains(LaunchConfig.MexaPhoneType.SHARP_930SH.platformName().toUpperCase(Locale.ROOT))) {
+                return LaunchConfig.MexaPhoneType.SHARP_930SH;
+            }
+        }
+        return LaunchConfig.MexaPhoneType.resolveConfigured();
     }
 
     private static Optional<DisplayMetrics> resolveDisplayMetrics(JadDescriptor descriptor, AppProfile profile) {
