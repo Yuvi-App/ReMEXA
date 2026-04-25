@@ -35,6 +35,10 @@ public final class LaunchProfileResolver {
             "MIDxlet-API",
             "MIDlet-API"
     );
+    private static final List<String> WIDESCREEN_KEYS = List.of(
+            "MIDxlet-WideScreen",
+            "MIDlet-WideScreen"
+    );
     private static final Map<String, String> JSCL_CAPABILITY_OVERRIDES = Map.ofEntries(
             Map.entry("MIDxlet-MSensor", "jscl.supports.msensor"),
             Map.entry("MIDlet-MSensor", "jscl.supports.msensor")
@@ -46,8 +50,10 @@ public final class LaunchProfileResolver {
 
     public static LaunchProfile resolve(JadDescriptor descriptor) {
         var profile = resolveProfile(descriptor);
+        var wideScreen = resolveWideScreen(descriptor);
         var initialDisplay = resolveDisplayMetrics(descriptor, profile)
-                .orElse(profile.fallbackDisplay());
+                .map(displayMetrics -> applyWideScreen(displayMetrics, wideScreen))
+                .orElseGet(() -> applyWideScreen(profile.fallbackDisplay(), wideScreen));
         return new LaunchProfile(profile, initialDisplay);
     }
 
@@ -89,6 +95,17 @@ public final class LaunchProfileResolver {
             }
         }
         return Optional.empty();
+    }
+
+    private static boolean resolveWideScreen(JadDescriptor descriptor) {
+        for (var key : WIDESCREEN_KEYS) {
+            var wideScreen = descriptor.property(key)
+                    .flatMap(LaunchProfileResolver::parseDescriptorBoolean);
+            if (wideScreen.isPresent()) {
+                return wideScreen.get();
+            }
+        }
+        return false;
     }
 
     private static String primaryOclToken(String ocl) {
@@ -267,5 +284,16 @@ public final class LaunchProfileResolver {
         var width = Integer.parseInt(matcher.group(1));
         var height = Integer.parseInt(matcher.group(2));
         return Optional.of(new DisplayMetrics(width, height, "JAD " + key));
+    }
+
+    private static DisplayMetrics applyWideScreen(DisplayMetrics displayMetrics, boolean wideScreen) {
+        if (!wideScreen) {
+            return displayMetrics;
+        }
+        return new DisplayMetrics(
+                displayMetrics.height(),
+                displayMetrics.width(),
+                displayMetrics.source() + " (WideScreen)"
+        );
     }
 }
