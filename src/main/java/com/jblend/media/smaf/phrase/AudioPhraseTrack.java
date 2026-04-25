@@ -16,6 +16,9 @@
 */
 package com.jblend.media.smaf.phrase;
 
+import remexa.probes.DebugLog;
+import remexa.probes.LogCategory;
+
 public final class AudioPhraseTrack {
     private final PhraseTrack delegate;
 
@@ -24,10 +27,13 @@ public final class AudioPhraseTrack {
     }
 
     public void setPhrase(AudioPhrase phrase) {
-        delegate.setPhrase(new Phrase(phrase.getData()));
+        DebugLog.log(LogCategory.MEDIA, AudioPhraseTrack.class.getName(), "Track " + getID() + " setPhrase(size="
+                + (phrase == null ? 0 : phrase.getSize()) + ")");
+        delegate.setPhrase(Phrase.unchecked(phrase.getData()));
     }
 
     public void removePhrase() {
+        DebugLog.log(LogCategory.MEDIA, AudioPhraseTrack.class.getName(), "Track " + getID() + " removePhrase()");
         delegate.removePhrase();
     }
 
@@ -37,14 +43,17 @@ public final class AudioPhraseTrack {
     }
 
     public void play() {
+        DebugLog.log(LogCategory.MEDIA, AudioPhraseTrack.class.getName(), "Track " + getID() + " play(loop=1)");
         delegate.play();
     }
 
     public void play(int loop) {
+        DebugLog.log(LogCategory.MEDIA, AudioPhraseTrack.class.getName(), "Track " + getID() + " play(loop=" + loop + ")");
         delegate.play(loop);
     }
 
     public void stop() {
+        DebugLog.log(LogCategory.MEDIA, AudioPhraseTrack.class.getName(), "Track " + getID() + " stop()");
         delegate.stop();
     }
 

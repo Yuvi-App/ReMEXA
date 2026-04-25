@@ -31,14 +31,14 @@ final class SmafFueTrekRenderer {
 
     SmafRenderedAudio render(Sequence sequence,
                              List<SMAFDecoder.SequenceSysExEvent> sysExEvents,
-                             List<byte[]> exclusiveVoices,
+                             List<byte[]> startupPackets,
                              List<byte[]> pcmClipData,
                              List<SMAFDecoder.PcmSequenceTrigger> pcmTriggers) throws Exception {
         Sampler sampler = FUETREK.instance(OUTPUT_SAMPLE_RATE);
         sampler.reset();
         sampler.drumEnable(9, true);
 
-        List<RenderEvent> events = collectEvents(sequence, sysExEvents, exclusiveVoices);
+        List<RenderEvent> events = collectEvents(sequence, sysExEvents, startupPackets);
         MidiChannelState[] channelStates = createChannelStates();
 
         float[] mix = new float[Math.max(OUTPUT_SAMPLE_RATE * OUTPUT_CHANNELS, 1)];
@@ -70,6 +70,12 @@ final class SmafFueTrekRenderer {
         }
 
         List<PcmClip> pcmClips = decodePcmClips(pcmClipData);
+        if (SmafDebug.isEnabled("render", SmafDebug.Level.INFO)) {
+            SmafDebug.info("render",
+                    "FueTrek render events=" + events.size()
+                            + " pcmClips=" + countNonNullClips(pcmClips)
+                            + " pcmTriggers=" + pcmTriggers.size());
+        }
         int mixedFrameCount = requiredPcmFrameCount(framePosition, pcmClips, pcmTriggers);
         mix = ensureFrameCapacity(mix, mixedFrameCount);
         mixPcmClips(mix, pcmClips, pcmTriggers);
@@ -88,14 +94,14 @@ final class SmafFueTrekRenderer {
 
     private static List<RenderEvent> collectEvents(Sequence sequence,
                                                    List<SMAFDecoder.SequenceSysExEvent> sysExEvents,
-                                                   List<byte[]> exclusiveVoices) {
+                                                   List<byte[]> startupPackets) {
         List<RenderEvent> events = new ArrayList<>();
         int order = 0;
-        for (byte[] exclusiveVoice : exclusiveVoices) {
-            if (exclusiveVoice == null || exclusiveVoice.length == 0) {
+        for (byte[] startupPacket : startupPackets) {
+            if (startupPacket == null || startupPacket.length == 0) {
                 continue;
             }
-            events.add(RenderEvent.sysEx(0L, order++, exclusiveVoice));
+            events.add(RenderEvent.sysEx(0L, order++, startupPacket));
         }
         for (Track track : sequence.getTracks()) {
             for (int i = 0; i < track.size(); i++) {
@@ -218,17 +224,14 @@ final class SmafFueTrekRenderer {
                                              List<SMAFDecoder.PcmSequenceTrigger> pcmTriggers) {
         int mixedFrameCount = framePosition;
         for (SMAFDecoder.PcmSequenceTrigger trigger : pcmTriggers) {
-            int clipIndex = trigger.noteValue();
-            if (clipIndex <= 0 || clipIndex >= pcmClips.size()) {
+            ResolvedPcmClip resolved = resolvePcmClip(trigger, pcmClips);
+            if (resolved == null) {
                 continue;
             }
-            PcmClip clip = pcmClips.get(clipIndex);
-            if (clip == null) {
-                continue;
-            }
+            PcmClip clip = resolved.clip();
             int clipFrames = clip.frameCount;
-            if (trigger.gateTime() > 0) {
-                clipFrames = Math.min(clipFrames, tickToFrames(trigger.gateTime()));
+            if (trigger.gateTimeMs() > 0) {
+                clipFrames = Math.min(clipFrames, tickToFrames(trigger.gateTimeMs()));
             }
             mixedFrameCount = Math.max(mixedFrameCount, tickToFrames(trigger.startTick()) + clipFrames);
         }
@@ -238,24 +241,33 @@ final class SmafFueTrekRenderer {
     private static void mixPcmClips(float[] mix,
                                     List<PcmClip> pcmClips,
                                     List<SMAFDecoder.PcmSequenceTrigger> pcmTriggers) {
+        int loggedTriggers = 0;
         for (SMAFDecoder.PcmSequenceTrigger trigger : pcmTriggers) {
-            int clipIndex = trigger.noteValue();
-            if (clipIndex <= 0 || clipIndex >= pcmClips.size()) {
+            ResolvedPcmClip resolved = resolvePcmClip(trigger, pcmClips);
+            if (resolved == null) {
                 continue;
             }
-            PcmClip clip = pcmClips.get(clipIndex);
-            if (clip == null) {
-                continue;
-            }
+            PcmClip clip = resolved.clip();
             int startFrame = tickToFrames(trigger.startTick());
             int clipFrames = clip.frameCount;
-            if (trigger.gateTime() > 0) {
-                clipFrames = Math.min(clipFrames, tickToFrames(trigger.gateTime()));
+            if (trigger.gateTimeMs() > 0) {
+                clipFrames = Math.min(clipFrames, tickToFrames(trigger.gateTimeMs()));
             }
             if (clipFrames <= 0) {
                 continue;
             }
             float gain = Math.max(0.0f, Math.min(1.0f, trigger.velocity() / 127.0f));
+            if (loggedTriggers < 4 && SmafDebug.isEnabled("render", SmafDebug.Level.INFO)) {
+                SmafDebug.info("render",
+                        "Mixing PCM trigger note=" + trigger.noteValue()
+                                + " resolvedClip=" + resolved.index()
+                                + " startTick=" + trigger.startTick()
+                                + " gateTime=" + trigger.gateTime()
+                                + " gateTimeMs=" + trigger.gateTimeMs()
+                                + " clipFrames=" + clipFrames
+                                + " gain=" + gain);
+                loggedTriggers++;
+            }
             for (int frame = 0; frame < clipFrames; frame++) {
                 int outputFrame = startFrame + frame;
                 int outputIndex = outputFrame * OUTPUT_CHANNELS;
@@ -291,13 +303,87 @@ final class SmafFueTrekRenderer {
             try (AudioInputStream pcmStream = AudioSystem.getAudioInputStream(pcmFormat, source)) {
                 byte[] pcmBytes = readAll(pcmStream);
                 float[] samples = resampleToOutput(pcmBytes, pcmFormat);
+                if (SmafDebug.isEnabled("render", SmafDebug.Level.INFO)) {
+                    SmafDebug.info("render",
+                            "Decoded PCM clip bytes=" + clipData.length
+                                    + " format=" + base.getEncoding()
+                                    + "@" + Math.round(base.getSampleRate())
+                                    + "Hz"
+                                    + " ch=" + base.getChannels()
+                                    + " -> frames=" + (samples.length / OUTPUT_CHANNELS)
+                                    + " peak=" + peak(samples));
+                }
                 return new PcmClip(samples, samples.length / OUTPUT_CHANNELS);
             }
         } catch (Exception exception) {
+            SmafDebug.info("render", "Unable to decode SMAF PCM clip: " + exception.getMessage());
             Mobile.log(Mobile.LOG_WARNING,
                     "Unable to decode SMAF PCM clip: " + exception.getMessage());
             return null;
         }
+    }
+
+    private static ResolvedPcmClip resolvePcmClip(SMAFDecoder.PcmSequenceTrigger trigger,
+                                                  List<PcmClip> pcmClips) {
+        if (pcmClips.isEmpty()) {
+            return null;
+        }
+        int noteValue = trigger.noteValue();
+        ResolvedPcmClip exact = clipAt(pcmClips, noteValue);
+        if (exact != null) {
+            return exact;
+        }
+        if (noteValue > 0) {
+            ResolvedPcmClip oneBased = clipAt(pcmClips, noteValue - 1);
+            if (oneBased != null) {
+                return oneBased;
+            }
+        }
+        return soleClip(pcmClips);
+    }
+
+    private static ResolvedPcmClip clipAt(List<PcmClip> pcmClips, int index) {
+        if (index < 0 || index >= pcmClips.size()) {
+            return null;
+        }
+        PcmClip clip = pcmClips.get(index);
+        if (clip == null) {
+            return null;
+        }
+        return new ResolvedPcmClip(index, clip);
+    }
+
+    private static ResolvedPcmClip soleClip(List<PcmClip> pcmClips) {
+        ResolvedPcmClip resolved = null;
+        for (int i = 0; i < pcmClips.size(); i++) {
+            PcmClip clip = pcmClips.get(i);
+            if (clip == null) {
+                continue;
+            }
+            if (resolved != null) {
+                return null;
+            }
+            resolved = new ResolvedPcmClip(i, clip);
+        }
+        return resolved;
+    }
+
+    private static int countNonNullClips(List<PcmClip> pcmClips) {
+        int count = 0;
+        for (PcmClip clip : pcmClips) {
+            if (clip != null) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private static float peak(float[] samples) {
+        float peak = 0.0f;
+        for (float sample : samples) {
+            peak = Math.max(peak, Math.abs(sample));
+        }
+        return peak;
     }
 
     private static float[] resampleToOutput(byte[] pcmBytes, AudioFormat pcmFormat) {
@@ -419,6 +505,9 @@ final class SmafFueTrekRenderer {
     }
 
     private record PcmClip(float[] samples, int frameCount) {
+    }
+
+    private record ResolvedPcmClip(int index, PcmClip clip) {
     }
 
     private record RenderEvent(long tick,

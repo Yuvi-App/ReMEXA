@@ -56,6 +56,7 @@ public final class SmafPlayback implements AutoCloseable {
     private final Sequence sequence;
     private final Sequence midiSequence;
     private final List<SMAFDecoder.SequenceSysExEvent> sequenceSysExEvents;
+    private final List<byte[]> startupPackets;
     private final List<byte[]> exclusiveVoices;
     private final List<byte[]> pcmClipData;
     private final List<SMAFDecoder.PcmSequenceTrigger> pcmTriggers;
@@ -105,6 +106,7 @@ public final class SmafPlayback implements AutoCloseable {
                          Sequence sequence,
                          Sequence midiSequence,
                          List<SMAFDecoder.SequenceSysExEvent> sequenceSysExEvents,
+                         List<byte[]> startupPackets,
                          List<byte[]> exclusiveVoices,
                          List<byte[]> pcmClipData,
                          List<SMAFDecoder.PcmSequenceTrigger> pcmTriggers,
@@ -114,6 +116,7 @@ public final class SmafPlayback implements AutoCloseable {
         this.sequence = sequence;
         this.midiSequence = midiSequence;
         this.sequenceSysExEvents = sequenceSysExEvents;
+        this.startupPackets = startupPackets;
         this.exclusiveVoices = exclusiveVoices;
         this.pcmClipData = pcmClipData;
         this.pcmTriggers = pcmTriggers;
@@ -127,6 +130,7 @@ public final class SmafPlayback implements AutoCloseable {
                 decoded.sequence(),
                 decoded.midiSequence(),
                 decoded.sequenceSysExEvents(),
+                decoded.startupPackets(),
                 decoded.exclusiveVoices(),
                 decoded.pcmClipData(),
                 decoded.pcmTriggers(),
@@ -262,12 +266,12 @@ public final class SmafPlayback implements AutoCloseable {
             throw renderedAudioFailure;
         }
         try {
-            renderedAudio = FUETREK_RENDERER.render(
-                    sequence,
-                    sequenceSysExEvents,
-                    exclusiveVoices,
-                    pcmClipData,
-                    pcmTriggers);
+                renderedAudio = FUETREK_RENDERER.render(
+                        sequence,
+                        sequenceSysExEvents,
+                        startupPackets,
+                        pcmClipData,
+                        pcmTriggers);
             return renderedAudio;
         } catch (Exception exception) {
             renderedAudioFailure = exception;
@@ -710,14 +714,23 @@ public final class SmafPlayback implements AutoCloseable {
                     SMAFDecoder.exclusiveVoices,
                     SMAFDecoder.exclusiveVoices.size(),
                     SMAFDecoder.sequenceSysExEvents.size());
+            List<byte[]> startupPackets = copyPacketList(SMAFDecoder.startupPackets);
             List<byte[]> exclusiveVoices = copyExclusiveVoices(SMAFDecoder.exclusiveVoices);
             List<byte[]> pcmClipData = copyPcmClips(SMAFDecoder.pcmData);
             boolean hasPcmPayload = pcmClipData.stream().anyMatch(bytes -> bytes != null && bytes.length > 0);
             int pcmClipCount = (int) pcmClipData.stream().filter(bytes -> bytes != null && bytes.length > 0).count();
+            if (SmafDebug.isEnabled("smaf", SmafDebug.Level.INFO)) {
+                SmafDebug.info("smaf",
+                        "Decoded sequence tracks=" + sequence.getTracks().length
+                                + " pcmClips=" + pcmClipCount
+                                + " pcmTriggers=" + SMAFDecoder.pcmSequenceTriggers.size()
+                                + " exclusiveVoices=" + exclusiveVoices.size());
+            }
             return new DecodedSmaf(
                     sequence,
                     midiSequence,
                     copySequenceSysExEvents(SMAFDecoder.sequenceSysExEvents),
+                    startupPackets,
                     exclusiveVoices,
                     pcmClipData,
                     copyPcmSequenceTriggers(SMAFDecoder.pcmSequenceTriggers),
@@ -751,12 +764,16 @@ public final class SmafPlayback implements AutoCloseable {
     }
 
     private static List<byte[]> copyExclusiveVoices(List<byte[]> sourceVoices) {
-        if (sourceVoices == null || sourceVoices.isEmpty()) {
+        return copyPacketList(sourceVoices);
+    }
+
+    private static List<byte[]> copyPacketList(List<byte[]> sourcePackets) {
+        if (sourcePackets == null || sourcePackets.isEmpty()) {
             return List.of();
         }
-        List<byte[]> copy = new ArrayList<>(sourceVoices.size());
-        for (byte[] voice : sourceVoices) {
-            copy.add(voice == null ? null : voice.clone());
+        List<byte[]> copy = new ArrayList<>(sourcePackets.size());
+        for (byte[] packet : sourcePackets) {
+            copy.add(packet == null ? null : packet.clone());
         }
         return List.copyOf(copy);
     }
@@ -1532,6 +1549,7 @@ public final class SmafPlayback implements AutoCloseable {
     private record DecodedSmaf(Sequence sequence,
                                Sequence midiSequence,
                                List<SMAFDecoder.SequenceSysExEvent> sequenceSysExEvents,
+                               List<byte[]> startupPackets,
                                List<byte[]> exclusiveVoices,
                                List<byte[]> pcmClipData,
                                List<SMAFDecoder.PcmSequenceTrigger> pcmTriggers,

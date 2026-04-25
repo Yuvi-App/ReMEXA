@@ -73,6 +73,19 @@ final class FueTrekRom {
         return groupsById[id & 0xff];
     }
 
+    void installDynamicObject(int groupId, int objectIndex, ObjectHeader object) {
+        int normalizedGroupId = groupId & 0xff;
+        if (objectIndex < 0 || objectIndex >= GROUP_ENTRY_COUNT || object == null) {
+            return;
+        }
+        Group group = groupsById[normalizedGroupId];
+        if (group == null) {
+            group = new Group(normalizedGroupId, new ObjectHeader[GROUP_ENTRY_COUNT]);
+            groupsById[normalizedGroupId] = group;
+        }
+        group.entries[objectIndex] = object;
+    }
+
     int mixProfileScale(int mode, int groupId, int subId, int index) {
         if (mode < 1 || mode > mixProfileTables.length || subId != 0) {
             return 0x2000;

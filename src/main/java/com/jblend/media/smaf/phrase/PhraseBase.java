@@ -19,16 +19,30 @@ package com.jblend.media.smaf.phrase;
 import org.recompile.mobile.Mobile;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.Objects;
 
 public abstract class PhraseBase {
-    private final byte[] data;
-
-    protected PhraseBase(byte[] data) {
-        this.data = data == null ? new byte[0] : data.clone();
+    protected enum SmafDataType {
+        PHRASE,
+        AUDIO
     }
 
-    protected PhraseBase(String url) throws IOException {
-        this(Mobile.getMIDletResourceAsByteArray(url));
+    private final byte[] data;
+
+    protected PhraseBase(byte[] data, SmafDataType expectedType) {
+        this(data, expectedType, false);
+    }
+
+    protected PhraseBase(byte[] data, SmafDataType expectedType, boolean skipValidation) {
+        this.data = Objects.requireNonNull(data, "data").clone();
+        if (!skipValidation) {
+            validateSmafType(this.data, expectedType);
+        }
+    }
+
+    protected PhraseBase(String url, SmafDataType expectedType) throws IOException {
+        this(Mobile.getMIDletResourceAsByteArray(url), expectedType);
     }
 
     public int getSize() {
@@ -41,5 +55,71 @@ public abstract class PhraseBase {
 
     public int getUseTracks() {
         return 1;
+    }
+
+    private static void validateSmafType(byte[] data, SmafDataType expectedType) {
+        if (data.length == 0) {
+            throw new IllegalArgumentException("SMAF data is empty");
+        }
+        if (!startsWithAscii(data, "MMMD")) {
+            throw new IllegalArgumentException("SMAF data must start with MMMD");
+        }
+
+        boolean mmmgLike = containsAnyAscii(data,
+                "MMMG",
+                "SEQU",
+                "VOIC",
+                "EXVO",
+                "DEVO");
+        boolean mtrLike = containsAnyAscii(data,
+                "MTR",
+                "Mtsu",
+                "Mtsq",
+                "MspI",
+                "Mtsp",
+                "Mwa");
+        boolean atrLike = containsAnyAscii(data,
+                "ATR",
+                "AspI",
+                "Atsu",
+                "Atsq",
+                "Awa");
+
+        switch (expectedType) {
+            case PHRASE -> {
+                if (!mmmgLike) {
+                    throw new IllegalArgumentException("SMAF data is not phrase data");
+                }
+            }
+            case AUDIO -> {
+                if (!mtrLike && !atrLike) {
+                    throw new IllegalArgumentException("SMAF data is not audio data");
+                }
+            }
+            default -> throw new IllegalArgumentException("Unsupported SMAF data type");
+        }
+    }
+
+    private static boolean startsWithAscii(byte[] data, String marker) {
+        if (data.length < marker.length()) {
+            return false;
+        }
+        byte[] bytes = marker.getBytes(StandardCharsets.US_ASCII);
+        for (int i = 0; i < bytes.length; i++) {
+            if (data[i] != bytes[i]) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean containsAnyAscii(byte[] data, String... markers) {
+        String ascii = new String(data, StandardCharsets.ISO_8859_1);
+        for (String marker : markers) {
+            if (ascii.contains(marker)) {
+                return true;
+            }
+        }
+        return false;
     }
 }

@@ -151,6 +151,7 @@ public final class SMAFDecoder
     public static Map<Integer, Integer> pcmDataPositions = new HashMap<Integer, Integer>();
     public static Map<Integer, Integer> pcmDataVelocities = new HashMap<Integer, Integer>();
     public static List<PcmSequenceTrigger> pcmSequenceTriggers = new ArrayList<PcmSequenceTrigger>();
+    public static List<byte[]> startupPackets = new ArrayList<byte[]>();
     public static List<byte[]> exclusiveVoices = new ArrayList<byte[]>();
     public static List<SequenceSysExEvent> sequenceSysExEvents = new ArrayList<SequenceSysExEvent>();
 
@@ -173,6 +174,7 @@ public final class SMAFDecoder
         pcmDataPositions.clear();
         pcmDataVelocities.clear();
         pcmSequenceTriggers.clear();
+        startupPackets.clear();
         exclusiveVoices.clear();
         sequenceSysExEvents.clear();
 
@@ -460,9 +462,41 @@ public final class SMAFDecoder
     {
         String voic = "" + (char) input[decodePos++] + (char) input[decodePos++] + (char) input[decodePos++] + (char) input[decodePos++]; // "VOIC"
         int voicChunkSize = (input[decodePos++] & 0xFF) << 24 | (input[decodePos++] & 0xFF) << 16 | (input[decodePos++] & 0xFF) << 8 | (input[decodePos++] & 0xFF);
+        int voicChunkEnd = Math.min(input.length, decodePos + voicChunkSize);
     
         Mobile.log(Mobile.LOG_DEBUG, SMAFDecoder.class.getPackage().getName() + "." + SMAFDecoder.class.getSimpleName() + ": " +"-------------------------- " + voic + " HEADER --------------------------");
         Mobile.log(Mobile.LOG_DEBUG, SMAFDecoder.class.getPackage().getName() + "." + SMAFDecoder.class.getSimpleName() + ": " +"VOICChunkSize: " + voicChunkSize);
+
+        while (decodePos + 8 <= voicChunkEnd)
+        {
+            String chunkID = readChunkId(input, decodePos);
+            int chunkSize = readInt32(input, decodePos + 4);
+            decodePos += 8;
+
+            int chunkEnd = Math.min(voicChunkEnd, decodePos + chunkSize);
+            if (chunkEnd < decodePos)
+            {
+                break;
+            }
+
+            byte[] chunkData = Arrays.copyOfRange(input, decodePos, chunkEnd);
+            decodePos = chunkEnd;
+
+            if (chunkID.startsWith("EXWV"))
+            {
+                byte[] startupPacket = normalizeVoiceWavePacket(chunkData);
+                if (startupPacket != null && startupPacket.length > 0)
+                {
+                    startupPackets.add(startupPacket);
+                }
+            }
+            else if (chunkID.startsWith("EXVO"))
+            {
+                recordExclusiveVoice(chunkData);
+            }
+        }
+
+        decodePos = voicChunkEnd;
     }
 
 
@@ -477,7 +511,7 @@ public final class SMAFDecoder
             exclusiveVoice[i] = (byte) (input[decodePos++] & 0xFF);
         }
 
-        exclusiveVoices.add(Arrays.copyOf(exclusiveVoice, exclusiveVoice.length));
+        recordExclusiveVoice(exclusiveVoice);
     
         Mobile.log(Mobile.LOG_DEBUG, SMAFDecoder.class.getPackage().getName() + "." + SMAFDecoder.class.getSimpleName() + ": " +"-------------------------- " + exvo + " HEADER --------------------------");
         Mobile.log(Mobile.LOG_DEBUG, SMAFDecoder.class.getPackage().getName() + "." + SMAFDecoder.class.getSimpleName() + ": " +"EXVOChunkSize: " + exvoChunkSize);
@@ -1640,6 +1674,49 @@ public final class SMAFDecoder
         }
     }
 
+    private static void recordExclusiveVoice(byte[] exclusiveVoice)
+    {
+        byte[] copy = Arrays.copyOf(exclusiveVoice, exclusiveVoice.length);
+        exclusiveVoices.add(copy);
+        startupPackets.add(copy.clone());
+    }
+
+    private static byte[] normalizeVoiceWavePacket(byte[] chunkData)
+    {
+        if (chunkData == null || chunkData.length == 0)
+        {
+            return null;
+        }
+        if (chunkData.length >= 4
+                && (chunkData[0] & 0xFF) == 0xFF
+                && (chunkData[1] & 0xFF) == 0xF1)
+        {
+            return Arrays.copyOfRange(chunkData, 4, chunkData.length);
+        }
+        return Arrays.copyOf(chunkData, chunkData.length);
+    }
+
+    private static String readChunkId(byte[] data, int offset)
+    {
+        if (offset + 4 > data.length)
+        {
+            return "";
+        }
+        return "" + (char) data[offset] + (char) data[offset + 1] + (char) data[offset + 2] + (char) data[offset + 3];
+    }
+
+    private static int readInt32(byte[] data, int offset)
+    {
+        if (offset + 4 > data.length)
+        {
+            return 0;
+        }
+        return (data[offset] & 0xFF) << 24
+                | (data[offset + 1] & 0xFF) << 16
+                | (data[offset + 2] & 0xFF) << 8
+                | (data[offset + 3] & 0xFF);
+    }
+
     // Helper method to get the timebase readable string based on its byte value
     private static String getTimeBaseDescription(byte timeBaseValue) 
     {
@@ -1729,10 +1806,11 @@ public final class SMAFDecoder
 
     private static void recordPcmSequenceTrigger(int startTick, int gateTime, int noteValue, int velocity, int channel)
     {
-        int triggerTick = startTick + gateTime;
+        int gateTimeMs = gateTime * timeBasetoMs(TimeBase_G);
+        int triggerTick = startTick + gateTimeMs;
         pcmDataPositions.put(triggerTick, noteValue);
         pcmDataVelocities.put(triggerTick, velocity);
-        pcmSequenceTriggers.add(new PcmSequenceTrigger(startTick, gateTime, noteValue, velocity, channel));
+        pcmSequenceTriggers.add(new PcmSequenceTrigger(startTick, gateTime, gateTimeMs, noteValue, velocity, channel));
     }
 
     public static record SequenceSysExEvent(int tick, byte[] data)
@@ -1741,6 +1819,7 @@ public final class SMAFDecoder
 
     public static record PcmSequenceTrigger(int startTick,
                                             int gateTime,
+                                            int gateTimeMs,
                                             int noteValue,
                                             int velocity,
                                             int smafChannel)

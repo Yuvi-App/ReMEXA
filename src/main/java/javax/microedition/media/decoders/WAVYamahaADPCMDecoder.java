@@ -30,11 +30,6 @@ public final class WAVYamahaADPCMDecoder
         724, 796, 876, 963, 1060, 1166, 1282, 1411, 1552
     };
 
-    private static final int[] ADPCMB_STEP_TABLE = 
-    {
-        57, 57, 57, 57, 77, 102, 128, 153
-    };
-
     private static final int[] DELTA_TABLE = 
     {
         1, 3, 5, 7, 9, 11, 13, 15, -1, -3, -5, -7, -9, -11, -13, -15
@@ -66,19 +61,50 @@ public final class WAVYamahaADPCMDecoder
         return out;
     }
 
+    private static final int adjustYamahaStep(int step, int stepSize)
+    {
+        switch (step & 0x07)
+        {
+            case 0x00:
+            case 0x01:
+            case 0x02:
+            case 0x03:
+                stepSize = (stepSize * 115) / 128;
+                break;
+            case 0x04:
+                stepSize = (stepSize * 307) / 256;
+                break;
+            case 0x05:
+                stepSize = (stepSize * 409) / 256;
+                break;
+            case 0x06:
+                stepSize *= 2;
+                break;
+            case 0x07:
+                stepSize = (stepSize * 307) / 128;
+                break;
+            default:
+                break;
+        }
+
+        return clamp(stepSize, 127, (32768 * 3) / 4);
+    }
+
     private static final int ADPCMBStep(int step, int[] history, int[] stepSize) 
     {
-        sign = step & 8;
-        delta = step & 7;
-        diff = ((1 + (delta << 1)) * stepSize[0]) >> 3;
-        newval = history[0] + (sign > 0 ? -clamp(diff, 0, 32767) : clamp(diff, 0, 32767));
-        nstep = ADPCMB_STEP_TABLE[delta] * stepSize[0] >> 6;
+        int currentStep = stepSize[0];
+        int decodedDiff = currentStep >> 3;
 
-        stepSize[0] = clamp(nstep, 1280, 32767); // Seems to work better on a wide sample of PCM SMAF data
-        //stepSize[0] = clamp(nstep, 127, 24576); // Original code's step clamping
-        history[0] = newval = clamp(newval, -32768, 32767);
+        if ((step & 0x01) != 0) { decodedDiff += currentStep >> 2; }
+        if ((step & 0x02) != 0) { decodedDiff += currentStep >> 1; }
+        if ((step & 0x04) != 0) { decodedDiff += currentStep; }
+        if ((step & 0x08) != 0) { decodedDiff = -decodedDiff; }
 
-        return newval;
+        int sample = clamp(history[0] + decodedDiff, -32768, 32767);
+        history[0] = sample;
+        stepSize[0] = adjustYamahaStep(step, currentStep);
+
+        return sample;
     }
 
     private static final int ADPCMZStep(int step, int[] history, int[] stepSize)

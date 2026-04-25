@@ -37,6 +37,7 @@ final class FueTrekSampler implements Sampler {
     private final SelectorCache selectorCache = new SelectorCache();
     private final Set<String> loggedUnsupportedRawSysEx = new HashSet<>();
     private final RawExvoUpload81[] rawExvoUploads81ByNote = new RawExvoUpload81[0x80];
+    private final RawWaveUpload[] rawWaveUploadsByIndex = new RawWaveUpload[0x80];
     private RawExvoUpload81 pendingRawExvoUpload81;
     private final int maxPolyphony;
     private final float sampleRate;
@@ -322,6 +323,7 @@ final class FueTrekSampler implements Sampler {
         rawGlobalLaneB1 = 0x40;
         pendingRawExvoUpload81 = null;
         Arrays.fill(rawExvoUploads81ByNote, null);
+        Arrays.fill(rawWaveUploadsByIndex, null);
         mixState.reset();
         refreshGlobalVolumeByte();
         wrapperState.reset();
@@ -465,6 +467,9 @@ final class FueTrekSampler implements Sampler {
             return false;
         }
         int type = message[2] & 0xff;
+        if (type == 0x00) {
+            return applyRawSoftbankExvoWave(message);
+        }
         if (type == 0x01) {
             return applyRawSoftbankExvoVoice(message);
         }
@@ -472,6 +477,20 @@ final class FueTrekSampler implements Sampler {
             return applyRawSoftbankExvoControl(message);
         }
         return false;
+    }
+
+    private boolean applyRawSoftbankExvoWave(byte[] message) {
+        if (message.length < 5) {
+            return false;
+        }
+        RawWaveUpload upload = RawWaveUpload.decode(message[3] & 0x7f, Arrays.copyOfRange(message, 4, message.length));
+        if (upload == null) {
+            return false;
+        }
+        rawWaveUploadsByIndex[upload.waveId] = upload;
+        installPendingDynamicVoices(upload.waveId);
+        debugRawExvoWave(upload, message);
+        return true;
     }
 
     private boolean applyRawSoftbankExvoVoice(byte[] message) {
@@ -604,6 +623,125 @@ final class FueTrekSampler implements Sampler {
             return;
         }
         rawExvoUploads81ByNote[noteByte] = upload;
+        installDynamicVoice(upload);
+    }
+
+    private void installPendingDynamicVoices(int waveId) {
+        for (RawExvoUpload81 upload : rawExvoUploads81ByNote) {
+            if (upload != null && upload.sampleIndex() == waveId) {
+                installDynamicVoice(upload);
+            }
+        }
+    }
+
+    private void installDynamicVoice(RawExvoUpload81 upload) {
+        RawWaveUpload wave = lookupRawWaveUpload(upload.sampleIndex());
+        if (wave == null) {
+            return;
+        }
+        int noteByte = upload.noteByte();
+        FueTrekRom.Sample sample = wave.asSample(noteByte, upload.sampleTune1024());
+        installDynamicVoiceObject(upload.groupId() & 0xff, upload.objectIndex(), noteByte, sample);
+        installDynamicVoiceObject(upload.groupId() & 0xfe, upload.objectIndex(), noteByte, sample);
+        installDynamicVoiceObject(upload.groupId() | 1, upload.objectIndex(), noteByte, sample);
+    }
+
+    private void installDynamicVoiceObject(int groupId, int objectIndex, int noteByte, FueTrekRom.Sample sample) {
+        if (groupId < 0 || groupId > 0xff || sample == null) {
+            return;
+        }
+        FueTrekRom.Zone templateZone = selectDynamicTemplateZone(groupId, objectIndex, noteByte);
+        byte[] zoneRaw = templateZone != null ? templateZone.raw.clone() : createDefaultDynamicZoneRaw(noteByte);
+        zoneRaw[0] = (byte) 0x7f;
+        zoneRaw[0x10] = 0;
+        zoneRaw[0x11] = 0;
+        zoneRaw[0x12] = 0;
+        zoneRaw[0x13] = 0;
+        zoneRaw[0x3c] = (byte) 0xff;
+        zoneRaw[0x3d] = (byte) 0xff;
+        zoneRaw[0x3e] = (byte) 0xff;
+        zoneRaw[0x3f] = (byte) 0xff;
+        FueTrekRom.Zone zone = new FueTrekRom.Zone(zoneRaw, zoneRaw[0] & 0xff, sample, sample);
+        FueTrekRom.ObjectHeader object = new FueTrekRom.ObjectHeader(noteByte, noteByte, new FueTrekRom.Zone[]{zone});
+        rom.installDynamicObject(groupId, objectIndex, object);
+    }
+
+    private FueTrekRom.Zone selectDynamicTemplateZone(int groupId, int objectIndex, int noteByte) {
+        ResolvedZone resolvedZone = resolveObjectZone(groupId, objectIndex, noteByte);
+        if (resolvedZone != null) {
+            return resolvedZone.zone;
+        }
+        FueTrekRom.Group group = rom.group(groupId);
+        if (group != null) {
+            FueTrekRom.ObjectHeader object = group.entry(objectIndex);
+            if (object != null && object.zones.length > 0) {
+                return object.zones[0];
+            }
+        }
+        FueTrekRom.Group percussionGroup = rom.group(0x78);
+        if (percussionGroup != null) {
+            FueTrekRom.ObjectHeader percussionObject = percussionGroup.entry(Math.max(0, Math.min(0x7f, noteByte)));
+            if (percussionObject != null && percussionObject.zones.length > 0) {
+                return percussionObject.zones[0];
+            }
+        }
+        FueTrekRom.Group melodicGroup = rom.group(0x79);
+        if (melodicGroup != null) {
+            FueTrekRom.ObjectHeader melodicObject = melodicGroup.entry(Math.max(0, Math.min(0x7f, noteByte)));
+            if (melodicObject != null && melodicObject.zones.length > 0) {
+                return melodicObject.zones[0];
+            }
+        }
+        return null;
+    }
+
+    private static byte[] createDefaultDynamicZoneRaw(int noteByte) {
+        byte[] raw = new byte[0x44];
+        raw[0] = (byte) 0x7f;
+        raw[0x0c] = 0x40;
+        raw[0x0d] = 0x00;
+        raw[0x0e] = 0x40;
+        raw[0x0f] = 0x00;
+        raw[0x14] = 0x7f;
+        raw[0x15] = 0x01;
+        raw[0x16] = 0x40;
+        raw[0x17] = 0x00;
+        raw[0x18] = 0x40;
+        raw[0x19] = 0x00;
+        raw[0x1a] = 0x40;
+        raw[0x1b] = 0x00;
+        raw[0x1c] = 0x20;
+        raw[0x1d] = 0x00;
+        raw[0x1e] = 0x40;
+        raw[0x1f] = 0x00;
+        raw[0x20] = 0x40;
+        raw[0x21] = 0x00;
+        raw[0x22] = 0x7f;
+        raw[0x24] = 0x40;
+        raw[0x25] = 0x00;
+        raw[0x28] = 0x40;
+        raw[0x29] = 0x00;
+        raw[0x2a] = 0x40;
+        raw[0x2b] = 0x00;
+        raw[0x2c] = 0x40;
+        raw[0x2d] = 0x00;
+        raw[0x2f] = 0x7f;
+        raw[0x30] = 0x00;
+        raw[0x32] = 0x40;
+        raw[0x33] = 0x00;
+        raw[0x34] = 0x40;
+        raw[0x35] = 0x00;
+        raw[0x36] = 0x40;
+        raw[0x37] = 0x00;
+        raw[0x40] = (byte) Math.max(0, Math.min(0x7f, noteByte));
+        return raw;
+    }
+
+    private RawWaveUpload lookupRawWaveUpload(int waveId) {
+        if (waveId < 0 || waveId >= rawWaveUploadsByIndex.length) {
+            return null;
+        }
+        return rawWaveUploadsByIndex[waveId];
     }
 
     private static void debugRawExvoOverride(
@@ -645,6 +783,25 @@ final class FueTrekSampler implements Sampler {
                 .append(upload.primaryPairHex())
                 .append(" pair1=")
                 .append(upload.secondaryPairHex())
+                .append(" data=");
+        for (int i = 0; i < message.length; i++) {
+            if (i > 0) {
+                sb.append(' ');
+            }
+            sb.append(String.format("%02x", message[i] & 0xff));
+        }
+        SmafDebug.debug("smaf", sb.toString());
+    }
+
+    private static void debugRawExvoWave(RawWaveUpload upload, byte[] message) {
+        if (!debugControlEnabled()) {
+            return;
+        }
+        StringBuilder sb = new StringBuilder(192);
+        sb.append("[FueTrekCtrl] raw-exvo wave id=")
+                .append(upload.waveId)
+                .append(" samples=")
+                .append(upload.sample.pcm8.length)
                 .append(" data=");
         for (int i = 0; i < message.length; i++) {
             if (i > 0) {
@@ -902,10 +1059,16 @@ final class FueTrekSampler implements Sampler {
         }
         RawExvoUpload81 upload81 = lookupRawExvoUpload81(selector.noteByte);
         if (upload81 != null) {
-            int uploadGroupId = state.drum ? (upload81.groupId() & 0xfe) : (upload81.groupId() | 1);
-            ResolvedZone rawUploadZone = resolveObjectZone(uploadGroupId, upload81.objectIndex(), selector.noteByte);
-            if (rawUploadZone != null) {
-                return rawUploadZone;
+            int[] groupCandidates = {
+                    upload81.groupId(),
+                    upload81.groupId() & 0xfe,
+                    upload81.groupId() | 1
+            };
+            for (int uploadGroupId : groupCandidates) {
+                ResolvedZone rawUploadZone = resolveObjectZone(uploadGroupId, upload81.objectIndex(), selector.noteByte);
+                if (rawUploadZone != null) {
+                    return rawUploadZone;
+                }
             }
         }
         int groupId = selector.groupId;
@@ -1632,6 +1795,126 @@ final class FueTrekSampler implements Sampler {
                 return -1;
             }
             return payload[3] & 0xff;
+        }
+
+        int sampleIndex() {
+            if (payload.length == 0) {
+                return -1;
+            }
+            return payload[payload.length - 1] & 0x7f;
+        }
+
+        int sampleTune1024() {
+            if (payload.length < 16) {
+                return 1024;
+            }
+            int tune = ((payload[12] & 0xff) << 8) | (payload[13] & 0xff);
+            return tune > 0 ? tune : 1024;
+        }
+    }
+
+    private static final class RawWaveUpload {
+        private static final int SOURCE_SAMPLE_RATE = 8_000;
+
+        final int waveId;
+        final FueTrekRom.Sample sample;
+
+        RawWaveUpload(int waveId, FueTrekRom.Sample sample) {
+            this.waveId = waveId;
+            this.sample = sample;
+        }
+
+        FueTrekRom.Sample asSample(int rootKey, int tune1024) {
+            return new FueTrekRom.Sample(sample.pcm8, 0, 0, tune1024, rootKey, 0);
+        }
+
+        static RawWaveUpload decode(int waveId, byte[] payload) {
+            if (payload == null || payload.length == 0) {
+                return null;
+            }
+            byte[] pcm8 = decodeToRomPcm8(payload);
+            if (pcm8.length == 0) {
+                return null;
+            }
+            return new RawWaveUpload(waveId, new FueTrekRom.Sample(pcm8, 0, 0, 1024, MIDI_A4, 0));
+        }
+
+        private static byte[] decodeToRomPcm8(byte[] payload) {
+            int[] pcm16 = decodeAdpcmB(payload);
+            if (pcm16.length == 0) {
+                return new byte[0];
+            }
+            int resampledLength = Math.max(1, (int) Math.round(pcm16.length * (ROM_SAMPLE_RATE / SOURCE_SAMPLE_RATE)));
+            byte[] pcm8 = new byte[resampledLength];
+            float step = (float) pcm16.length / resampledLength;
+            for (int i = 0; i < resampledLength; i++) {
+                float sourceIndex = i * step;
+                int index0 = Math.max(0, Math.min(pcm16.length - 1, (int) sourceIndex));
+                int index1 = Math.max(0, Math.min(pcm16.length - 1, index0 + 1));
+                float fraction = sourceIndex - index0;
+                float sample = pcm16[index0] + (pcm16[index1] - pcm16[index0]) * fraction;
+                pcm8[i] = (byte) clampRange(Math.round(sample / 256.0f), -128, 127);
+            }
+            return pcm8;
+        }
+
+        private static int[] decodeAdpcmB(byte[] payload) {
+            int[] pcm16 = new int[payload.length * 2];
+            int history = 0;
+            int stepSize = 127;
+            int outputIndex = 0;
+            for (byte value : payload) {
+                int lowerNibble = value & 0x0f;
+                pcm16[outputIndex++] = history = decodeAdpcmBNibble(lowerNibble, history, stepSize);
+                stepSize = adjustAdpcmBStep(lowerNibble, stepSize);
+                int upperNibble = (value >>> 4) & 0x0f;
+                pcm16[outputIndex++] = history = decodeAdpcmBNibble(upperNibble, history, stepSize);
+                stepSize = adjustAdpcmBStep(upperNibble, stepSize);
+            }
+            return pcm16;
+        }
+
+        private static int decodeAdpcmBNibble(int nibble, int history, int stepSize) {
+            int diff = stepSize >> 3;
+            if ((nibble & 0x01) != 0) {
+                diff += stepSize >> 2;
+            }
+            if ((nibble & 0x02) != 0) {
+                diff += stepSize >> 1;
+            }
+            if ((nibble & 0x04) != 0) {
+                diff += stepSize;
+            }
+            if ((nibble & 0x08) != 0) {
+                diff = -diff;
+            }
+            return clampRange(history + diff, -32768, 32767);
+        }
+
+        private static int adjustAdpcmBStep(int nibble, int stepSize) {
+            switch (nibble & 0x07) {
+                case 0x00:
+                case 0x01:
+                case 0x02:
+                case 0x03:
+                    stepSize = (stepSize * 115) / 128;
+                    break;
+                case 0x04:
+                    stepSize = (stepSize * 307) / 256;
+                    break;
+                case 0x05:
+                    stepSize = (stepSize * 409) / 256;
+                    break;
+                case 0x06:
+                    stepSize *= 2;
+                    break;
+                case 0x07:
+                    stepSize = (stepSize * 307) / 128;
+                    break;
+                default:
+                    break;
+            }
+            return clampRange(stepSize, 127, (32768 * 3) / 4);
         }
     }
 

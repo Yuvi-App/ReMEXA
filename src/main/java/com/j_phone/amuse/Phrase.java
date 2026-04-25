@@ -5,7 +5,7 @@ public class Phrase {
 
     protected Phrase() {
         remexa.probes.SdkStubSupport.log("com.j_phone.amuse.Phrase", "Phrase");
-        delegate = new com.jblend.media.smaf.phrase.Phrase(new byte[0]);
+        delegate = com.jblend.media.smaf.phrase.Phrase.unchecked(new byte[0]);
     }
 
     public Phrase (java.lang.String url) throws java.io.IOException {

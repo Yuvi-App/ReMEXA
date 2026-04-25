@@ -20,10 +20,10 @@ import java.io.IOException;
 
 public final class AudioPhrase extends PhraseBase {
     public AudioPhrase(byte[] data) {
-        super(data);
+        super(data, SmafDataType.AUDIO);
     }
 
     public AudioPhrase(String url) throws IOException {
-        super(url);
+        super(url, SmafDataType.AUDIO);
     }
 }

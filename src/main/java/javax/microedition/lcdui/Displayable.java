@@ -50,7 +50,8 @@ public class Displayable {
     }
 
     public void fireCommand(int index) {
-        if (commandListener == null || commands.isEmpty()) {
+        var availableCommands = orderedCommands();
+        if (commandListener == null || availableCommands.isEmpty()) {
             return;
         }
 
@@ -60,25 +61,16 @@ public class Displayable {
             return;
         }
 
-        var resolvedIndex = Math.max(0, Math.min(index, commands.size() - 1));
-        commandListener.commandAction(commands.get(resolvedIndex), this);
+        var resolvedIndex = Math.max(0, Math.min(index, availableCommands.size() - 1));
+        commandListener.commandAction(availableCommands.get(resolvedIndex), this);
     }
 
     public Command[] softKeyCommands() {
-        var ordered = new ArrayList<>(commands);
-        ordered.sort(
-                Comparator
-                        .comparingInt((Command command) -> softKeyBucket(command.getCommandType()))
-                        .thenComparingInt(Command::getPriority)
-                        .thenComparing(command -> command.getLabel() == null ? "" : command.getLabel(), String.CASE_INSENSITIVE_ORDER)
-        );
+        var ordered = orderedCommands();
 
         Command left = null;
         Command right = null;
         for (var command : ordered) {
-            if (command == null) {
-                continue;
-            }
             if (isRightSoftKeyType(command.getCommandType())) {
                 if (right == null) {
                     right = command;
@@ -96,6 +88,22 @@ public class Displayable {
             }
         }
         return new Command[]{left, right};
+    }
+
+    private ArrayList<Command> orderedCommands() {
+        var ordered = new ArrayList<Command>(commands.size());
+        for (var command : commands) {
+            if (command != null) {
+                ordered.add(command);
+            }
+        }
+        ordered.sort(
+                Comparator
+                        .comparingInt((Command command) -> softKeyBucket(command.getCommandType()))
+                        .thenComparingInt(Command::getPriority)
+                        .thenComparing(command -> command.getLabel() == null ? "" : command.getLabel(), String.CASE_INSENSITIVE_ORDER)
+        );
+        return ordered;
     }
 
     private static int softKeyBucket(int commandType) {
