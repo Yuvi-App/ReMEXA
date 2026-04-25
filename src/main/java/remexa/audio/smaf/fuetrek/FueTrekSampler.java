@@ -36,6 +36,7 @@ final class FueTrekSampler implements Sampler {
     private final WrapperState wrapperState = new WrapperState();
     private final SelectorCache selectorCache = new SelectorCache();
     private final Set<String> loggedUnsupportedRawSysEx = new HashSet<>();
+    private final RawExvoUpload81[] rawExvoUploads81ByNote = new RawExvoUpload81[0x80];
     private RawExvoUpload81 pendingRawExvoUpload81;
     private final int maxPolyphony;
     private final float sampleRate;
@@ -319,6 +320,8 @@ final class FueTrekSampler implements Sampler {
         hostGlobalVolumeByte = 0x7f;
         rawGlobalLaneB0 = 0x7f;
         rawGlobalLaneB1 = 0x40;
+        pendingRawExvoUpload81 = null;
+        Arrays.fill(rawExvoUploads81ByNote, null);
         mixState.reset();
         refreshGlobalVolumeByte();
         wrapperState.reset();
@@ -503,6 +506,7 @@ final class FueTrekSampler implements Sampler {
                 return false;
             }
             pendingRawExvoUpload81 = upload;
+            rememberRawExvoUpload81(upload);
             debugRawExvoUpload81(upload, message);
             return true;
         }
@@ -589,6 +593,17 @@ final class FueTrekSampler implements Sampler {
             return null;
         }
         return new RawExvoUpload81(Arrays.copyOfRange(message, offset, end));
+    }
+
+    private void rememberRawExvoUpload81(RawExvoUpload81 upload) {
+        int noteByte = upload.noteByte();
+        if (noteByte < 0 || noteByte >= rawExvoUploads81ByNote.length) {
+            return;
+        }
+        if (rom.group(upload.groupId()) == null) {
+            return;
+        }
+        rawExvoUploads81ByNote[noteByte] = upload;
     }
 
     private static void debugRawExvoOverride(
@@ -885,6 +900,14 @@ final class FueTrekSampler implements Sampler {
                 return rawOverride;
             }
         }
+        RawExvoUpload81 upload81 = lookupRawExvoUpload81(selector.noteByte);
+        if (upload81 != null) {
+            int uploadGroupId = state.drum ? (upload81.groupId() & 0xfe) : (upload81.groupId() | 1);
+            ResolvedZone rawUploadZone = resolveObjectZone(uploadGroupId, upload81.objectIndex(), selector.noteByte);
+            if (rawUploadZone != null) {
+                return rawUploadZone;
+            }
+        }
         int groupId = selector.groupId;
         if (groupId < 0) {
             return null;
@@ -913,6 +936,13 @@ final class FueTrekSampler implements Sampler {
             }
         }
         return null;
+    }
+
+    private RawExvoUpload81 lookupRawExvoUpload81(int noteByte) {
+        if (noteByte < 0 || noteByte >= rawExvoUploads81ByNote.length) {
+            return null;
+        }
+        return rawExvoUploads81ByNote[noteByte];
     }
 
     private ResolvedZone resolveObjectZone(int groupId, int objectIndex, int noteByte) {
@@ -1577,6 +1607,31 @@ final class FueTrekSampler implements Sampler {
                 return "--";
             }
             return String.format("%02x%02x", payload[2] & 0xff, payload[3] & 0xff);
+        }
+
+        int objectIndex() {
+            if (payload.length < 1) {
+                return -1;
+            }
+            return payload[0] & 0x7f;
+        }
+
+        int noteByte() {
+            int objectIndex = objectIndex();
+            if (objectIndex < 0) {
+                return -1;
+            }
+            // Yamaha `43 05 02 81 ...` uploads used by Vodafone EXVO phrases
+            // name the target object directly; the live drum note domain is the
+            // ROM object index plus the fixed +0x1a offset used by lib002.
+            return objectIndex + 0x1a;
+        }
+
+        int groupId() {
+            if (payload.length < 4) {
+                return -1;
+            }
+            return payload[3] & 0xff;
         }
     }
 
