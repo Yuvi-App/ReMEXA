@@ -87,7 +87,7 @@ public final class JadLauncher {
         try {
             frame.showFrame();
             frame.updateStatus("Loading " + descriptor.title());
-            var result = runtime.launch(descriptor, launchProfile, frame::updateDisplayMetrics);
+            var result = runtime.launch(descriptor, launchProfile, frame::updateDisplayMetrics, frame::requestTextInput);
             previousDefaultHandler = installExitOnUncaughtException(frame, descriptor, result.classLoader());
             var restoredDefaultHandler = previousDefaultHandler;
             frame.setCloseHandler(() -> {

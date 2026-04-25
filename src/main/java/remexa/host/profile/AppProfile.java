@@ -75,6 +75,15 @@ public record AppProfile(
         return MANAGED_SYSTEM_PROPERTY_KEYS;
     }
 
+    public AppProfile withSystemProperties(Map<String, String> overrides) {
+        if (overrides == null || overrides.isEmpty()) {
+            return this;
+        }
+        var merged = new java.util.LinkedHashMap<String, String>(systemProperties);
+        merged.putAll(overrides);
+        return new AppProfile(id, displayName, fallbackDisplay, deviceStyle, Map.copyOf(merged));
+    }
+
     private static Map<String, String> jsclSystemProperties(String platformName) {
         return Map.ofEntries(
                 Map.entry("Platform", platformName),

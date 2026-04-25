@@ -15,6 +15,7 @@ import javax.microedition.lcdui.Canvas;
 import javax.microedition.lcdui.Display;
 import javax.microedition.lcdui.Displayable;
 import javax.microedition.midlet.MIDlet;
+import remexa.host.input.HostTextInputRequest;
 import remexa.host.jad.JadDescriptor;
 import remexa.host.profile.DisplayMetrics;
 import remexa.host.profile.LaunchProfile;
@@ -37,6 +38,7 @@ public final class MidletRuntime {
     private static final Map<MIDlet, LaunchContext> CONTEXTS = Collections.synchronizedMap(new WeakHashMap<>());
     private static final Map<MIDlet, Display> DISPLAYS = Collections.synchronizedMap(new WeakHashMap<>());
     private static final Map<Displayable, LaunchContext> DISPLAYABLES = Collections.synchronizedMap(new WeakHashMap<>());
+    private static final Map<ClassLoader, HostTextInputRequest.Handler> TEXT_INPUT_HANDLERS = Collections.synchronizedMap(new WeakHashMap<>());
 
     private MidletRuntime() {
     }
@@ -103,6 +105,28 @@ public final class MidletRuntime {
 
     public static Display getDisplay(MIDlet midlet) {
         return DISPLAYS.computeIfAbsent(midlet, ignored -> new Display(midlet));
+    }
+
+    public static void registerTextInputHandler(ClassLoader classLoader, HostTextInputRequest.Handler handler) {
+        if (classLoader == null || handler == null) {
+            return;
+        }
+        TEXT_INPUT_HANDLERS.put(classLoader, handler);
+    }
+
+    public static void unregisterTextInputHandler(ClassLoader classLoader) {
+        if (classLoader == null) {
+            return;
+        }
+        TEXT_INPUT_HANDLERS.remove(classLoader);
+    }
+
+    public static String requestTextInput(HostTextInputRequest request) {
+        var resolvedRequest = request == null
+                ? new HostTextInputRequest("Input", "", 0, 0, false)
+                : request;
+        var handler = textInputHandlerForCurrentThread();
+        return handler == null ? resolvedRequest.initialText() : handler.requestTextInput(resolvedRequest);
     }
 
     public static void bindDisplayable(MIDlet midlet, Displayable displayable) {
@@ -469,6 +493,25 @@ public final class MidletRuntime {
             }
         }
         return null;
+    }
+
+    private static HostTextInputRequest.Handler textInputHandlerForCurrentThread() {
+        var threadContextClassLoader = Thread.currentThread().getContextClassLoader();
+        if (threadContextClassLoader != null) {
+            var handler = TEXT_INPUT_HANDLERS.get(threadContextClassLoader);
+            if (handler != null) {
+                return handler;
+            }
+        }
+        var context = CURRENT_CONTEXT.get();
+        if (context != null) {
+            var handler = TEXT_INPUT_HANDLERS.get(context.classLoader());
+            if (handler != null) {
+                return handler;
+            }
+        }
+        context = activeContext();
+        return context == null ? null : TEXT_INPUT_HANDLERS.get(context.classLoader());
     }
 
     private static final class LaunchContext {

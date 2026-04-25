@@ -10,6 +10,7 @@ import java.util.Optional;
 import java.util.jar.JarFile;
 import java.util.concurrent.locks.LockSupport;
 import java.util.function.Consumer;
+import remexa.host.input.HostTextInputRequest;
 import remexa.host.jad.JadDescriptor;
 import remexa.host.profile.DisplayMetrics;
 import remexa.host.profile.LaunchProfile;
@@ -22,7 +23,8 @@ public final class AppRuntime {
     public LaunchResult launch(
             JadDescriptor descriptor,
             LaunchProfile launchProfile,
-            Consumer<DisplayMetrics> displayListener
+            Consumer<DisplayMetrics> displayListener,
+            HostTextInputRequest.Handler textInputHandler
     ) throws LaunchException {
         var jarPath = descriptor.resolveJarPath()
                 .orElseThrow(() -> new LaunchException("No JAR path was found in the JAD."));
@@ -45,8 +47,11 @@ public final class AppRuntime {
                 "Using profile " + launchProfile.profile().displayName() + " with initial display " + launchProfile.initialDisplay().dimensions()
         );
 
+        LegacyJarClassLoader classLoader = null;
+        var launched = false;
         try {
-            var classLoader = new LegacyJarClassLoader(jarPath.toUri().toURL(), getClass().getClassLoader());
+            classLoader = new LegacyJarClassLoader(jarPath.toUri().toURL(), getClass().getClassLoader());
+            MidletRuntime.registerTextInputHandler(classLoader, textInputHandler);
             var appClass = classLoader.loadClass(resolvedEntryClass);
             Object instance;
             MIDlet midlet = null;
@@ -83,6 +88,7 @@ public final class AppRuntime {
                 }
             }
 
+            launched = true;
             return new LaunchResult(mergedDescriptor, launchProfile, jarPath.toAbsolutePath().toString(), resolvedEntryClass, classLoader, instance, midlet);
         } catch (InvocationTargetException exception) {
             if (exception.getTargetException() instanceof MIDletStateChangeException stateChangeException) {
@@ -93,6 +99,10 @@ public final class AppRuntime {
             throw new LaunchException("App class verification failed.", exception);
         } catch (ReflectiveOperationException | java.io.IOException exception) {
             throw new LaunchException("Failed to launch app.", exception);
+        } finally {
+            if (!launched && classLoader != null) {
+                MidletRuntime.unregisterTextInputHandler(classLoader);
+            }
         }
     }
 
@@ -111,6 +121,7 @@ public final class AppRuntime {
 
         shutdownPhrasePlayer(result.classLoader());
         shutdownAppThreads(result.classLoader());
+        MidletRuntime.unregisterTextInputHandler(result.classLoader());
 
         if (result.classLoader() instanceof URLClassLoader urlClassLoader) {
             try {

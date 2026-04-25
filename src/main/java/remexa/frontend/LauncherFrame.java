@@ -43,20 +43,21 @@ import remexa.host.LaunchConfig;
 import remexa.probes.DebugLog;
 import remexa.probes.LogCategory;
 import remexa.probes.LogSettings;
+import remexa.ui.RemexaTheme;
 
 public final class LauncherFrame extends JFrame {
-    private static final Color APP_BACKGROUND = new Color(242, 239, 233);
-    private static final Color MENU_BACKGROUND = new Color(250, 248, 244);
-    private static final Color MENU_BORDER = new Color(221, 216, 207);
-    private static final Color CARD_BACKGROUND = new Color(252, 251, 248);
-    private static final Color CARD_BORDER = new Color(197, 190, 178);
-    private static final Color CARD_BORDER_ACTIVE = new Color(52, 119, 89);
-    private static final Color MENU_HOVER_BACKGROUND = new Color(228, 234, 226);
-    private static final Color MENU_HOVER_FOREGROUND = new Color(35, 77, 58);
-    private static final Color POPUP_BACKGROUND = new Color(250, 248, 244);
-    private static final Color POPUP_BORDER = new Color(208, 201, 191);
-    private static final Color TEXT_PRIMARY = new Color(44, 42, 37);
-    private static final Color TEXT_SECONDARY = new Color(108, 102, 92);
+    private static final Color APP_BACKGROUND = RemexaTheme.APP_BACKGROUND;
+    private static final Color MENU_BACKGROUND = RemexaTheme.MENU_BACKGROUND;
+    private static final Color MENU_BORDER = RemexaTheme.MENU_BORDER;
+    private static final Color CARD_BACKGROUND = RemexaTheme.CARD_BACKGROUND;
+    private static final Color CARD_BORDER = RemexaTheme.CARD_BORDER;
+    private static final Color CARD_BORDER_ACTIVE = RemexaTheme.CARD_BORDER_ACTIVE;
+    private static final Color MENU_HOVER_BACKGROUND = RemexaTheme.MENU_HOVER_BACKGROUND;
+    private static final Color MENU_HOVER_FOREGROUND = RemexaTheme.MENU_HOVER_FOREGROUND;
+    private static final Color POPUP_BACKGROUND = RemexaTheme.POPUP_BACKGROUND;
+    private static final Color POPUP_BORDER = RemexaTheme.POPUP_BORDER;
+    private static final Color TEXT_PRIMARY = RemexaTheme.TEXT_PRIMARY;
+    private static final Color TEXT_SECONDARY = RemexaTheme.TEXT_SECONDARY;
 
     private final JadLauncher launcher;
     private final JMenu recentJadsMenu = new JMenu("Recent JAD");

@@ -1,6 +1,9 @@
 package remexa.host.profile;
 
 import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Pattern;
 import remexa.host.jad.JadDescriptor;
@@ -27,6 +30,15 @@ public final class LaunchProfileResolver {
             "microedition.platform",
             "Platform"
     );
+    private static final List<String> API_KEYS = List.of(
+            "MIDlet-OCL",
+            "MIDxlet-API",
+            "MIDlet-API"
+    );
+    private static final Map<String, String> JSCL_CAPABILITY_OVERRIDES = Map.ofEntries(
+            Map.entry("MIDxlet-MSensor", "jscl.supports.msensor"),
+            Map.entry("MIDlet-MSensor", "jscl.supports.msensor")
+    );
     private static final Pattern SIZE_PATTERN = Pattern.compile("(\\d+)\\D+(\\d+)");
 
     private LaunchProfileResolver() {
@@ -40,17 +52,19 @@ public final class LaunchProfileResolver {
     }
 
     private static AppProfile resolveProfile(JadDescriptor descriptor) {
-        var ocl = descriptor.property("MIDlet-OCL").orElse("");
+        var ocl = resolveDeclaredApi(descriptor).orElse("");
         if (isJskyFamily(ocl)) {
             var normalizedOcl = primaryOclToken(ocl);
             var platform = resolveDeclaredPlatform(descriptor).orElse("");
+            AppProfile profile;
             if (looksLikeVodafonePlatform(platform) || looksLikeVodafoneVendor(descriptor)) {
-                return AppProfile.vodafone(normalizedOcl, resolveVodafonePhoneType(platform));
+                profile = AppProfile.vodafone(normalizedOcl, resolveVodafonePhoneType(platform));
+            } else if (looksLikeVodafoneOcl(normalizedOcl)) {
+                profile = AppProfile.vodafone(normalizedOcl, resolveVodafonePhoneType(platform));
+            } else {
+                profile = AppProfile.jsky(normalizedOcl, resolveJskyPhoneType(platform));
             }
-            if (looksLikeVodafoneOcl(normalizedOcl)) {
-                return AppProfile.vodafone(normalizedOcl, resolveVodafonePhoneType(platform));
-            }
-            return AppProfile.jsky(normalizedOcl, resolveJskyPhoneType(platform));
+            return applyDescriptorCapabilityOverrides(descriptor, profile);
         }
         return AppProfile.generic();
     }
@@ -61,6 +75,18 @@ public final class LaunchProfileResolver {
         }
         var normalized = ocl.trim().toUpperCase(java.util.Locale.ROOT);
         return normalized.startsWith("JSCL-") || normalized.startsWith("JOCL-");
+    }
+
+    private static Optional<String> resolveDeclaredApi(JadDescriptor descriptor) {
+        for (var key : API_KEYS) {
+            var value = descriptor.property(key)
+                    .map(String::trim)
+                    .filter(candidate -> !candidate.isEmpty());
+            if (value.isPresent()) {
+                return value;
+            }
+        }
+        return Optional.empty();
     }
 
     private static String primaryOclToken(String ocl) {
@@ -135,9 +161,30 @@ public final class LaunchProfileResolver {
     private static boolean looksLikeVodafoneVendor(JadDescriptor descriptor) {
         return descriptor.property("MIDlet-Vendor")
                 .map(String::trim)
-                .map(value -> value.toUpperCase(java.util.Locale.ROOT))
+                .map(value -> value.toUpperCase(Locale.ROOT))
                 .filter(value -> value.contains("VODAFONE") || value.contains("SOFTBANK"))
                 .isPresent();
+    }
+
+    private static AppProfile applyDescriptorCapabilityOverrides(JadDescriptor descriptor, AppProfile profile) {
+        var overrides = new LinkedHashMap<String, String>();
+        for (var entry : JSCL_CAPABILITY_OVERRIDES.entrySet()) {
+            descriptor.property(entry.getKey())
+                    .flatMap(LaunchProfileResolver::parseDescriptorBoolean)
+                    .ifPresent(value -> overrides.put(entry.getValue(), Boolean.toString(value)));
+        }
+        return profile.withSystemProperties(overrides);
+    }
+
+    private static Optional<Boolean> parseDescriptorBoolean(String rawValue) {
+        if (rawValue == null) {
+            return Optional.empty();
+        }
+        return switch (rawValue.trim().toUpperCase(Locale.ROOT)) {
+            case "Y", "YES", "TRUE", "1", "ON" -> Optional.of(true);
+            case "N", "NO", "FALSE", "0", "OFF" -> Optional.of(false);
+            default -> Optional.empty();
+        };
     }
 
     private static LaunchConfig.JskyPhoneType resolveJskyPhoneType(String platform) {
