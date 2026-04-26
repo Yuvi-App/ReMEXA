@@ -725,8 +725,10 @@ public final class SmafPlayback implements AutoCloseable {
             }
             byte[] midiBytes = readAll(SMAFDecoder.SequenceData);
             Sequence sequence = MidiSystem.getSequence(new ByteArrayInputStream(midiBytes));
+            Sequence renderSequence = cloneSequence(sequence);
             Sequence midiSequence = cloneSequence(sequence);
             List<SMAFDecoder.SequenceUserEvent> userEvents = copySequenceUserEvents(SMAFDecoder.sequenceUserEvents);
+            injectUserEvents(renderSequence, userEvents);
             injectUserEvents(midiSequence, userEvents);
             applySoftbankExvoFallback(source,
                     midiSequence,
@@ -747,7 +749,7 @@ public final class SmafPlayback implements AutoCloseable {
                                 + " exclusiveVoices=" + exclusiveVoices.size());
             }
             return new DecodedSmaf(
-                    sequence,
+                    renderSequence,
                     midiSequence,
                     copySequenceSysExEvents(SMAFDecoder.sequenceSysExEvents),
                     startupPackets,
@@ -909,7 +911,7 @@ public final class SmafPlayback implements AutoCloseable {
         if (programs.isEmpty() || unsupportedPrograms) {
             if (SmafDebug.isEnabled("smaf", SmafDebug.Level.INFO)) {
                 SmafDebug.info("smaf",
-                        "Skipping EXVO fallback: bankSelect=" + hasBankSelect
+                        "Skipping host MIDI EXVO fallback: bankSelect=" + hasBankSelect
                                 + ", programs=" + programs
                                 + ", unsupportedPrograms=" + unsupportedPrograms);
             }
@@ -917,7 +919,7 @@ public final class SmafPlayback implements AutoCloseable {
         }
         if (hasBankSelect && SmafDebug.isEnabled("smaf", SmafDebug.Level.INFO)) {
             SmafDebug.info("smaf",
-                    "Applying EXVO fallback despite bank-select events because the phrase uses custom EXVO voices with program slots "
+                    "Applying host MIDI EXVO fallback despite bank-select events because the phrase uses custom EXVO voices with program slots "
                             + programs + ".");
         }
 
@@ -1048,7 +1050,7 @@ public final class SmafPlayback implements AutoCloseable {
 
         if (remappedCount > 0) {
             Mobile.log(Mobile.LOG_INFO,
-                    "Applied SoftBank EXVO fallback GM mapping for programs " + programs
+                    "Applied SoftBank EXVO host MIDI fallback GM mapping for programs " + programs
                             + " using " + remappedCount + " program-change event(s).");
         }
 
@@ -1057,7 +1059,7 @@ public final class SmafPlayback implements AutoCloseable {
         }
         if (SmafDebug.isEnabled("smaf", SmafDebug.Level.INFO)) {
             SmafDebug.info("smaf",
-                    "EXVO fallback summary: voices=" + exclusiveVoiceCount
+                    "Host MIDI EXVO fallback summary: voices=" + exclusiveVoiceCount
                             + ", sysEx=" + sequenceSysExCount
                             + ", channels=[" + fallbackSummary + "]");
         }

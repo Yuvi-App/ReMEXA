@@ -37,6 +37,7 @@ final class FueTrekSampler implements Sampler {
     private final SelectorCache selectorCache = new SelectorCache();
     private final Set<String> loggedUnsupportedRawSysEx = new HashSet<>();
     private final RawExvoUpload81[] rawExvoUploads81ByNote = new RawExvoUpload81[0x80];
+    private final RawExvoProgramSlot[] rawExvoProgramSlots = new RawExvoProgramSlot[0x40];
     private final RawWaveUpload[] rawWaveUploadsByIndex = new RawWaveUpload[0x80];
     private RawExvoUpload81 pendingRawExvoUpload81;
     private final int maxPolyphony;
@@ -200,6 +201,16 @@ final class FueTrekSampler implements Sampler {
     }
 
     @Override
+    public void modulation(int channel, int value) {
+        ChannelState state = channel(channel);
+        if (state == null) {
+            return;
+        }
+        state.setModulationByte(value);
+        updateActiveVoiceModSeed(state);
+    }
+
+    @Override
     public void pitchBend(int channel, float semitones) {
         if (Float.isNaN(semitones) || Float.isInfinite(semitones)) {
             throw new IllegalArgumentException("Invalid semitones.");
@@ -232,6 +243,8 @@ final class FueTrekSampler implements Sampler {
             return;
         }
         state.program = program & 0x3f;
+        state.programSelected = true;
+        applyRawProgramSlotToState(state);
     }
 
     @Override
@@ -323,6 +336,7 @@ final class FueTrekSampler implements Sampler {
         rawGlobalLaneB1 = 0x40;
         pendingRawExvoUpload81 = null;
         Arrays.fill(rawExvoUploads81ByNote, null);
+        Arrays.fill(rawExvoProgramSlots, null);
         Arrays.fill(rawWaveUploadsByIndex, null);
         mixState.reset();
         refreshGlobalVolumeByte();
@@ -459,126 +473,142 @@ final class FueTrekSampler implements Sampler {
     }
 
     private boolean applyRawYamahaPacket(byte[] message) {
-        if (message.length < 6 || (message[0] & 0xff) != 0x43) {
+        SoftbankExvoPacket packet = SoftbankExvoPacket.parse(message);
+        if (packet == null) {
             return false;
         }
-        int family = message[1] & 0xff;
-        if (family != 0x05) {
-            return false;
-        }
-        int type = message[2] & 0xff;
-        if (type == 0x00) {
-            return applyRawSoftbankExvoWave(message);
-        }
-        if (type == 0x01) {
-            return applyRawSoftbankExvoVoice(message);
-        }
-        if (type == 0x02) {
-            return applyRawSoftbankExvoControl(message);
-        }
-        return false;
+        return switch (packet.kind()) {
+            case WAVE_UPLOAD -> applyRawSoftbankExvoWave(packet, message);
+            case VOICE_PROGRAM -> applyRawSoftbankExvoVoice(packet, message);
+            case CONTROL_TEMPLATE, CONTROL_UPLOAD_81 -> applyRawSoftbankExvoControl(packet, message);
+            case CONTROL_UNKNOWN, UNKNOWN -> {
+                debugRawExvoPacket("unsupported", packet, message);
+                yield false;
+            }
+        };
     }
 
-    private boolean applyRawSoftbankExvoWave(byte[] message) {
-        if (message.length < 5) {
+    private boolean applyRawSoftbankExvoWave(SoftbankExvoPacket packet, byte[] message) {
+        if (message.length < 5 || packet.groupId() < 0) {
             return false;
         }
-        RawWaveUpload upload = RawWaveUpload.decode(message[3] & 0x7f, Arrays.copyOfRange(message, 4, message.length));
+        RawWaveUpload upload = RawWaveUpload.decode(packet.groupId(), Arrays.copyOfRange(message, 4, message.length));
         if (upload == null) {
             return false;
         }
         rawWaveUploadsByIndex[upload.waveId] = upload;
         installPendingDynamicVoices(upload.waveId);
         debugRawExvoWave(upload, message);
+        debugRawExvoPacket("wave", packet, message);
         return true;
     }
 
-    private boolean applyRawSoftbankExvoVoice(byte[] message) {
-        if (message.length < 8) {
+    private boolean applyRawSoftbankExvoVoice(SoftbankExvoPacket packet, byte[] message) {
+        if (packet.channel() < 0 || packet.groupId() < 0 || packet.objectIndex() < 0) {
             return false;
         }
-        ChannelState state = channel(message[4] & 0xff);
-        if (state == null) {
+        int programSlot = packet.channel() & 0x3f;
+        RawExvoVoiceProgram program = parseRawExvoVoiceProgram(message, packet.payloadOffset());
+        RawExvoProgramSlot slot = new RawExvoProgramSlot(
+                programSlot,
+                packet.groupId(),
+                packet.objectIndex(),
+                program,
+                pendingRawExvoUpload81);
+        if (!slot.hasValidObject(rom)) {
             return false;
         }
-        int groupId = message[6] & 0xff;
-        int objectIndex = decodeRawExvoObjectIndex(message[7] & 0xff);
-        if (!state.applyRawObjectOverride(rom, groupId, objectIndex)) {
-            return false;
-        }
-        RawExvoVoiceProgram program = parseRawExvoVoiceProgram(message, 8);
-        state.applyRawVoiceProgram(program, pendingRawExvoUpload81);
-        debugRawExvoOverride("voice", state.channelIndex, groupId, objectIndex, message);
-        return true;
-    }
-
-    private boolean applyRawSoftbankExvoControl(byte[] message) {
-        if (message.length < 4) {
-            return false;
-        }
-        if ((message[3] & 0x80) != 0) {
-            if ((message[3] & 0xff) != 0x81) {
-                return false;
+        rawExvoProgramSlots[programSlot] = slot;
+        for (ChannelState state : channels) {
+            if (state.programSelected && (state.program & 0x3f) == programSlot) {
+                slot.applyTo(state, rom);
             }
-            RawExvoUpload81 upload = parseRawExvoUpload81(message, 4);
+        }
+        debugRawExvoVoiceProgram(programSlot, program);
+        debugRawExvoOverride("voice-slot", programSlot, packet.groupId(), packet.objectIndex(), message);
+        debugRawExvoPacket("voice", packet, message);
+        return true;
+    }
+
+    private void applyRawProgramSlotToState(ChannelState state) {
+        RawExvoProgramSlot slot = rawExvoProgramSlots[state.program & 0x3f];
+        if (slot == null || !slot.applyTo(state, rom)) {
+            state.clearVoiceOverride();
+        }
+    }
+
+    private boolean applyRawSoftbankExvoControl(SoftbankExvoPacket packet, byte[] message) {
+        if (packet.kind() == SoftbankExvoPacket.Kind.CONTROL_UPLOAD_81) {
+            RawExvoUpload81 upload = parseRawExvoUpload81(message, packet.payloadOffset());
             if (upload == null) {
                 return false;
             }
             pendingRawExvoUpload81 = upload;
             rememberRawExvoUpload81(upload);
             debugRawExvoUpload81(upload, message);
+            debugRawExvoPacket("control-upload", packet, message);
             return true;
         }
-        if (message.length < 9) {
+        if (packet.kind() != SoftbankExvoPacket.Kind.CONTROL_TEMPLATE
+                || packet.channel() < 0 || packet.groupId() < 0 || packet.objectIndex() < 0) {
             return false;
         }
-        ChannelState state = channel(message[4] & 0xff);
+        ChannelState state = channel(packet.channel());
         if (state == null) {
             return false;
         }
-        int groupId = message[7] & 0xff;
-        int objectIndex = decodeRawExvoObjectIndex(message[8] & 0xff);
+        int groupId = packet.groupId();
+        int objectIndex = packet.objectIndex();
+        installRawControlTemplateWave(packet, groupId, objectIndex);
         if (!state.applyRawControlTemplate(rom, groupId, objectIndex)) {
             return false;
         }
         debugRawExvoOverride("control-template", state.channelIndex, groupId, objectIndex, message);
+        debugRawExvoPacket("control-template", packet, message);
         return true;
     }
 
-    private static int decodeRawExvoObjectIndex(int rawValue) {
-        int index = rawValue & 0x3f;
-        if ((rawValue & 0xc0) != 0) {
-            index |= 0x40;
+    private void installRawControlTemplateWave(SoftbankExvoPacket packet, int groupId, int objectIndex) {
+        byte[] payload = packet.payload();
+        if (payload.length == 0) {
+            return;
         }
-        return index;
+        int sampleIndex = payload[payload.length - 1] & 0x7f;
+        RawWaveUpload wave = lookupRawWaveUpload(sampleIndex);
+        if (wave == null) {
+            return;
+        }
+        int rootKey = decodeRawControlTemplateRootKey(payload, objectIndex);
+        installDynamicVoiceObject(groupId, objectIndex, rootKey, wave.asSample(rootKey, 1024));
+        debugRawExvoDynamicControl(groupId, objectIndex, sampleIndex, rootKey);
+    }
+
+    private static int decodeRawControlTemplateRootKey(byte[] payload, int objectIndex) {
+        if (payload.length > 0) {
+            int rootKey = payload[0] & 0x7f;
+            if (rootKey >= 0x15 && rootKey <= 0x78) {
+                return rootKey;
+            }
+        }
+        return clampRange(objectIndex, 0, 0x7f);
+    }
+
+    private static int decodeRawExvoObjectIndex(int rawValue) {
+        return SoftbankExvoPacket.decodeObjectIndex(rawValue);
     }
 
     private static RawExvoVoiceProgram parseRawExvoVoiceProgram(byte[] message, int offset) {
-        ArrayList<RawExvoVoicePoint> points = new ArrayList<>();
-        int modeA = 0;
-        int modeB = 0;
-        int index = offset;
-        while (index < message.length) {
-            int marker = message[index] & 0xff;
-            if ((marker & 0xf0) == 0xf0 && index + 1 < message.length) {
-                modeA = marker & 0x3;
-                modeB = (marker >> 2) & 0x3;
-                index++;
-                continue;
-            }
-            DecodedCompactValue first = decodeRawExvoCompactValue(message, index);
-            if (first == null) {
-                break;
-            }
-            index = first.nextIndex;
-            DecodedCompactValue second = decodeRawExvoCompactValue(message, index);
-            if (second == null) {
-                break;
-            }
-            index = second.nextIndex;
-            points.add(new RawExvoVoicePoint(modeA, modeB, first.value, second.value));
+        if (message == null || offset < 0 || offset >= message.length) {
+            return null;
         }
-        return new RawExvoVoiceProgram(points);
+        int end = message.length;
+        if ((message[end - 1] & 0xff) == 0xf7) {
+            end--;
+        }
+        if (end <= offset) {
+            return null;
+        }
+        return RawExvoVoiceProgram.decode(Arrays.copyOfRange(message, offset, end));
     }
 
     private static DecodedCompactValue decodeRawExvoCompactValue(byte[] message, int offset) {
@@ -644,6 +674,7 @@ final class FueTrekSampler implements Sampler {
         installDynamicVoiceObject(upload.groupId() & 0xff, upload.objectIndex(), noteByte, sample);
         installDynamicVoiceObject(upload.groupId() & 0xfe, upload.objectIndex(), noteByte, sample);
         installDynamicVoiceObject(upload.groupId() | 1, upload.objectIndex(), noteByte, sample);
+        upload.markDynamicObjectInstalled();
     }
 
     private void installDynamicVoiceObject(int groupId, int objectIndex, int noteByte, FueTrekRom.Sample sample) {
@@ -803,10 +834,60 @@ final class FueTrekSampler implements Sampler {
                 .append(" samples=")
                 .append(upload.sample.pcm8.length)
                 .append(" data=");
-        for (int i = 0; i < message.length; i++) {
+        int shown = Math.min(message.length, 32);
+        for (int i = 0; i < shown; i++) {
             if (i > 0) {
                 sb.append(' ');
             }
+            sb.append(String.format("%02x", message[i] & 0xff));
+        }
+        if (shown < message.length) {
+            sb.append(" ...");
+        }
+        SmafDebug.debug("smaf", sb.toString());
+    }
+
+    private static void debugRawExvoDynamicControl(int groupId, int objectIndex, int sampleIndex, int noteByte) {
+        if (!debugControlEnabled()) {
+            return;
+        }
+        SmafDebug.debug("smaf", String.format(
+                "[FueTrekCtrl] raw-exvo control-template dynamic group=0x%02x obj=0x%02x sample=%d root=%d",
+                groupId & 0xff,
+                objectIndex & 0xff,
+                sampleIndex,
+                noteByte));
+    }
+
+    private static void debugRawExvoVoiceProgram(int channelIndex, RawExvoVoiceProgram program) {
+        if (!debugControlEnabled() || program == null) {
+            return;
+        }
+        SmafDebug.debug("smaf", String.format(
+                "[FueTrekCtrl] raw-exvo vm35 ch=%d alg=%d ops=%d pan=%d oct=%d loud=%d atk=%d rel=%d",
+                channelIndex,
+                program.algorithm,
+                program.pointCount(),
+                program.panpot,
+                program.basicOctave,
+                program.carrierLoudness(),
+                program.carrierAttack(),
+                program.carrierRelease()));
+    }
+
+    private static void debugRawExvoPacket(String source, SoftbankExvoPacket packet, byte[] message) {
+        if (!debugControlEnabled()) {
+            return;
+        }
+        StringBuilder sb = new StringBuilder(192);
+        sb.append("[FueTrekCtrl] raw-exvo packet ")
+                .append(source)
+                .append(' ')
+                .append(packet.summary());
+        int payloadOffset = Math.max(0, Math.min(packet.payloadOffset(), message.length));
+        int payloadEnd = Math.min(message.length, payloadOffset + Math.min(packet.payloadLength(), 16));
+        for (int i = payloadOffset; i < payloadEnd; i++) {
+            sb.append(i == payloadOffset ? " payload=" : " ");
             sb.append(String.format("%02x", message[i] & 0xff));
         }
         SmafDebug.debug("smaf", sb.toString());
@@ -1058,7 +1139,7 @@ final class FueTrekSampler implements Sampler {
             }
         }
         RawExvoUpload81 upload81 = lookupRawExvoUpload81(selector.noteByte);
-        if (upload81 != null) {
+        if (upload81 != null && upload81.hasDynamicObject()) {
             int[] groupCandidates = {
                     upload81.groupId(),
                     upload81.groupId() & 0xfe,
@@ -1739,23 +1820,272 @@ final class FueTrekSampler implements Sampler {
         }
     }
 
-    private static final class RawExvoVoiceProgram {
-        final RawExvoVoicePoint[] points;
+    private static final class RawExvoProgramSlot {
+        final int programSlot;
+        final int groupId;
+        final int objectIndex;
+        final RawExvoVoiceProgram voiceProgram;
+        final RawExvoUpload81 upload81;
 
-        RawExvoVoiceProgram(ArrayList<RawExvoVoicePoint> points) {
-            this.points = points.toArray(new RawExvoVoicePoint[0]);
+        RawExvoProgramSlot(
+                int programSlot,
+                int groupId,
+                int objectIndex,
+                RawExvoVoiceProgram voiceProgram,
+                RawExvoUpload81 upload81) {
+            this.programSlot = programSlot & 0x3f;
+            this.groupId = groupId & 0xff;
+            this.objectIndex = objectIndex & 0x7f;
+            this.voiceProgram = voiceProgram;
+            this.upload81 = upload81;
+        }
+
+        boolean hasValidObject(FueTrekRom rom) {
+            FueTrekRom.Group group = rom.group(groupId);
+            return group != null && group.entry(objectIndex) != null;
+        }
+
+        boolean applyTo(ChannelState state, FueTrekRom rom) {
+            if (!state.applyRawObjectOverride(rom, groupId, objectIndex)) {
+                return false;
+            }
+            state.applyRawVoiceProgram(voiceProgram, upload81);
+            return true;
+        }
+    }
+
+    private static final class RawExvoVoiceProgram {
+        final byte[] data;
+        final int drumKey;
+        final int panpot;
+        final int basicOctave;
+        final int lfo;
+        final int panEnable;
+        final int algorithm;
+        final RawExvoOperator[] operators;
+
+        private RawExvoVoiceProgram(
+                byte[] data,
+                int drumKey,
+                int panpot,
+                int basicOctave,
+                int lfo,
+                int panEnable,
+                int algorithm,
+                RawExvoOperator[] operators) {
+            this.data = data;
+            this.drumKey = drumKey;
+            this.panpot = panpot;
+            this.basicOctave = basicOctave;
+            this.lfo = lfo;
+            this.panEnable = panEnable;
+            this.algorithm = algorithm;
+            this.operators = operators;
+        }
+
+        static RawExvoVoiceProgram decode(byte[] data) {
+            if (data == null || data.length < 3) {
+                return null;
+            }
+            int expectedOperators = vm35OperatorCount(data[2] & 0x7);
+            int availableOperators = Math.max(0, (data.length - 3) / 7);
+            int operatorCount = Math.min(expectedOperators, availableOperators);
+            RawExvoOperator[] operators = new RawExvoOperator[operatorCount];
+            for (int i = 0; i < operatorCount; i++) {
+                operators[i] = RawExvoOperator.decode(data, 3 + (i * 7));
+            }
+            return new RawExvoVoiceProgram(
+                    data,
+                    data[0] & 0x7f,
+                    (data[1] >> 3) & 0xf,
+                    data[1] & 0x3,
+                    (data[2] >> 6) & 0x3,
+                    (data[2] >> 3) & 0x7,
+                    data[2] & 0x7,
+                    operators);
+        }
+
+        private static int vm35OperatorCount(int algorithm) {
+            return algorithm < 2 ? 2 : 4;
         }
 
         int pointCount() {
-            return points.length;
+            return operators.length;
+        }
+
+        int carrierLoudness() {
+            int loudness = 0;
+            int carriers = 0;
+            for (int index : carrierOperatorIndexes()) {
+                if (index >= 0 && index < operators.length) {
+                    loudness += 63 - operators[index].totalLevel;
+                    carriers++;
+                }
+            }
+            if (carriers == 0) {
+                return 0;
+            }
+            return clampRange(loudness / carriers, 0, 63);
+        }
+
+        int carrierAttack() {
+            int attack = 0;
+            int carriers = 0;
+            for (int index : carrierOperatorIndexes()) {
+                if (index >= 0 && index < operators.length) {
+                    attack += operators[index].attackRate;
+                    carriers++;
+                }
+            }
+            return carriers == 0 ? 0 : attack / carriers;
+        }
+
+        int carrierRelease() {
+            int release = 0;
+            int carriers = 0;
+            for (int index : carrierOperatorIndexes()) {
+                if (index >= 0 && index < operators.length) {
+                    release += operators[index].releaseRate;
+                    carriers++;
+                }
+            }
+            return carriers == 0 ? 0 : release / carriers;
+        }
+
+        int carrierSustainLevel() {
+            int sustain = 0;
+            int carriers = 0;
+            for (int index : carrierOperatorIndexes()) {
+                if (index >= 0 && index < operators.length) {
+                    sustain += operators[index].sustainLevel;
+                    carriers++;
+                }
+            }
+            return carriers == 0 ? 0 : sustain / carriers;
+        }
+
+        int averageMultiplier() {
+            int sum = 0;
+            for (RawExvoOperator operator : operators) {
+                sum += operator.multiple;
+            }
+            return operators.length == 0 ? 0 : sum / operators.length;
+        }
+
+        private int[] carrierOperatorIndexes() {
+            return switch (algorithm) {
+                case 0 -> new int[]{1};
+                case 1 -> new int[]{0, 1};
+                case 2 -> new int[]{1, 3};
+                case 3 -> new int[]{0, 1, 2, 3};
+                default -> new int[]{Math.max(0, operators.length - 1)};
+            };
+        }
+    }
+
+    private static final class RawExvoOperator {
+        final int sustainRate;
+        final int xof;
+        final int sustainEnabled;
+        final int keyScaleRate;
+        final int releaseRate;
+        final int decayRate;
+        final int attackRate;
+        final int sustainLevel;
+        final int totalLevel;
+        final int keyScaleLevel;
+        final int amplitudeModDepth;
+        final int amplitudeModEnabled;
+        final int vibratoDepth;
+        final int vibratoEnabled;
+        final int multiple;
+        final int detune;
+        final int waveShape;
+        final int feedback;
+
+        private RawExvoOperator(
+                int sustainRate,
+                int xof,
+                int sustainEnabled,
+                int keyScaleRate,
+                int releaseRate,
+                int decayRate,
+                int attackRate,
+                int sustainLevel,
+                int totalLevel,
+                int keyScaleLevel,
+                int amplitudeModDepth,
+                int amplitudeModEnabled,
+                int vibratoDepth,
+                int vibratoEnabled,
+                int multiple,
+                int detune,
+                int waveShape,
+                int feedback) {
+            this.sustainRate = sustainRate;
+            this.xof = xof;
+            this.sustainEnabled = sustainEnabled;
+            this.keyScaleRate = keyScaleRate;
+            this.releaseRate = releaseRate;
+            this.decayRate = decayRate;
+            this.attackRate = attackRate;
+            this.sustainLevel = sustainLevel;
+            this.totalLevel = totalLevel;
+            this.keyScaleLevel = keyScaleLevel;
+            this.amplitudeModDepth = amplitudeModDepth;
+            this.amplitudeModEnabled = amplitudeModEnabled;
+            this.vibratoDepth = vibratoDepth;
+            this.vibratoEnabled = vibratoEnabled;
+            this.multiple = multiple;
+            this.detune = detune;
+            this.waveShape = waveShape;
+            this.feedback = feedback;
+        }
+
+        static RawExvoOperator decode(byte[] data, int offset) {
+            int b0 = data[offset] & 0xff;
+            int b1 = data[offset + 1] & 0xff;
+            int b2 = data[offset + 2] & 0xff;
+            int b3 = data[offset + 3] & 0xff;
+            int b4 = data[offset + 4] & 0xff;
+            int b5 = data[offset + 5] & 0xff;
+            int b6 = data[offset + 6] & 0xff;
+            return new RawExvoOperator(
+                    (b0 >> 4) & 0xf,
+                    (b0 >> 3) & 1,
+                    (b0 >> 1) & 1,
+                    b0 & 1,
+                    (b1 >> 4) & 0xf,
+                    b1 & 0xf,
+                    (b2 >> 4) & 0xf,
+                    b2 & 0xf,
+                    (b3 >> 2) & 0x3f,
+                    b3 & 0x3,
+                    (b4 >> 5) & 0x3,
+                    (b4 >> 4) & 1,
+                    (b4 >> 1) & 0x3,
+                    b4 & 1,
+                    (b5 >> 4) & 0xf,
+                    b5 & 0x7,
+                    (b6 >> 3) & 0xf,
+                    b6 & 0x7);
         }
     }
 
     private static final class RawExvoUpload81 {
         final byte[] payload;
+        private boolean dynamicObjectInstalled;
 
         RawExvoUpload81(byte[] payload) {
             this.payload = payload;
+        }
+
+        boolean hasDynamicObject() {
+            return dynamicObjectInstalled;
+        }
+
+        void markDynamicObjectInstalled() {
+            dynamicObjectInstalled = true;
         }
 
         String primaryPairHex() {
@@ -1922,6 +2252,7 @@ final class FueTrekSampler implements Sampler {
         final int channelIndex;
         int bank = 0;
         int program = 0;
+        boolean programSelected = false;
         boolean drum = false;
         int familyMode = 0;
         int rawPitchWord = 0x2000;
@@ -1957,6 +2288,7 @@ final class FueTrekSampler implements Sampler {
         void reset() {
             bank = 0;
             program = 0;
+            programSelected = false;
             // Native channel reset marks channel 9 as the drum family by default.
             applyFamilyMode(channelIndex == 9 ? 1 : 0);
             rawPitchWord = 0x2000;
@@ -2002,6 +2334,10 @@ final class FueTrekSampler implements Sampler {
             return clampRange(modPair18Byte + modPair19Byte, 0, 0x7f);
         }
 
+        void setModulationByte(int modulationByte) {
+            modPair18Byte = clampRange(modulationByte, 0, 0x7f);
+        }
+
         void setBendRangeByte(int bendRangeByte) {
             this.bendRangeByte = clampRange(bendRangeByte, 0, 0x18);
         }
@@ -2029,9 +2365,38 @@ final class FueTrekSampler implements Sampler {
             template.clear();
         }
 
+        void clearVoiceOverride() {
+            selectedZoneOverride = null;
+            rawGroupOverride = -1;
+            rawObjectOverride = -1;
+            rawVoiceProgram = null;
+            rawUpload81 = null;
+            template.clear();
+        }
+
         void applyRawVoiceProgram(RawExvoVoiceProgram program, RawExvoUpload81 upload81) {
             rawVoiceProgram = program;
             rawUpload81 = upload81;
+            applyVm35VoiceProgram(program);
+        }
+
+        private void applyVm35VoiceProgram(RawExvoVoiceProgram program) {
+            if (program == null || program.pointCount() == 0) {
+                return;
+            }
+            template.ensureLoaded();
+            int attack = program.carrierAttack();
+            if (attack > 0) {
+                template.envA6 = Math.max(template.envA6, clampRange(0x20 + (attack * 0x38), 0x20, 0x3ff));
+            }
+            // Keep ROM zone oscillator amplitudes and gain. The VM35 operator
+            // levels are not linear PCM gain values, and boosting them here makes
+            // EXVO-routed voices sound rougher/louder than neighboring ROM voices.
+            // Keep ROM zone sustain/release. The VM35 values are operator rates, and
+            // mapping them directly here can make short EXVO cues smear unnaturally.
+            if (program.averageMultiplier() >= 8) {
+                template.modScale2 = Math.min(template.modScale2, 0x280);
+            }
         }
 
         void reloadSelectedTemplate() {
@@ -2115,12 +2480,22 @@ final class FueTrekSampler implements Sampler {
 
         boolean applyRawObjectOverride(FueTrekRom rom, int groupId, int objectIndex) {
             FueTrekRom.Group group = rom.group(groupId);
-            if (group == null || group.entry(objectIndex) == null) {
+            if (group == null) {
+                return false;
+            }
+            FueTrekRom.ObjectHeader object = group.entry(objectIndex);
+            if (object == null) {
                 return false;
             }
             selectedZoneOverride = null;
             rawGroupOverride = groupId & 0xff;
             rawObjectOverride = objectIndex & 0x7f;
+            for (FueTrekRom.Zone zone : object.zones) {
+                if (zone != null) {
+                    template.loadFromZone(zone);
+                    break;
+                }
+            }
             return true;
         }
 

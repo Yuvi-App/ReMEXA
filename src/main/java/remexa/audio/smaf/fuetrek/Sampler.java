@@ -179,6 +179,15 @@ public interface Sampler
     void panpot(int channel, float panpot);
 
     /**
+     * Specify modulation depth on a channel. MIDI controller 1 maps to
+     * Yamaha/FueTrek vibrato-style modulation on supported programs.
+     *
+     * @param channel The index of the channel to configure.
+     * @param value The 7-bit modulation value, from 0 to 127.
+     */
+    void modulation(int channel, int value);
+
+    /**
      * Specify a channel's pitch bend. The master tuning is multiplied by
      * each channel's base tuning to determine the effective tuning on
      * that

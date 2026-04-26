@@ -73,6 +73,8 @@ final class SmafFueTrekRenderer {
         if (SmafDebug.isEnabled("render", SmafDebug.Level.INFO)) {
             SmafDebug.info("render",
                     "FueTrek render events=" + events.size()
+                            + " startupPackets=" + startupPackets.size()
+                            + " sequenceSysEx=" + sysExEvents.size()
                             + " pcmClips=" + countNonNullClips(pcmClips)
                             + " pcmTriggers=" + pcmTriggers.size());
         }
@@ -167,6 +169,7 @@ final class SmafFueTrekRenderer {
                 channelState.bankMsb = value;
                 sampler.bankChange(channel, value);
             }
+            case 1 -> sampler.modulation(channel, value);
             case 7 -> {
                 channelState.channelVolume = value / 127.0f;
                 sampler.volume(channel, channelState.channelVolume * channelState.expression);
@@ -199,13 +202,12 @@ final class SmafFueTrekRenderer {
                 sampler.bankChange(channel, 0);
                 sampler.volume(channel, 1.0f);
                 sampler.panpot(channel, 0.0f);
+                sampler.modulation(channel, 0);
                 sampler.pitchBendRange(channel, channelState.pitchBendRangeSemitones);
                 sampler.pitchBend(channel, 0.0f);
             }
             default -> {
-                // Controllers such as modulation are currently ignored by the
-                // clean-room SMAF path because the Fuetrek sampler does not expose
-                // a direct MIDI controller surface for them.
+                // Unsupported controllers are ignored by the clean-room SMAF path.
             }
         }
     }
