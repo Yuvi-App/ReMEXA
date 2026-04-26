@@ -1,20 +1,21 @@
 package com.jblend.media.karaoke;
 
 public class KaraokeData extends com.jblend.media.MediaData {
-    public static final java.lang.String type = "";
+    public static final java.lang.String type = "karaoke";
 
     public KaraokeData () {
         remexa.probes.SdkStubSupport.log("com.jblend.media.karaoke.KaraokeData", "KaraokeData");
     }
 
     public KaraokeData (java.lang.String name) throws java.io.IOException {
+        super(name);
         remexa.probes.SdkStubSupport.log("com.jblend.media.karaoke.KaraokeData", "KaraokeData", name);
     }
 
     public KaraokeData (byte[] data) {
+        super(data);
         remexa.probes.SdkStubSupport.log("com.jblend.media.karaoke.KaraokeData", "KaraokeData", data);
     }
-
 
     public int getContentType () {
         remexa.probes.SdkStubSupport.log("com.jblend.media.karaoke.KaraokeData", "getContentType");
@@ -33,11 +34,12 @@ public class KaraokeData extends com.jblend.media.MediaData {
 
     public java.lang.String getMediaType () {
         remexa.probes.SdkStubSupport.log("com.jblend.media.karaoke.KaraokeData", "getMediaType");
-        return "";
+        return type;
     }
 
     public void setData (byte[] data) {
         remexa.probes.SdkStubSupport.log("com.jblend.media.karaoke.KaraokeData", "setData", data);
+        super.setData(data);
     }
 
     public int getWidth () {

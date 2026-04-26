@@ -1,10 +1,10 @@
 package com.j_phone.phonedata;
 
 public interface DataElement {
-    public static final int STRING = 0;
-    public static final int INT = 0;
-    public static final int DATE = 0;
-    public static final int BOOLEAN = 0;
+    public static final int STRING = 1;
+    public static final int INT = 2;
+    public static final int DATE = 3;
+    public static final int BOOLEAN = 4;
 
     public java.lang.String getType ();
     public int getElementCount (int id) throws java.io.IOException;

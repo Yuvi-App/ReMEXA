@@ -7,19 +7,21 @@ public class SmafPlayer extends com.jblend.media.MediaPlayer implements com.jble
 
     public SmafPlayer (com.jblend.media.smaf.SmafData data) {
         remexa.probes.SdkStubSupport.log("com.jblend.media.smaf.SmafPlayer", "SmafPlayer", data);
+        if (data != null) {
+            super.setData(data);
+        }
     }
 
     public SmafPlayer (byte[] data) {
         remexa.probes.SdkStubSupport.log("com.jblend.media.smaf.SmafPlayer", "SmafPlayer", data);
+        if (data != null) {
+            super.setData(new com.jblend.media.smaf.SmafData(data));
+        }
     }
-
 
     public void setData (com.jblend.media.smaf.SmafData data) {
         remexa.probes.SdkStubSupport.log("com.jblend.media.smaf.SmafPlayer", "setData", data);
-    }
-
-    public void setData (com.jblend.media.MediaData data) {
-        remexa.probes.SdkStubSupport.log("com.jblend.media.smaf.SmafPlayer", "setData", data);
+        super.setData(data);
     }
 
     public int getCurrent () {
@@ -71,14 +73,6 @@ public class SmafPlayer extends com.jblend.media.MediaPlayer implements com.jble
         remexa.probes.SdkStubSupport.log("com.jblend.media.smaf.SmafPlayer", "setBounds", x, y, width, height);
     }
 
-    public void addMediaPlayerListener (com.jblend.media.MediaPlayerListener l) {
-        remexa.probes.SdkStubSupport.log("com.jblend.media.smaf.SmafPlayer", "addMediaPlayerListener", l);
-    }
-
-    public void removeMediaPlayerListener (com.jblend.media.MediaPlayerListener l) {
-        remexa.probes.SdkStubSupport.log("com.jblend.media.smaf.SmafPlayer", "removeMediaPlayerListener", l);
-    }
-
     public void addSmafPlayerListener (com.jblend.media.smaf.SmafPlayerListener l) {
         remexa.probes.SdkStubSupport.log("com.jblend.media.smaf.SmafPlayer", "addSmafPlayerListener", l);
     }
@@ -123,40 +117,13 @@ public class SmafPlayer extends com.jblend.media.MediaPlayer implements com.jble
 
     public int getMediaWidth () {
         remexa.probes.SdkStubSupport.log("com.jblend.media.smaf.SmafPlayer", "getMediaWidth");
-        return 0;
+        var data = currentData();
+        return data instanceof com.jblend.media.smaf.SmafData smaf ? smaf.getWidth() : 0;
     }
 
     public int getMediaHeight () {
         remexa.probes.SdkStubSupport.log("com.jblend.media.smaf.SmafPlayer", "getMediaHeight");
-        return 0;
-    }
-
-    public void play () {
-        remexa.probes.SdkStubSupport.log("com.jblend.media.smaf.SmafPlayer", "play");
-    }
-
-    public void play (boolean isRepeat) {
-        remexa.probes.SdkStubSupport.log("com.jblend.media.smaf.SmafPlayer", "play", isRepeat);
-    }
-
-    public void play (int count) {
-        remexa.probes.SdkStubSupport.log("com.jblend.media.smaf.SmafPlayer", "play", count);
-    }
-
-    public void stop () {
-        remexa.probes.SdkStubSupport.log("com.jblend.media.smaf.SmafPlayer", "stop");
-    }
-
-    public void pause () {
-        remexa.probes.SdkStubSupport.log("com.jblend.media.smaf.SmafPlayer", "pause");
-    }
-
-    public void resume () {
-        remexa.probes.SdkStubSupport.log("com.jblend.media.smaf.SmafPlayer", "resume");
-    }
-
-    public int getState () {
-        remexa.probes.SdkStubSupport.log("com.jblend.media.smaf.SmafPlayer", "getState");
-        return 0;
+        var data = currentData();
+        return data instanceof com.jblend.media.smaf.SmafData smaf ? smaf.getHeight() : 0;
     }
 }

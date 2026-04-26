@@ -7,19 +7,21 @@ public class KaraokePlayer extends com.jblend.media.MediaPlayer implements com.j
 
     public KaraokePlayer (com.jblend.media.karaoke.KaraokeData data) {
         remexa.probes.SdkStubSupport.log("com.jblend.media.karaoke.KaraokePlayer", "KaraokePlayer", data);
+        if (data != null) {
+            super.setData(data);
+        }
     }
 
     public KaraokePlayer (byte[] data) {
         remexa.probes.SdkStubSupport.log("com.jblend.media.karaoke.KaraokePlayer", "KaraokePlayer", data);
+        if (data != null) {
+            super.setData(new com.jblend.media.karaoke.KaraokeData(data));
+        }
     }
-
 
     public void setData (com.jblend.media.karaoke.KaraokeData data) {
         remexa.probes.SdkStubSupport.log("com.jblend.media.karaoke.KaraokePlayer", "setData", data);
-    }
-
-    public void setData (com.jblend.media.MediaData data) {
-        remexa.probes.SdkStubSupport.log("com.jblend.media.karaoke.KaraokePlayer", "setData", data);
+        super.setData(data);
     }
 
     public int getCurrent () {
@@ -106,49 +108,14 @@ public class KaraokePlayer extends com.jblend.media.MediaPlayer implements com.j
 
     public int getMediaWidth () {
         remexa.probes.SdkStubSupport.log("com.jblend.media.karaoke.KaraokePlayer", "getMediaWidth");
-        return 0;
+        var data = currentData();
+        return data instanceof com.jblend.media.karaoke.KaraokeData karaoke ? karaoke.getWidth() : 0;
     }
 
     public int getMediaHeight () {
         remexa.probes.SdkStubSupport.log("com.jblend.media.karaoke.KaraokePlayer", "getMediaHeight");
-        return 0;
-    }
-
-    public void play () {
-        remexa.probes.SdkStubSupport.log("com.jblend.media.karaoke.KaraokePlayer", "play");
-    }
-
-    public void play (boolean isRepeat) {
-        remexa.probes.SdkStubSupport.log("com.jblend.media.karaoke.KaraokePlayer", "play", isRepeat);
-    }
-
-    public void play (int count) {
-        remexa.probes.SdkStubSupport.log("com.jblend.media.karaoke.KaraokePlayer", "play", count);
-    }
-
-    public void stop () {
-        remexa.probes.SdkStubSupport.log("com.jblend.media.karaoke.KaraokePlayer", "stop");
-    }
-
-    public void pause () {
-        remexa.probes.SdkStubSupport.log("com.jblend.media.karaoke.KaraokePlayer", "pause");
-    }
-
-    public void resume () {
-        remexa.probes.SdkStubSupport.log("com.jblend.media.karaoke.KaraokePlayer", "resume");
-    }
-
-    public int getState () {
-        remexa.probes.SdkStubSupport.log("com.jblend.media.karaoke.KaraokePlayer", "getState");
-        return 0;
-    }
-
-    public void addMediaPlayerListener (com.jblend.media.MediaPlayerListener l) {
-        remexa.probes.SdkStubSupport.log("com.jblend.media.karaoke.KaraokePlayer", "addMediaPlayerListener", l);
-    }
-
-    public void removeMediaPlayerListener (com.jblend.media.MediaPlayerListener l) {
-        remexa.probes.SdkStubSupport.log("com.jblend.media.karaoke.KaraokePlayer", "removeMediaPlayerListener", l);
+        var data = currentData();
+        return data instanceof com.jblend.media.karaoke.KaraokeData karaoke ? karaoke.getHeight() : 0;
     }
 
     public int getSpeed () {

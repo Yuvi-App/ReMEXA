@@ -1,9 +1,14 @@
 package com.j_phone.phonedata;
 
 public class CallInfo {
+    private static final com.j_phone.phonedata.CallInfo INSTANCE = new com.j_phone.phonedata.CallInfo();
+
+    private CallInfo () {
+    }
+
     public static com.j_phone.phonedata.CallInfo getInstance () {
         remexa.probes.SdkStubSupport.log("com.j_phone.phonedata.CallInfo", "getInstance");
-        return null;
+        return INSTANCE;
     }
 
     public int getLastTime () {

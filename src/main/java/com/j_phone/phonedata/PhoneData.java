@@ -2,7 +2,7 @@ package com.j_phone.phonedata;
 
 public interface PhoneData {
     public static final int SORT_ASCENDING = 0;
-    public static final int SORT_DESCENDING = 0;
+    public static final int SORT_DESCENDING = 1;
 
     public void close ();
     public java.lang.String getListType ();
