@@ -69,6 +69,7 @@ public final class Display {
         if (displayable == null) {
             return;
         }
+        DisplayableHostAccess.fireSizeChanged(displayable);
         displayable.fireShown();
         if (displayable instanceof com.j_phone.amuse.ACanvas aCanvas) {
             aCanvas.attachHostGraphics();

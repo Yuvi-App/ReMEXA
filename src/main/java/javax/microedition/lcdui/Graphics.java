@@ -16,6 +16,8 @@ public class Graphics {
     public static final int TOP = 16;
     public static final int BOTTOM = 32;
     public static final int BASELINE = 64;
+    public static final int SOLID = 0;
+    public static final int DOTTED = 1;
     private final Graphics2D delegate;
     private final int surfaceWidth;
     private final int surfaceHeight;
@@ -24,6 +26,7 @@ public class Graphics {
     private int argbColor = 0xFF000000;
     private int translateX;
     private int translateY;
+    private int strokeStyle = SOLID;
 
     public Graphics(Graphics2D delegate, int surfaceWidth, int surfaceHeight) {
         this(delegate, surfaceWidth, surfaceHeight, true);
@@ -45,12 +48,51 @@ public class Graphics {
     }
 
     public void setColor(int red, int green, int blue) {
-        argbColor = 0xFF000000 | (clamp(red) << 16) | (clamp(green) << 8) | clamp(blue);
+        validateColorComponent(red);
+        validateColorComponent(green);
+        validateColorComponent(blue);
+        argbColor = 0xFF000000 | (red << 16) | (green << 8) | blue;
         delegate.setColor(new Color(argbColor, true));
     }
 
     public int getColor() {
         return argbColor & 0x00FFFFFF;
+    }
+
+    public int getRedComponent() {
+        return (argbColor >>> 16) & 0xFF;
+    }
+
+    public int getGreenComponent() {
+        return (argbColor >>> 8) & 0xFF;
+    }
+
+    public int getBlueComponent() {
+        return argbColor & 0xFF;
+    }
+
+    public int getGrayScale() {
+        return (getRedComponent() * 299 + getGreenComponent() * 587 + getBlueComponent() * 114 + 500) / 1000;
+    }
+
+    public void setGrayScale(int value) {
+        validateColorComponent(value);
+        setColor(value, value, value);
+    }
+
+    public int getDisplayColor(int color) {
+        return color & 0x00FFFFFF;
+    }
+
+    public void setStrokeStyle(int style) {
+        if (style != SOLID && style != DOTTED) {
+            throw new IllegalArgumentException("Unsupported stroke style: " + style);
+        }
+        strokeStyle = style;
+    }
+
+    public int getStrokeStyle() {
+        return strokeStyle;
     }
 
     public void fillRect(int x, int y, int width, int height) {
@@ -273,6 +315,7 @@ public class Graphics {
         argbColor = 0xFF000000;
         translateX = 0;
         translateY = 0;
+        strokeStyle = SOLID;
         delegate.setClip(0, 0, surfaceWidth, surfaceHeight);
         delegate.setFont(font.awtFont());
         delegate.setColor(new Color(argbColor, true));
@@ -319,8 +362,10 @@ public class Graphics {
         return y;
     }
 
-    private static int clamp(int value) {
-        return Math.max(0, Math.min(255, value));
+    private static void validateColorComponent(int value) {
+        if (value < 0 || value > 255) {
+            throw new IllegalArgumentException("Color component out of range: " + value);
+        }
     }
 
     private static BufferedImage transformRegion(BufferedImage image, int transform) {

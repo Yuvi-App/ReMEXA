@@ -3,6 +3,7 @@ package javax.microedition.lcdui;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import remexa.host.runtime.MidletRuntime;
 
 public class Displayable {
     private final List<Command> commands = new ArrayList<>();
@@ -10,6 +11,9 @@ public class Displayable {
     private Ticker ticker;
     private CommandListener commandListener;
     private boolean shown;
+    private boolean sizeInitialized;
+    private int width;
+    private int height;
 
     public String getTitle() {
         return title;
@@ -41,12 +45,23 @@ public class Displayable {
         this.commandListener = commandListener;
     }
 
+    public int getWidth() {
+        return MidletRuntime.getDisplayMetrics(this).width();
+    }
+
+    public int getHeight() {
+        return MidletRuntime.getDisplayMetrics(this).height();
+    }
+
     public CommandListener getCommandListener() {
         return commandListener;
     }
 
     public boolean isShown() {
         return shown;
+    }
+
+    protected void sizeChanged(int width, int height) {
     }
 
     public void fireCommand(int index) {
@@ -123,5 +138,15 @@ public class Displayable {
 
     final void fireHidden() {
         shown = false;
+    }
+
+    final void fireSizeChanged(int width, int height) {
+        if (sizeInitialized && this.width == width && this.height == height) {
+            return;
+        }
+        this.width = width;
+        this.height = height;
+        sizeInitialized = true;
+        sizeChanged(width, height);
     }
 }

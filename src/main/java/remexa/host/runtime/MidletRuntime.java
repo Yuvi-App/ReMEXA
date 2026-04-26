@@ -14,6 +14,7 @@ import java.util.function.Consumer;
 import javax.microedition.lcdui.Canvas;
 import javax.microedition.lcdui.Display;
 import javax.microedition.lcdui.Displayable;
+import javax.microedition.lcdui.DisplayableHostAccess;
 import javax.microedition.midlet.MIDlet;
 import remexa.host.input.HostTextInputRequest;
 import remexa.host.jad.JadDescriptor;
@@ -166,6 +167,10 @@ public final class MidletRuntime {
         context.updateDisplayMetrics(displayMetrics);
         if (displayable != null) {
             context.surfaceFor(displayable).updateDisplayMetrics(displayMetrics);
+            DisplayableHostAccess.fireSizeChanged(displayable, displayMetrics);
+            if (displayable instanceof Canvas canvas && canvas.isShown()) {
+                canvas.repaint();
+            }
         }
         DebugLog.log(
                 LogCategory.UI,
