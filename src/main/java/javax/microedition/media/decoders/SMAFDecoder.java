@@ -1191,11 +1191,12 @@ public final class SMAFDecoder
                         gateTime += 128; // Add 128 to gate time as per the SMAF documentation
                     }
             
-                    // As per the documentation, gateTime cannot be zero, this indicates either a corrupted file or a parse error
+                    // Some real-world phrases encode zero gate lengths. Skip the
+                    // broken note, but keep decoding the remainder of the track.
                     if (gateTime <= 0) 
                     {
-                        smafLog(SMAF_LOG_ERROR, SMAFDecoder.class.getPackage().getName() + "." + SMAFDecoder.class.getSimpleName() + ": " + "note gateTime value cannot be zero. ");
-                        return;
+                        smafLog(SMAF_LOG_WARNING, SMAFDecoder.class.getPackage().getName() + "." + SMAFDecoder.class.getSimpleName() + ": " + "Skipping note with zero gateTime on channel " + channel + ".");
+                        continue;
                     }
 
                     int midiNoteNumber;
@@ -1316,11 +1317,13 @@ public final class SMAFDecoder
                                 }
                             }
                     
-                            // As per the documentation, gateTime cannot be zero, this indicates either a corrupted file or a parse error
+                            // Some carrier-authored files use zero gate times for
+                            // malformed note placeholders. Ignore the note instead
+                            // of aborting the whole phrase.
                             if (gateTime <= 0) 
                             {
-                                smafLog(SMAF_LOG_ERROR, SMAFDecoder.class.getPackage().getName() + "." + SMAFDecoder.class.getSimpleName() + ": " + "note gateTime value cannot be zero. ");
-                                return;
+                                smafLog(SMAF_LOG_WARNING, SMAFDecoder.class.getPackage().getName() + "." + SMAFDecoder.class.getSimpleName() + ": " + "Skipping note with zero gateTime on channel " + channel + ".");
+                                break;
                             }
                             
                             // TODO: This might be incorrect as the SMAF documentation doesn't detail how the chip differentiates between PCM data and Sequence Data to play, for now notes are played alongside the PCM index
@@ -1358,11 +1361,13 @@ public final class SMAFDecoder
                                 }
                             }
                     
-                            // As per the documentation, gateTime cannot be zero, this indicates either a corrupted file or a parse error
+                            // Some carrier-authored files use zero gate times for
+                            // malformed note placeholders. Ignore the note instead
+                            // of aborting the whole phrase.
                             if (gateTime <= 0) 
                             {
-                                smafLog(SMAF_LOG_ERROR, SMAFDecoder.class.getPackage().getName() + "." + SMAFDecoder.class.getSimpleName() + ": " + "note gateTime value cannot be zero. ");
-                                return;
+                                smafLog(SMAF_LOG_WARNING, SMAFDecoder.class.getPackage().getName() + "." + SMAFDecoder.class.getSimpleName() + ": " + "Skipping note with zero gateTime on channel " + channel + ".");
+                                break;
                             }
                             
                             smafLog(SMAF_LOG_DEBUG, SMAFDecoder.class.getPackage().getName() + "." + SMAFDecoder.class.getSimpleName() + ": " + "Adding note value " + noteNumber + " with new velocity to channel " + channel);
@@ -1663,11 +1668,12 @@ public final class SMAFDecoder
                     gateTime = readMidiVariableLength(data, offsetRef);
                     offset = offsetRef[0];
 
-                    // As per the documentation, gateTime cannot be zero, this indicates either a corrupted file or a parse error
+                    // Some real-world SEQU phrases encode zero gate lengths.
+                    // Skip the note and continue decoding the phrase.
                     if (gateTime <= 0) 
                     {
-                        smafLog(SMAF_LOG_ERROR, SMAFDecoder.class.getPackage().getName() + "." + SMAFDecoder.class.getSimpleName() + ": " + "note gateTime value cannot be zero. ");
-                        return;
+                        smafLog(SMAF_LOG_WARNING, SMAFDecoder.class.getPackage().getName() + "." + SMAFDecoder.class.getSimpleName() + ": " + "Skipping note with zero gateTime on channel " + channel + ".");
+                        continue;
                     }
                     
                     smafLog(SMAF_LOG_DEBUG, SMAFDecoder.class.getPackage().getName() + "." + SMAFDecoder.class.getSimpleName() + ": " + "Adding note value " + noteValue + " to channel " + channel);

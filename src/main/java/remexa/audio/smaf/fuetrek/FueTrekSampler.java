@@ -50,6 +50,7 @@ final class FueTrekSampler implements Sampler {
     private int hostGlobalVolumeByte = 0x7f;
     private int rawGlobalLaneB0 = 0x7f;
     private int rawGlobalLaneB1 = 0x40;
+    private int implicitRawExvoProgramSlot = 0;
 
     FueTrekSampler(FueTrekRom rom, float sampleRate, int maxPolyphony) {
         this.rom = rom;
@@ -334,6 +335,7 @@ final class FueTrekSampler implements Sampler {
         hostGlobalVolumeByte = 0x7f;
         rawGlobalLaneB0 = 0x7f;
         rawGlobalLaneB1 = 0x40;
+        implicitRawExvoProgramSlot = 0;
         pendingRawExvoUpload81 = null;
         Arrays.fill(rawExvoUploads81ByNote, null);
         Arrays.fill(rawExvoProgramSlots, null);
@@ -481,6 +483,7 @@ final class FueTrekSampler implements Sampler {
             case WAVE_UPLOAD -> applyRawSoftbankExvoWave(packet, message);
             case VOICE_PROGRAM -> applyRawSoftbankExvoVoice(packet, message);
             case CONTROL_TEMPLATE, CONTROL_UPLOAD_81 -> applyRawSoftbankExvoControl(packet, message);
+            case CONTROL_PITCH_BEND_RANGE -> applyRawYamahaMaPitchBendRange(packet, message);
             case CONTROL_UNKNOWN, UNKNOWN -> {
                 debugRawExvoPacket("unsupported", packet, message);
                 yield false;
@@ -504,10 +507,12 @@ final class FueTrekSampler implements Sampler {
     }
 
     private boolean applyRawSoftbankExvoVoice(SoftbankExvoPacket packet, byte[] message) {
-        if (packet.channel() < 0 || packet.groupId() < 0 || packet.objectIndex() < 0) {
+        if (packet.groupId() < 0 || packet.objectIndex() < 0) {
             return false;
         }
-        int programSlot = packet.channel() & 0x3f;
+        int programSlot = packet.channel() >= 0
+                ? packet.channel() & 0x3f
+                : implicitRawExvoProgramSlot++ & 0x3f;
         RawExvoVoiceProgram program = parseRawExvoVoiceProgram(message, packet.payloadOffset());
         RawExvoProgramSlot slot = new RawExvoProgramSlot(
                 programSlot,
@@ -565,6 +570,21 @@ final class FueTrekSampler implements Sampler {
         }
         debugRawExvoOverride("control-template", state.channelIndex, groupId, objectIndex, message);
         debugRawExvoPacket("control-template", packet, message);
+        return true;
+    }
+
+    private boolean applyRawYamahaMaPitchBendRange(SoftbankExvoPacket packet, byte[] message) {
+        if (packet.channel() < 0 || packet.payloadLength() < 1) {
+            return false;
+        }
+        ChannelState state = channel(packet.channel());
+        if (state == null) {
+            return false;
+        }
+        int range = packet.payload()[0] & 0x7f;
+        state.setBendRangeByte(range);
+        updateActiveVoicePitchRange(state);
+        debugRawExvoPacket("pitch-bend-range", packet, message);
         return true;
     }
 
@@ -1940,6 +1960,30 @@ final class FueTrekSampler implements Sampler {
             return carriers == 0 ? 0 : attack / carriers;
         }
 
+        int carrierDecay() {
+            int decay = 0;
+            int carriers = 0;
+            for (int index : carrierOperatorIndexes()) {
+                if (index >= 0 && index < operators.length) {
+                    decay += operators[index].decayRate;
+                    carriers++;
+                }
+            }
+            return carriers == 0 ? 0 : decay / carriers;
+        }
+
+        int carrierSustainRate() {
+            int sustainRate = 0;
+            int carriers = 0;
+            for (int index : carrierOperatorIndexes()) {
+                if (index >= 0 && index < operators.length) {
+                    sustainRate += operators[index].sustainRate;
+                    carriers++;
+                }
+            }
+            return carriers == 0 ? 0 : sustainRate / carriers;
+        }
+
         int carrierRelease() {
             int release = 0;
             int carriers = 0;
@@ -1962,6 +2006,27 @@ final class FueTrekSampler implements Sampler {
                 }
             }
             return carriers == 0 ? 0 : sustain / carriers;
+        }
+
+        int carrierVibratoDepth() {
+            int depth = 0;
+            int carriers = 0;
+            for (int index : carrierOperatorIndexes()) {
+                if (index >= 0 && index < operators.length && operators[index].vibratoEnabled != 0) {
+                    depth += operators[index].vibratoDepth;
+                    carriers++;
+                }
+            }
+            return carriers == 0 ? 0 : depth / carriers;
+        }
+
+        boolean hasCarrierVibrato() {
+            for (int index : carrierOperatorIndexes()) {
+                if (index >= 0 && index < operators.length && operators[index].vibratoEnabled != 0) {
+                    return true;
+                }
+            }
+            return false;
         }
 
         int averageMultiplier() {
@@ -2326,6 +2391,11 @@ final class FueTrekSampler implements Sampler {
             channelPanByte = clampRange((rawPan6 << 1) - 0x40, -0x40, 0x3f);
         }
 
+        void setVm35Pan4(int panpot4) {
+            int signedPan = ((clampRange(panpot4, 0, 0xf) * 0x7f) / 0xf) - 0x40;
+            channelPanByte = clampRange(signedPan, -0x40, 0x3f);
+        }
+
         void setRawPitchWord(int rawPitchWord) {
             this.rawPitchWord = clampRange(rawPitchWord, 0, 0x3fff);
         }
@@ -2343,6 +2413,12 @@ final class FueTrekSampler implements Sampler {
         }
 
         VoiceTemplate snapshotTemplate(ResolvedZone resolved) {
+            if (rawVoiceProgram != null && resolved != null && resolved.zone != null) {
+                TemplateState overlay = new TemplateState();
+                overlay.loadFromZone(resolved.zone);
+                applyVm35VoiceProgram(overlay, rawVoiceProgram);
+                return overlay.snapshot();
+            }
             if (!template.loaded && selectedZoneOverride != null) {
                 template.loadFromZone(selectedZoneOverride);
             }
@@ -2377,26 +2453,65 @@ final class FueTrekSampler implements Sampler {
         void applyRawVoiceProgram(RawExvoVoiceProgram program, RawExvoUpload81 upload81) {
             rawVoiceProgram = program;
             rawUpload81 = upload81;
-            applyVm35VoiceProgram(program);
+            if (program != null && program.panEnable != 0) {
+                setVm35Pan4(program.panpot);
+            }
+            applyVm35VoiceProgram(template, program);
         }
 
-        private void applyVm35VoiceProgram(RawExvoVoiceProgram program) {
-            if (program == null || program.pointCount() == 0) {
+        private void applyVm35VoiceProgram(TemplateState target, RawExvoVoiceProgram program) {
+            if (target == null || program == null || program.pointCount() == 0) {
                 return;
             }
-            template.ensureLoaded();
+            target.ensureLoaded();
             int attack = program.carrierAttack();
             if (attack > 0) {
-                template.envA6 = Math.max(template.envA6, clampRange(0x20 + (attack * 0x38), 0x20, 0x3ff));
+                target.envA6 = Math.max(target.envA6, clampRange(0x20 + (attack * 0x38), 0x20, 0x3ff));
+            }
+            int decay = program.carrierDecay();
+            if (decay > 0) {
+                int decayTarget = clampRange(0x40 + (decay * 0x34), 0x40, 0x3ff);
+                target.envA8 = blendTemplateWord(target.envA8, decayTarget);
+            }
+            int sustainRate = program.carrierSustainRate();
+            if (sustainRate > 0) {
+                int sustainTarget = clampRange(0x20 + (sustainRate * 0x30), 0x20, 0x3ff);
+                target.envAA = blendTemplateWord(target.envAA, sustainTarget);
+            }
+            int release = program.carrierRelease();
+            if (release > 0) {
+                target.envAE = Math.max(target.envAE, clampRange(2 + (release * 2), 0, 0x1f));
+            }
+            int sustainLevel = program.carrierSustainLevel();
+            if (sustainLevel > 0) {
+                int sustainLevelTarget = clampRange(((15 - sustainLevel) * 0x1f) / 15, 0, 0x1f);
+                target.envBA = blendTemplateByte(target.envBA, sustainLevelTarget, 0x1f);
+            }
+            int loudness = program.carrierLoudness();
+            if (loudness > 0) {
+                int gainTarget = clampRange(0x20 + ((loudness * 0x5f) / 63), 0, 0x7f);
+                target.zoneGainByte = blendTemplateByte(target.zoneGainByte, gainTarget, 0x7f);
             }
             // Keep ROM zone oscillator amplitudes and gain. The VM35 operator
-            // levels are not linear PCM gain values, and boosting them here makes
-            // EXVO-routed voices sound rougher/louder than neighboring ROM voices.
-            // Keep ROM zone sustain/release. The VM35 values are operator rates, and
-            // mapping them directly here can make short EXVO cues smear unnaturally.
+            // levels are not linear PCM gain values, so keep the ROM object's
+            // oscillator mix and only steer the envelope/modulation fields.
             if (program.averageMultiplier() >= 8) {
-                template.modScale2 = Math.min(template.modScale2, 0x280);
+                target.modScale2 = Math.min(target.modScale2 == 0 ? 0x3ff : target.modScale2, 0x280);
             }
+        }
+
+        private int blendTemplateWord(int current, int targetValue) {
+            if (current <= 0) {
+                return clampRange(targetValue, 0, 0x3ff);
+            }
+            return clampRange(((current * 3) + targetValue) / 4, 0, 0x3ff);
+        }
+
+        private int blendTemplateByte(int current, int targetValue, int maxValue) {
+            if (current <= 0) {
+                return clampRange(targetValue, 0, maxValue);
+            }
+            return clampRange(((current * 3) + targetValue) / 4, 0, maxValue);
         }
 
         void reloadSelectedTemplate() {

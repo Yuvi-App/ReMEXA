@@ -345,26 +345,41 @@ public final class PhraseTrack {
         try {
             for (PhraseTrack track : linkedTracks) {
                 if (track.playback == null) {
+                    DebugLog.log(LogCategory.AUDIO, PhraseTrack.class.getName(),
+                            "Track " + id + " linked render fallback: track "
+                                    + track.id + " has no playback instance");
                     return false;
                 }
                 SmafRenderedAudio audio = track.playback.renderedAudio();
                 if (audio == null) {
+                    DebugLog.log(LogCategory.AUDIO, PhraseTrack.class.getName(),
+                            "Track " + id + " linked render fallback: track "
+                                    + track.id + " has no rendered audio");
                     return false;
                 }
                 float gain = masterVolume <= 0 ? 0.0f : track.effectiveVolume() / baseVolume;
                 layers.add(new SmafRenderedAudio.Layer(audio, gain, track.panpot));
             }
         } catch (Exception exception) {
+            DebugLog.log(LogCategory.AUDIO, PhraseTrack.class.getName(),
+                    "Track " + id + " linked render failed: " + describeException(exception));
             return false;
         }
 
-        closeLinkedRenderedPlayback();
-        linkedRenderedPlayer = new SmafRenderedPlayer(SmafRenderedAudio.mix(layers), playback.userEvents());
-        linkedRenderedPlayer.setListener(listener);
-        linkedRenderedPlayer.setVolume(masterVolume);
-        linkedRenderedPlayer.setPanpot(64);
-        linkedRenderedPlayer.play(loop);
-        return true;
+        try {
+            closeLinkedRenderedPlayback();
+            linkedRenderedPlayer = new SmafRenderedPlayer(SmafRenderedAudio.mix(layers), playback.userEvents());
+            linkedRenderedPlayer.setListener(listener);
+            linkedRenderedPlayer.setVolume(masterVolume);
+            linkedRenderedPlayer.setPanpot(64);
+            linkedRenderedPlayer.play(loop);
+            return true;
+        } catch (RuntimeException exception) {
+            DebugLog.log(LogCategory.AUDIO, PhraseTrack.class.getName(),
+                    "Track " + id + " linked render mix/player failed: " + describeException(exception));
+            closeLinkedRenderedPlayback();
+            return false;
+        }
     }
 
     private void collectLinkedTracks(List<PhraseTrack> linkedTracks, Set<PhraseTrack> visited) {
@@ -402,5 +417,27 @@ public final class PhraseTrack {
             linkedRenderedPlayer.close();
             linkedRenderedPlayer = null;
         }
+    }
+
+    private static String describeException(Throwable throwable) {
+        if (throwable == null) {
+            return "unknown";
+        }
+        StringBuilder description = new StringBuilder(96);
+        Throwable current = throwable;
+        int depth = 0;
+        while (current != null && depth < 4) {
+            if (depth > 0) {
+                description.append(" <- ");
+            }
+            description.append(current.getClass().getSimpleName());
+            String message = current.getMessage();
+            if (message != null && !message.isBlank()) {
+                description.append(": ").append(message);
+            }
+            current = current.getCause();
+            depth++;
+        }
+        return description.toString();
     }
 }

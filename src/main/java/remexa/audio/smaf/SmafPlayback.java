@@ -277,15 +277,17 @@ public final class SmafPlayback implements AutoCloseable {
             throw renderedAudioFailure;
         }
         try {
-                renderedAudio = FUETREK_RENDERER.render(
-                        sequence,
-                        sequenceSysExEvents,
-                        startupPackets,
-                        pcmClipData,
-                        pcmTriggers);
+            renderedAudio = FUETREK_RENDERER.render(
+                    sequence,
+                    sequenceSysExEvents,
+                    startupPackets,
+                    pcmClipData,
+                    pcmTriggers);
             return renderedAudio;
         } catch (Exception exception) {
             renderedAudioFailure = exception;
+            Mobile.log(Mobile.LOG_WARNING,
+                    "FueTrek renderedAudio() failed: " + describeException(exception));
             throw exception;
         }
     }
@@ -319,7 +321,7 @@ public final class SmafPlayback implements AutoCloseable {
                 return;
             } catch (Exception exception) {
                 Mobile.log(Mobile.LOG_WARNING,
-                        "Unable to render SMAF through FueTrek backend: " + exception.getMessage()
+                        "Unable to render SMAF through FueTrek backend: " + describeException(exception)
                                 + ". Falling back to host MIDI output.");
             }
         }
@@ -1576,6 +1578,28 @@ public final class SmafPlayback implements AutoCloseable {
 
     private static void dispatchUserEvent(PhraseTrackListener listener, int eventId) {
         listener.eventOccurred(eventId);
+    }
+
+    private static String describeException(Throwable throwable) {
+        if (throwable == null) {
+            return "unknown";
+        }
+        StringBuilder description = new StringBuilder(96);
+        Throwable current = throwable;
+        int depth = 0;
+        while (current != null && depth < 4) {
+            if (depth > 0) {
+                description.append(" <- ");
+            }
+            description.append(current.getClass().getSimpleName());
+            String message = current.getMessage();
+            if (message != null && !message.isBlank()) {
+                description.append(": ").append(message);
+            }
+            current = current.getCause();
+            depth++;
+        }
+        return description.toString();
     }
 
     private enum VoiceRole {
