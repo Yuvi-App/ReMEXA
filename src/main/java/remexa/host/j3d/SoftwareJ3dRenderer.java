@@ -2165,8 +2165,12 @@ public final class SoftwareJ3dRenderer {
             if (currentTexture == null && textures != null && textures.length > 0) {
                 currentTexture = textures[0];
             }
-            int centerX = layout.hasExplicitCenter() ? originX + layout.getCenterX() : originX + (surfaceWidth / 2);
-            int centerY = layout.hasExplicitCenter() ? originY + layout.getCenterY() : originY + (surfaceHeight / 2);
+            int centerX = layout.hasExplicitCenter()
+                    ? originX + layout.getCenterX()
+                    : originX + (perspective ? surfaceWidth / 2 : layout.getCenterX());
+            int centerY = layout.hasExplicitCenter()
+                    ? originY + layout.getCenterY()
+                    : originY + (perspective ? surfaceHeight / 2 : layout.getCenterY());
             return new CommandState(
                     layout,
                     textures,

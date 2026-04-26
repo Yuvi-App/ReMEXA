@@ -41,12 +41,24 @@ public final class DisplaySurfaceState {
             canvasGraphics.resetState();
             return canvasGraphics;
         }
-        return new CanvasGraphics3D(virtualImage.createGraphics(), virtualImage.getWidth(), virtualImage.getHeight(), true);
+        return new CanvasGraphics3D(
+                virtualImage.createGraphics(),
+                virtualImage.getWidth(),
+                virtualImage.getHeight(),
+                true,
+                virtualImage
+        );
     }
 
     public synchronized javax.microedition.lcdui.Graphics beginVirtualPaint() {
         ensureVirtualSurface();
-        return new CanvasGraphics3D(virtualImage.createGraphics(), virtualImage.getWidth(), virtualImage.getHeight(), true);
+        return new CanvasGraphics3D(
+                virtualImage.createGraphics(),
+                virtualImage.getWidth(),
+                virtualImage.getHeight(),
+                true,
+                virtualImage
+        );
     }
 
     public synchronized void createFrameBuffer(int width, int height) {
@@ -206,7 +218,8 @@ public final class DisplaySurfaceState {
                 canvasGraphicsDelegate,
                 virtualImage.getWidth(),
                 virtualImage.getHeight(),
-                false
+                false,
+                virtualImage
         );
     }
 

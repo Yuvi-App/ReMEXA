@@ -5,22 +5,39 @@ import com.jblend.graphics.j3d.Figure;
 import com.jblend.graphics.j3d.FigureLayout;
 import com.jblend.graphics.j3d.Graphics3D;
 import com.jblend.graphics.j3d.Texture;
+import java.awt.image.BufferedImage;
 import java.util.Arrays;
+import javax.microedition.lcdui.Font;
 import javax.microedition.lcdui.Graphics;
+import javax.microedition.lcdui.Image;
 import remexa.host.j3d.SoftwareJ3dRenderer;
+import remexa.probes.DebugLog;
+import remexa.probes.LogCategory;
 import remexa.probes.SdkStubSupport;
 
 public final class CanvasGraphics3D extends Graphics implements Graphics3D {
     private final int surfaceWidth;
     private final int surfaceHeight;
+    private final BufferedImage backingImage;
     private int[] scenePixels;
     private float[] sceneDepth;
     private boolean sceneDirty;
 
     public CanvasGraphics3D(java.awt.Graphics2D delegate, int surfaceWidth, int surfaceHeight, boolean disposable) {
+        this(delegate, surfaceWidth, surfaceHeight, disposable, null);
+    }
+
+    public CanvasGraphics3D(
+            java.awt.Graphics2D delegate,
+            int surfaceWidth,
+            int surfaceHeight,
+            boolean disposable,
+            BufferedImage backingImage
+    ) {
         super(delegate, surfaceWidth, surfaceHeight, disposable);
         this.surfaceWidth = surfaceWidth;
         this.surfaceHeight = surfaceHeight;
+        this.backingImage = backingImage;
     }
 
     @Override
@@ -28,7 +45,18 @@ public final class CanvasGraphics3D extends Graphics implements Graphics3D {
         if (layout == null || effect == null || vertexCoords == null) {
             throw new NullPointerException();
         }
+        DebugLog.log(
+                LogCategory.J3D,
+                CanvasGraphics3D.class.getName(),
+                "renderPrimitives cmd=0x" + Integer.toHexString(command)
+                        + " prims=" + numPrimitives
+                        + " origin=" + x + "," + y
+                        + " scale=" + layout.getScaleX() + "," + layout.getScaleY()
+                        + " center=" + layout.getCenterX() + "," + layout.getCenterY()
+                        + " explicitCenter=" + layout.hasExplicitCenter()
+        );
         ensureSceneBuffers();
+        seedSceneFromBackingImageIfNeeded(command);
         if (SoftwareJ3dRenderer.renderPrimitivesToBuffers(
                 scenePixels,
                 sceneDepth,
@@ -193,6 +221,144 @@ public final class CanvasGraphics3D extends Graphics implements Graphics3D {
         super.dispose();
     }
 
+    @Override
+    public void fillRect(int x, int y, int width, int height) {
+        flush();
+        super.fillRect(x, y, width, height);
+    }
+
+    @Override
+    public void drawRect(int x, int y, int width, int height) {
+        flush();
+        super.drawRect(x, y, width, height);
+    }
+
+    @Override
+    public void drawRoundRect(int x, int y, int width, int height, int arcWidth, int arcHeight) {
+        flush();
+        super.drawRoundRect(x, y, width, height, arcWidth, arcHeight);
+    }
+
+    @Override
+    public void fillRoundRect(int x, int y, int width, int height, int arcWidth, int arcHeight) {
+        flush();
+        super.fillRoundRect(x, y, width, height, arcWidth, arcHeight);
+    }
+
+    @Override
+    public void drawArc(int x, int y, int width, int height, int startAngle, int arcAngle) {
+        flush();
+        super.drawArc(x, y, width, height, startAngle, arcAngle);
+    }
+
+    @Override
+    public void fillArc(int x, int y, int width, int height, int startAngle, int arcAngle) {
+        flush();
+        super.fillArc(x, y, width, height, startAngle, arcAngle);
+    }
+
+    @Override
+    public void drawOval(int x, int y, int width, int height) {
+        flush();
+        super.drawOval(x, y, width, height);
+    }
+
+    @Override
+    public void fillOval(int x, int y, int width, int height) {
+        flush();
+        super.fillOval(x, y, width, height);
+    }
+
+    @Override
+    public void fillTriangle(int x1, int y1, int x2, int y2, int x3, int y3) {
+        flush();
+        super.fillTriangle(x1, y1, x2, y2, x3, y3);
+    }
+
+    @Override
+    public void drawLine(int x1, int y1, int x2, int y2) {
+        flush();
+        super.drawLine(x1, y1, x2, y2);
+    }
+
+    @Override
+    public void drawString(String string, int x, int y, int anchor) {
+        flush();
+        super.drawString(string, x, y, anchor);
+    }
+
+    @Override
+    public void drawChar(char character, int x, int y, int anchor) {
+        flush();
+        super.drawChar(character, x, y, anchor);
+    }
+
+    @Override
+    public void drawChars(char[] data, int offset, int length, int x, int y, int anchor) {
+        flush();
+        super.drawChars(data, offset, length, x, y, anchor);
+    }
+
+    @Override
+    public void drawSubstring(String string, int offset, int len, int x, int y, int anchor) {
+        flush();
+        super.drawSubstring(string, offset, len, x, y, anchor);
+    }
+
+    @Override
+    public void drawImage(Image image, int x, int y, int anchor) {
+        flush();
+        super.drawImage(image, x, y, anchor);
+    }
+
+    @Override
+    public void drawImage(Image image, int x, int y, int width, int height) {
+        flush();
+        super.drawImage(image, x, y, width, height);
+    }
+
+    @Override
+    public void drawRegion(Image image, int xSrc, int ySrc, int width, int height, int transform, int xDest, int yDest, int anchor) {
+        flush();
+        super.drawRegion(image, xSrc, ySrc, width, height, transform, xDest, yDest, anchor);
+    }
+
+    @Override
+    public void drawRegion(Image image, int xSrc, int ySrc, int width, int height, int transform, int xDest, int yDest, int widthDest, int heightDest, int anchor) {
+        flush();
+        super.drawRegion(image, xSrc, ySrc, width, height, transform, xDest, yDest, widthDest, heightDest, anchor);
+    }
+
+    @Override
+    public void drawRGB(int[] rgbData, int offset, int scanlength, int x, int y, int width, int height, boolean processAlpha) {
+        flush();
+        super.drawRGB(rgbData, offset, scanlength, x, y, width, height, processAlpha);
+    }
+
+    @Override
+    public void setClip(int x, int y, int width, int height) {
+        flush();
+        super.setClip(x, y, width, height);
+    }
+
+    @Override
+    public void clipRect(int x, int y, int width, int height) {
+        flush();
+        super.clipRect(x, y, width, height);
+    }
+
+    @Override
+    public void setFont(Font font) {
+        flush();
+        super.setFont(font);
+    }
+
+    @Override
+    public void translate(int x, int y) {
+        flush();
+        super.translate(x, y);
+    }
+
     private void ensureSceneBuffers() {
         int size = surfaceWidth * surfaceHeight;
         if (scenePixels == null || scenePixels.length != size) {
@@ -205,6 +371,25 @@ public final class CanvasGraphics3D extends Graphics implements Graphics3D {
             Arrays.fill(scenePixels, 0);
             Arrays.fill(sceneDepth, Float.NEGATIVE_INFINITY);
         }
+    }
+
+    private void seedSceneFromBackingImageIfNeeded(int command) {
+        if (sceneDirty || backingImage == null || !hasBlendMode(command)) {
+            return;
+        }
+        // Blend/subtract primitive batches compose over the pixels already
+        // painted into this graphics surface, rather than an empty black scene.
+        DebugLog.log(
+                LogCategory.J3D,
+                CanvasGraphics3D.class.getName(),
+                "Seeding blended primitive batch from live backing surface cmd=0x" + Integer.toHexString(command)
+        );
+        backingImage.getRGB(0, 0, surfaceWidth, surfaceHeight, scenePixels, 0, surfaceWidth);
+        Arrays.fill(sceneDepth, Float.NEGATIVE_INFINITY);
+    }
+
+    private static boolean hasBlendMode(int command) {
+        return (command & 0x60) != 0;
     }
 
     private void clearSceneBuffers() {
