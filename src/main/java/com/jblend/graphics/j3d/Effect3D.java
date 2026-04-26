@@ -8,7 +8,7 @@ public class Effect3D {
     private int threshold;
     private int thresholdHigh;
     private int thresholdLow;
-    private boolean semiTransparentEnabled;
+    private boolean semiTransparentEnabled = true;
     private Texture sphereMap;
 
     public Effect3D () {

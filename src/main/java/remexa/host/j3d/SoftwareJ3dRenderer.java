@@ -34,6 +34,7 @@ public final class SoftwareJ3dRenderer {
     private static final int PDATA_COLOR_PER_FACE = 0x0800;
     private static final int PDATA_TEXCOORD_MASK = 0x3000;
     private static final int PDATA_TEXCOORD_PER_VERTEX = 0x3000;
+    private static final int PRIMITIVE_POINTS = 0x01;
     private static final int PRIMITIVE_LINES = 0x02;
     private static final int PRIMITIVE_TRIANGLES = 0x03;
     private static final int PRIMITIVE_QUADS = 0x04;
@@ -246,26 +247,70 @@ public final class SoftwareJ3dRenderer {
             int[] textureCoords,
             int[] colors
     ) {
-        int[] safeVertices = vertexCoords == null ? new int[0] : vertexCoords;
-        int[] safeTextureCoords = textureCoords == null ? new int[0] : textureCoords;
-        int[] safeColors = colors == null ? new int[0] : colors;
-        int[] safeNormals = normals == null ? new int[0] : normals;
+        int primitiveType = (command >>> 24) & 0xFF;
+        int verticesPerPrimitive = switch (primitiveType) {
+            case PRIMITIVE_POINTS, PRIMITIVE_POINT_SPRITES -> 1;
+            case PRIMITIVE_LINES -> 2;
+            case PRIMITIVE_TRIANGLES -> 3;
+            case PRIMITIVE_QUADS -> 4;
+            default -> 0;
+        };
+        if (verticesPerPrimitive == 0) {
+            return null;
+        }
 
-        int payloadLength = 1 + safeVertices.length + safeNormals.length + safeTextureCoords.length + safeColors.length + 2;
+        int vertexInts = numPrimitives * verticesPerPrimitive * 3;
+        int normalInts = switch (command & PDATA_NORMAL_MASK) {
+            case PDATA_NORMAL_PER_FACE -> numPrimitives * 3;
+            case PDATA_NORMAL_PER_VERTEX -> numPrimitives * verticesPerPrimitive * 3;
+            default -> 0;
+        };
+        int textureInts;
+        if (primitiveType == PRIMITIVE_POINT_SPRITES) {
+            int spriteMode = command & PDATA_TEXCOORD_MASK;
+            textureInts = spriteMode == 0 ? 0 : numPrimitives * 8;
+        } else {
+            textureInts = (command & PDATA_TEXCOORD_MASK) == PDATA_TEXCOORD_PER_VERTEX
+                    ? numPrimitives * verticesPerPrimitive * 2
+                    : 0;
+        }
+        int colorInts = switch (command & PDATA_COLOR_MASK) {
+            case PDATA_COLOR_PER_COMMAND -> 1;
+            case PDATA_COLOR_PER_FACE -> numPrimitives;
+            default -> 0;
+        };
+
+        int[] safeVertices = copyPrefix(vertexCoords, vertexInts);
+        int[] safeNormals = copyPrefix(normals, normalInts);
+        int[] safeTextureCoords = copyPrefix(textureCoords, textureInts);
+        int[] safeColors = copyPrefix(colors, colorInts);
+
+        int payloadLength = 1 + vertexInts + normalInts + textureInts + colorInts + 2;
         int[] commandList = new int[payloadLength];
         int cursor = 0;
         commandList[cursor++] = COMMAND_LIST_VERSION_1_0;
         commandList[cursor++] = command | ((numPrimitives & 0xFF) << 16);
-        System.arraycopy(safeVertices, 0, commandList, cursor, safeVertices.length);
-        cursor += safeVertices.length;
-        System.arraycopy(safeNormals, 0, commandList, cursor, safeNormals.length);
-        cursor += safeNormals.length;
-        System.arraycopy(safeTextureCoords, 0, commandList, cursor, safeTextureCoords.length);
-        cursor += safeTextureCoords.length;
-        System.arraycopy(safeColors, 0, commandList, cursor, safeColors.length);
-        cursor += safeColors.length;
+        System.arraycopy(safeVertices, 0, commandList, cursor, vertexInts);
+        cursor += vertexInts;
+        System.arraycopy(safeNormals, 0, commandList, cursor, normalInts);
+        cursor += normalInts;
+        System.arraycopy(safeTextureCoords, 0, commandList, cursor, textureInts);
+        cursor += textureInts;
+        System.arraycopy(safeColors, 0, commandList, cursor, colorInts);
+        cursor += colorInts;
         commandList[cursor++] = COMMAND_END;
         return commandList;
+    }
+
+    private static int[] copyPrefix(int[] source, int length) {
+        if (length <= 0) {
+            return new int[0];
+        }
+        int[] copy = new int[length];
+        if (source != null) {
+            System.arraycopy(source, 0, copy, 0, Math.min(source.length, length));
+        }
+        return copy;
     }
 
     public static void drawFigure(
@@ -1118,6 +1163,24 @@ public final class SoftwareJ3dRenderer {
         return (alpha << 24) | (red << 16) | (green << 8) | blue;
     }
 
+    private static int sampleCommandTexture(Texture texture, float u, float v, boolean transparent) {
+        if (texture == null || texture.getWidth() <= 0 || texture.getHeight() <= 0) {
+            return 0;
+        }
+        // Primitive/command-list callers frequently atlas many tiles into one texture sheet and
+        // address the last texel inclusively (for example 255 on a 256-wide BMP). Clamp the
+        // interpolated UVs here so tiny edge overshoots do not wrap back to column/row 0.
+        float biasedU = u - 0.5f;
+        float biasedV = v - 0.5f;
+        float maxU = Math.nextDown((float) texture.getWidth());
+        float maxV = Math.nextDown((float) texture.getHeight());
+        return texture.sampleColor(
+                Math.max(0.0f, Math.min(biasedU, maxU)),
+                Math.max(0.0f, Math.min(biasedV, maxV)),
+                transparent
+        );
+    }
+
     private static List<PolygonVertex> clipAgainstNearPlane(List<PolygonVertex> vertices, float nearZ) {
         return clipPolygon(vertices, vertex -> vertex.z() >= nearZ, (start, end) -> interpolateAtZ(start, end, nearZ));
     }
@@ -1210,7 +1273,7 @@ public final class SoftwareJ3dRenderer {
             return commandIndex + 1;
         }
         int cursor = commandIndex + 1;
-        int blendMode = command & 0x60;
+        int blendMode = state.semiTransparentEnabled ? (command & 0x60) : 0;
         boolean sphereMapEnabled = (command & ENV_ATTR_SPHERE_MAP) != 0;
         boolean colorKeyEnabled = (command & PATTR_COLORKEY) != 0;
         switch (primitiveType) {
@@ -1984,7 +2047,7 @@ public final class SoftwareJ3dRenderer {
                     // punches holes through the track. Blended command-list effects, however, rely on
                     // that same palette key for billboard/sprite backgrounds, so keep color-keying for
                     // additive/average/subtractive primitives.
-                    argb = texture.sampleColor(u, v, colorKeyEnabled);
+                    argb = sampleCommandTexture(texture, u, v, colorKeyEnabled);
                     if ((argb >>> 24) == 0) {
                         continue;
                     }
@@ -2005,6 +2068,7 @@ public final class SoftwareJ3dRenderer {
         private final int nearClip;
         private final int farClip;
         private final boolean yDownParallel;
+        private final boolean semiTransparentEnabled;
         private AffineTrans affineTrans;
         private Texture texture;
         private int centerX;
@@ -2020,6 +2084,7 @@ public final class SoftwareJ3dRenderer {
                 int nearClip,
                 int farClip,
                 boolean yDownParallel,
+                boolean semiTransparentEnabled,
                 AffineTrans affineTrans,
                 Texture texture,
                 int centerX,
@@ -2034,6 +2099,7 @@ public final class SoftwareJ3dRenderer {
             this.nearClip = nearClip;
             this.farClip = farClip;
             this.yDownParallel = yDownParallel;
+            this.semiTransparentEnabled = semiTransparentEnabled;
             this.affineTrans = affineTrans;
             this.texture = texture;
             this.centerX = centerX;
@@ -2108,6 +2174,7 @@ public final class SoftwareJ3dRenderer {
                     layout.getPerspectiveNear(),
                     layout.getPerspectiveFar(),
                     yDownParallel,
+                    effect == null || effect.isSemiTransparentEnabled(),
                     layout.getAffineTrans(),
                     currentTexture,
                     centerX,
