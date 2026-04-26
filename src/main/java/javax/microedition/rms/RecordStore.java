@@ -68,7 +68,14 @@ public final class RecordStore {
                 Files.write(storePath, new byte[0]);
             }
 
-            return new RecordStore(name, storePath, legacyContainerPath, legacyBacked, legacyStore);
+            var store = new RecordStore(name, storePath, legacyContainerPath, legacyBacked, legacyStore);
+            DebugLog.log(
+                    LogCategory.RMS,
+                    RecordStore.class.getName(),
+                    "openRecordStore(\"" + name + "\", create=" + createIfNecessary + ") -> "
+                            + store.records.size() + " record(s)"
+            );
+            return store;
         } catch (RecordStoreException exception) {
             throw exception;
         } catch (IOException exception) {
@@ -135,6 +142,11 @@ public final class RecordStore {
         int recordId = nextRecordId++;
         records.add(new RecordEntry(recordId, record));
         flush();
+        DebugLog.log(
+                LogCategory.RMS,
+                RecordStore.class.getName(),
+                "addRecord(\"" + name + "\", id=" + recordId + ", " + numBytes + " bytes)"
+        );
         return recordId;
     }
 
@@ -142,15 +154,31 @@ public final class RecordStore {
         RecordEntry entry = entryForId(recordId);
         entry.data = slice(newData, offset, numBytes, "newData");
         flush();
+        DebugLog.log(
+                LogCategory.RMS,
+                RecordStore.class.getName(),
+                "setRecord(\"" + name + "\", id=" + recordId + ", " + numBytes + " bytes)"
+        );
     }
 
     public synchronized byte[] getRecord(int recordId) throws RecordStoreException {
-        return copyRecord(recordId);
+        var data = copyRecord(recordId);
+        DebugLog.log(
+                LogCategory.RMS,
+                RecordStore.class.getName(),
+                "getRecord(\"" + name + "\", id=" + recordId + ") -> " + data.length + " bytes"
+        );
+        return data;
     }
 
     public synchronized int getRecord(int recordId, byte[] buffer, int offset) throws RecordStoreException {
-        byte[] record = getRecord(recordId);
+        byte[] record = copyRecord(recordId);
         System.arraycopy(record, 0, buffer, offset, record.length);
+        DebugLog.log(
+                LogCategory.RMS,
+                RecordStore.class.getName(),
+                "getRecord(\"" + name + "\", id=" + recordId + ", buffer) -> " + record.length + " bytes"
+        );
         return record.length;
     }
 
@@ -558,10 +586,12 @@ public final class RecordStore {
         if (!Files.isRegularFile(legacyContainer)) {
             return stores;
         }
+        // Vendor-distributed .rms files ship as the original handset's pre-allocated RMS template
         try (DataInputStream in = new DataInputStream(Files.newInputStream(legacyContainer))) {
             int entryCount = in.readInt();
             if (entryCount < 0 || entryCount > 4096) {
-                throw new IOException("Invalid legacy RMS entry count: " + entryCount);
+                logUnparseableLegacyStore(legacyContainer, "Invalid legacy RMS entry count: " + entryCount);
+                return new LinkedHashMap<>();
             }
             for (int index = 0; index < entryCount; index++) {
                 String entryName = in.readUTF();
@@ -569,18 +599,21 @@ public final class RecordStore {
                 long importedLastModified = in.readLong();
                 int recordCount = in.readInt();
                 if (recordCount < 0 || recordCount > 65535) {
-                    throw new IOException("Invalid legacy RMS record count: " + recordCount);
+                    logUnparseableLegacyStore(legacyContainer, "Invalid legacy RMS record count: " + recordCount);
+                    return new LinkedHashMap<>();
                 }
                 List<LegacyRecord> importedRecords = new ArrayList<>(recordCount);
                 for (int recordIndex = 0; recordIndex < recordCount; recordIndex++) {
                     int recordId = in.readInt();
                     int dataLength = in.readInt();
                     if (dataLength < 0) {
-                        throw new IOException("Negative legacy RMS record length: " + dataLength);
+                        logUnparseableLegacyStore(legacyContainer, "Negative legacy RMS record length: " + dataLength);
+                        return new LinkedHashMap<>();
                     }
                     byte[] recordData = in.readNBytes(dataLength);
                     if (recordData.length != dataLength) {
-                        throw new IOException("Truncated legacy RMS store: " + entryName);
+                        logUnparseableLegacyStore(legacyContainer, "Truncated legacy RMS store: " + entryName);
+                        return new LinkedHashMap<>();
                     }
                     importedRecords.add(new LegacyRecord(recordId, recordData));
                 }
@@ -593,14 +626,24 @@ public final class RecordStore {
                 ));
             }
         } catch (IOException exception) {
+            logUnparseableLegacyStore(legacyContainer, exception.getMessage());
+            return new LinkedHashMap<>();
+        }
+        return stores;
+    }
+
+    private static final java.util.Set<Path> WARNED_LEGACY_PATHS = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    private static void logUnparseableLegacyStore(Path legacyContainer, String reason) {
+        if (WARNED_LEGACY_PATHS.add(legacyContainer)) {
             DebugLog.log(
                     LogCategory.RMS,
                     RecordStore.class.getName(),
-                    "Legacy RMS fallback skipped for \"" + legacyContainer.getFileName() + "\": " + exception.getMessage()
+                    "Legacy RMS file \"" + legacyContainer.getFileName()
+                            + "\" not in ReMEXA format (" + reason
+                            + "); treating as empty. Subsequent writes will overwrite it."
             );
-            throw exception;
         }
-        return stores;
     }
 
     private static void writeLegacyStores(Path legacyContainer, Map<String, LegacyStoreRecord> stores) throws IOException {

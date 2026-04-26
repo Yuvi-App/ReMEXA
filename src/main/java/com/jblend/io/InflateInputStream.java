@@ -47,12 +47,23 @@ public final class InflateInputStream extends InputStream {
 
     @Override
     public int read(byte[] b, int off, int len) throws IOException {
-        return delegate.read(b, off, len);
+        if (len == 0) {
+            return 0;
+        }
+        int total = 0;
+        while (total < len) {
+            int chunk = delegate.read(b, off + total, len - total);
+            if (chunk < 0) {
+                break;
+            }
+            total += chunk;
+        }
+        return total > 0 ? total : -1;
     }
 
     @Override
     public int read(byte[] b) throws IOException {
-        return delegate.read(b);
+        return read(b, 0, b.length);
     }
 
     @Override

@@ -60,6 +60,14 @@ final class LegacyJarClassLoader extends URLClassLoader {
                         "Injected " + spinResult.changes() + " spin loop hint(s) into " + name
                 );
             }
+            var catchResult = ClassFileSanitizer.injectCatchLogging(spinResult.classBytes());
+            if (catchResult.changes() > 0) {
+                DebugLog.log(
+                        LogCategory.HOST,
+                        LegacyJarClassLoader.class.getName(),
+                        "Instrumented " + catchResult.changes() + " catch handler(s) in " + name
+                );
+            }
             int packageSeparator = name.lastIndexOf('.');
             if (packageSeparator > 0) {
                 String packageName = name.substring(0, packageSeparator);
@@ -69,9 +77,9 @@ final class LegacyJarClassLoader extends URLClassLoader {
             }
             return defineClass(
                     name,
-                    spinResult.classBytes(),
+                    catchResult.classBytes(),
                     0,
-                    spinResult.classBytes().length,
+                    catchResult.classBytes().length,
                     new CodeSource(resource, (java.security.cert.Certificate[]) null)
             );
         } catch (IOException exception) {
@@ -102,11 +110,21 @@ final class LegacyJarClassLoader extends URLClassLoader {
             if (length == 0) {
                 return isAtEnd() ? -1 : 0;
             }
-            int count = super.read(buffer, offset, length);
-            if (count > 0) {
-                bytesRead += count;
+            // JSCL/MIDP titles routinely call read(buf, 0, len) once and assume
+            // the whole buffer was filled. loop until the buffer is full or EOF is reached.
+            int total = 0;
+            while (total < length) {
+                int chunk = super.read(buffer, offset + total, length - total);
+                if (chunk < 0) {
+                    break;
+                }
+                total += chunk;
             }
-            return count;
+            if (total > 0) {
+                bytesRead += total;
+                return total;
+            }
+            return -1;
         }
 
         private boolean isAtEnd() throws IOException {
