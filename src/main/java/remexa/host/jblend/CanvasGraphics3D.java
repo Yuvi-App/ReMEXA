@@ -25,7 +25,33 @@ public final class CanvasGraphics3D extends Graphics implements Graphics3D {
 
     @Override
     public void renderPrimitives(Texture texture, int x, int y, FigureLayout layout, Effect3D effect, int command, int numPrimitives, int[] vertexCoords, int[] normals, int[] textureCoords, int[] colors) {
-        SdkStubSupport.log("com.jblend.graphics.j3d.Graphics3D", "renderPrimitives", texture, x, y, layout, effect, command, numPrimitives, vertexCoords, normals, textureCoords, colors);
+        if (layout == null || effect == null || vertexCoords == null) {
+            throw new NullPointerException();
+        }
+        ensureSceneBuffers();
+        if (SoftwareJ3dRenderer.renderPrimitivesToBuffers(
+                scenePixels,
+                sceneDepth,
+                surfaceWidth,
+                surfaceHeight,
+                getClipX(),
+                getClipY(),
+                getClipWidth(),
+                getClipHeight(),
+                x,
+                y,
+                layout,
+                effect,
+                texture,
+                command,
+                numPrimitives,
+                vertexCoords,
+                normals,
+                textureCoords,
+                colors
+        )) {
+            sceneDirty = true;
+        }
     }
 
     @Override
@@ -34,9 +60,7 @@ public final class CanvasGraphics3D extends Graphics implements Graphics3D {
             throw new NullPointerException();
         }
         // JSCL allows null slots in the texture array as long as the command
-        // list does not select them via COMMAND_TEXTURE_INDEX. Trial builds
-        // (e.g. Burning Fortress) routinely pass partially-populated arrays
-        // because some textures are downloaded lazily.
+        // list does not select them via COMMAND_TEXTURE_INDEX.
         ensureSceneBuffers();
         if (SoftwareJ3dRenderer.renderCommandListToBuffers(
                 scenePixels,

@@ -26,12 +26,89 @@ public final class SoftwareJ3dRenderer {
     private static final int ENV_ATTR_LIGHTING = 0x01;
     private static final int ENV_ATTR_SPHERE_MAP = 0x02;
     private static final int PATTR_COLORKEY = 0x10;
+    private static final int PDATA_NORMAL_MASK = 0x0300;
+    private static final int PDATA_NORMAL_PER_FACE = 0x0200;
+    private static final int PDATA_NORMAL_PER_VERTEX = 0x0300;
+    private static final int PDATA_COLOR_MASK = 0x0C00;
+    private static final int PDATA_COLOR_PER_COMMAND = 0x0400;
+    private static final int PDATA_COLOR_PER_FACE = 0x0800;
+    private static final int PDATA_TEXCOORD_MASK = 0x3000;
+    private static final int PDATA_TEXCOORD_PER_VERTEX = 0x3000;
     private static final int PRIMITIVE_LINES = 0x02;
     private static final int PRIMITIVE_TRIANGLES = 0x03;
     private static final int PRIMITIVE_QUADS = 0x04;
     private static final int PRIMITIVE_POINT_SPRITES = 0x05;
 
     private SoftwareJ3dRenderer() {
+    }
+
+    public static boolean renderPrimitivesToBuffers(
+            int[] pixels,
+            float[] depthBuffer,
+            int surfaceWidth,
+            int surfaceHeight,
+            int clipX,
+            int clipY,
+            int clipWidth,
+            int clipHeight,
+            int originX,
+            int originY,
+            com.jblend.graphics.j3d.FigureLayout layout,
+            Effect3D effect,
+            Texture texture,
+            int command,
+            int numPrimitives,
+            int[] vertexCoords,
+            int[] normals,
+            int[] textureCoords,
+            int[] colors
+    ) {
+        if (pixels == null || depthBuffer == null || layout == null || effect == null || vertexCoords == null) {
+            return false;
+        }
+        if (pixels.length < surfaceWidth * surfaceHeight || depthBuffer.length < surfaceWidth * surfaceHeight) {
+            throw new IllegalArgumentException("Scene buffers are smaller than the target surface.");
+        }
+        if (numPrimitives <= 0) {
+            return false;
+        }
+
+        int primitiveType = command & COMMAND_MASK;
+        int[] payload = switch (primitiveType) {
+            case PRIMITIVE_LINES << 24 -> buildPrimitiveCommandList(command, numPrimitives, vertexCoords, null, null, colors);
+            case PRIMITIVE_TRIANGLES << 24, PRIMITIVE_QUADS << 24 ->
+                    buildPrimitiveCommandList(command, numPrimitives, vertexCoords, normals, textureCoords, colors);
+            case PRIMITIVE_POINT_SPRITES << 24 ->
+                    buildPrimitiveCommandList(command, numPrimitives, vertexCoords, null, textureCoords, colors);
+            default -> null;
+        };
+        if (payload == null) {
+            return false;
+        }
+        CommandState state = CommandState.fromLayout(
+                originX,
+                originY,
+                surfaceWidth,
+                surfaceHeight,
+                layout,
+                effect,
+                null,
+                texture,
+                true
+        );
+        return renderPrimitiveCommand(
+                pixels,
+                depthBuffer,
+                surfaceWidth,
+                surfaceHeight,
+                clipX,
+                clipY,
+                clipWidth,
+                clipHeight,
+                state,
+                payload,
+                1
+        ) > 1;
     }
 
     public static boolean renderCommandListToBuffers(
@@ -65,7 +142,8 @@ public final class SoftwareJ3dRenderer {
                 layout,
                 effect,
                 textures,
-                fallbackTexture
+                fallbackTexture,
+                false
         );
         boolean rendered = false;
         int cursor = 0;
@@ -158,6 +236,36 @@ public final class SoftwareJ3dRenderer {
             break;
         }
         return rendered;
+    }
+
+    private static int[] buildPrimitiveCommandList(
+            int command,
+            int numPrimitives,
+            int[] vertexCoords,
+            int[] normals,
+            int[] textureCoords,
+            int[] colors
+    ) {
+        int[] safeVertices = vertexCoords == null ? new int[0] : vertexCoords;
+        int[] safeTextureCoords = textureCoords == null ? new int[0] : textureCoords;
+        int[] safeColors = colors == null ? new int[0] : colors;
+        int[] safeNormals = normals == null ? new int[0] : normals;
+
+        int payloadLength = 1 + safeVertices.length + safeNormals.length + safeTextureCoords.length + safeColors.length + 2;
+        int[] commandList = new int[payloadLength];
+        int cursor = 0;
+        commandList[cursor++] = COMMAND_LIST_VERSION_1_0;
+        commandList[cursor++] = command | ((numPrimitives & 0xFF) << 16);
+        System.arraycopy(safeVertices, 0, commandList, cursor, safeVertices.length);
+        cursor += safeVertices.length;
+        System.arraycopy(safeNormals, 0, commandList, cursor, safeNormals.length);
+        cursor += safeNormals.length;
+        System.arraycopy(safeTextureCoords, 0, commandList, cursor, safeTextureCoords.length);
+        cursor += safeTextureCoords.length;
+        System.arraycopy(safeColors, 0, commandList, cursor, safeColors.length);
+        cursor += safeColors.length;
+        commandList[cursor++] = COMMAND_END;
+        return commandList;
     }
 
     public static void drawFigure(
@@ -1116,12 +1224,17 @@ public final class SoftwareJ3dRenderer {
                     vertices[i] = commandList[cursor++];
                 }
                 int[] colors = null;
-                if ((command & 0x0800) != 0) {
-                    if (cursor + primitiveCount > commandList.length) {
+                int colorCount = switch (command & PDATA_COLOR_MASK) {
+                    case PDATA_COLOR_PER_COMMAND -> 1;
+                    case PDATA_COLOR_PER_FACE -> primitiveCount;
+                    default -> 0;
+                };
+                if (colorCount > 0) {
+                    if (cursor + colorCount > commandList.length) {
                         return commandIndex;
                     }
-                    colors = new int[primitiveCount];
-                    for (int i = 0; i < primitiveCount; i++) {
+                    colors = new int[colorCount];
+                    for (int i = 0; i < colorCount; i++) {
                         colors[i] = commandList[cursor++];
                     }
                 }
@@ -1143,7 +1256,10 @@ public final class SoftwareJ3dRenderer {
                             0.0f,
                             0.0f
                     );
-                    int color = colors == null ? 0xFFFFFFFF : 0xFF000000 | colors[i];
+                    int colorValue = 0xFFFFFFFF;
+                    if (colors != null) {
+                        colorValue = (colors.length == 1 ? colors[0] : colors[i]) | 0xFF000000;
+                    }
                     drawLine(
                             pixels,
                             depthBuffer,
@@ -1155,7 +1271,7 @@ public final class SoftwareJ3dRenderer {
                             clipHeight,
                             v0,
                             v1,
-                            color,
+                            colorValue,
                             blendMode
                     );
                 }
@@ -1275,12 +1391,23 @@ public final class SoftwareJ3dRenderer {
         for (int i = 0; i < vertexInts; i++) {
             vertices[i] = commandList[cursor++];
         }
-        boolean hasTextureCoords = (command & 0x3000) == 0x3000;
+        int normalInts = switch (command & PDATA_NORMAL_MASK) {
+            case PDATA_NORMAL_PER_FACE -> primitiveCount * 3;
+            case PDATA_NORMAL_PER_VERTEX -> primitiveCount * verticesPerPrimitive * 3;
+            default -> 0;
+        };
+        if (normalInts > 0) {
+            if (cursor + normalInts > commandList.length) {
+                return cursor - 1 - vertexInts;
+            }
+            cursor += normalInts;
+        }
+        boolean hasTextureCoords = (command & PDATA_TEXCOORD_MASK) == PDATA_TEXCOORD_PER_VERTEX;
         float[] texCoords = null;
         if (hasTextureCoords) {
             int texInts = primitiveCount * verticesPerPrimitive * 2;
             if (cursor + texInts > commandList.length) {
-                return cursor - 1 - vertexInts;
+                return cursor - 1 - vertexInts - normalInts;
             }
             texCoords = new float[texInts];
             for (int i = 0; i < texInts; i++) {
@@ -1288,19 +1415,24 @@ public final class SoftwareJ3dRenderer {
             }
         }
         int[] colors = null;
-        if ((command & 0x0800) != 0) {
-            if (cursor + primitiveCount > commandList.length) {
-                return cursor - 1 - vertexInts;
+        int colorCount = switch (command & PDATA_COLOR_MASK) {
+            case PDATA_COLOR_PER_COMMAND -> 1;
+            case PDATA_COLOR_PER_FACE -> primitiveCount;
+            default -> 0;
+        };
+        if (colorCount > 0) {
+            if (cursor + colorCount > commandList.length) {
+                return cursor - 1 - vertexInts - normalInts;
             }
-            colors = new int[primitiveCount];
-            for (int i = 0; i < primitiveCount; i++) {
+            colors = new int[colorCount];
+            for (int i = 0; i < colorCount; i++) {
                 colors[i] = commandList[cursor++];
             }
         }
         for (int i = 0; i < primitiveCount; i++) {
             int vertexBase = i * verticesPerPrimitive * 3;
             int texBase = texCoords == null ? 0 : i * verticesPerPrimitive * 2;
-            int color = colors == null ? 0xFFFFFFFF : 0xFF000000 | colors[i];
+            int color = colors == null ? 0xFFFFFFFF : 0xFF000000 | (colors.length == 1 ? colors[0] : colors[i]);
             if (state.perspective) {
                 List<PolygonVertex> polygonVertices = new ArrayList<>(verticesPerPrimitive);
                 for (int vertex = 0; vertex < verticesPerPrimitive; vertex++) {
@@ -1669,7 +1801,7 @@ public final class SoftwareJ3dRenderer {
         }
         return new ProjectedVertex(
                 state.centerX + (tx * state.projectionScaleX),
-                state.centerY - (ty * state.projectionScaleY),
+                state.centerY + ((state.yDownParallel ? ty : -ty) * state.projectionScaleY),
                 -tz,
                 0.0f,
                 u,
@@ -1872,6 +2004,7 @@ public final class SoftwareJ3dRenderer {
         private final Texture sphereMap;
         private final int nearClip;
         private final int farClip;
+        private final boolean yDownParallel;
         private AffineTrans affineTrans;
         private Texture texture;
         private int centerX;
@@ -1886,6 +2019,7 @@ public final class SoftwareJ3dRenderer {
                 Texture sphereMap,
                 int nearClip,
                 int farClip,
+                boolean yDownParallel,
                 AffineTrans affineTrans,
                 Texture texture,
                 int centerX,
@@ -1899,6 +2033,7 @@ public final class SoftwareJ3dRenderer {
             this.sphereMap = sphereMap;
             this.nearClip = nearClip;
             this.farClip = farClip;
+            this.yDownParallel = yDownParallel;
             this.affineTrans = affineTrans;
             this.texture = texture;
             this.centerX = centerX;
@@ -1928,7 +2063,8 @@ public final class SoftwareJ3dRenderer {
                 com.jblend.graphics.j3d.FigureLayout layout,
                 Effect3D effect,
                 Texture[] textures,
-                Texture fallbackTexture
+                Texture fallbackTexture,
+                boolean yDownParallel
         ) {
             float projectionScaleX;
             float projectionScaleY;
@@ -1971,6 +2107,7 @@ public final class SoftwareJ3dRenderer {
                     effect == null ? null : effect.getSphereMap(),
                     layout.getPerspectiveNear(),
                     layout.getPerspectiveFar(),
+                    yDownParallel,
                     layout.getAffineTrans(),
                     currentTexture,
                     centerX,
