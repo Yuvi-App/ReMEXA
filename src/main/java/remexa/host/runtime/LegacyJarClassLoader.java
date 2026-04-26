@@ -52,12 +52,12 @@ final class LegacyJarClassLoader extends URLClassLoader {
                         "Sanitized " + switchResult.changes() + " switch padding byte(s) in " + name
                 );
             }
-            var spinResult = ClassFileSanitizer.injectSpinLoopHints(switchResult.classBytes());
-            if (spinResult.changes() > 0) {
+            var compatibilityResult = ClassFileSanitizer.applyLegacyRuntimeFixes(switchResult.classBytes());
+            if (compatibilityResult.changes() > 0) {
                 DebugLog.log(
                         LogCategory.HOST,
                         LegacyJarClassLoader.class.getName(),
-                        "Injected " + spinResult.changes() + " spin loop hint(s) into " + name
+                        "Applied " + compatibilityResult.changes() + " legacy runtime compatibility rewrite(s) to " + name
                 );
             }
 
@@ -70,9 +70,9 @@ final class LegacyJarClassLoader extends URLClassLoader {
             }
             return defineClass(
                     name,
-                    spinResult.classBytes(),
+                    compatibilityResult.classBytes(),
                     0,
-                    spinResult.classBytes().length,
+                    compatibilityResult.classBytes().length,
                     new CodeSource(resource, (java.security.cert.Certificate[]) null)
             );
         } catch (IOException exception) {

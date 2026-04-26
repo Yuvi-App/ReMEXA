@@ -7,6 +7,7 @@ import java.lang.classfile.CodeElement;
 import java.lang.classfile.CodeTransform;
 import java.lang.classfile.Label;
 import java.lang.classfile.instruction.BranchInstruction;
+import java.lang.classfile.instruction.InvokeInstruction;
 import java.lang.classfile.instruction.LabelTarget;
 import java.lang.constant.ClassDesc;
 import java.lang.constant.MethodTypeDesc;
@@ -20,6 +21,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 final class ClassFileSanitizer {
     private static final ClassDesc SPIN_SUPPORT = ClassDesc.of("remexa.host.runtime.LegacyRuntimeSupport");
     private static final MethodTypeDesc SPIN_HINT_DESCRIPTOR = MethodTypeDesc.ofDescriptor("()V");
+    private static final MethodTypeDesc RESOURCE_STREAM_DESCRIPTOR = MethodTypeDesc.of(
+            ClassDesc.of("java.io.InputStream"),
+            ClassDesc.of("java.lang.Class"),
+            ClassDesc.of("java.lang.String")
+    );
 
     private ClassFileSanitizer() {
     }
@@ -82,7 +88,7 @@ final class ClassFileSanitizer {
         return changes == 0 ? new SanitizeResult(classBytes, 0) : new SanitizeResult(sanitized, changes);
     }
 
-    static SanitizeResult injectSpinLoopHints(byte[] classBytes) {
+    static SanitizeResult applyLegacyRuntimeFixes(byte[] classBytes) {
         try {
             var classFile = ClassFile.of();
             var classModel = classFile.parse(classBytes);
@@ -90,7 +96,7 @@ final class ClassFileSanitizer {
             byte[] transformed = classFile.transformClass(
                     classModel,
                     ClassTransform.transformingMethodBodies(
-                            CodeTransform.ofStateful(() -> new SpinLoopCodeTransform(changes))
+                            CodeTransform.ofStateful(() -> new LegacyCodeTransform(changes))
                     )
             );
             return changes.get() == 0 ? new SanitizeResult(classBytes, 0) : new SanitizeResult(transformed, changes.get());
@@ -217,11 +223,11 @@ final class ClassFileSanitizer {
     record SanitizeResult(byte[] classBytes, int changes) {
     }
 
-    private static final class SpinLoopCodeTransform implements CodeTransform {
+    private static final class LegacyCodeTransform implements CodeTransform {
         private final AtomicInteger changeCount;
         private final Set<Label> seenLabels = Collections.newSetFromMap(new IdentityHashMap<>());
 
-        private SpinLoopCodeTransform(AtomicInteger changeCount) {
+        private LegacyCodeTransform(AtomicInteger changeCount) {
             this.changeCount = changeCount;
         }
 
@@ -232,11 +238,22 @@ final class ClassFileSanitizer {
                 builder.with(element);
                 return;
             }
+            if (element instanceof InvokeInstruction invoke && isClassResourceLookup(invoke)) {
+                builder.invokestatic(SPIN_SUPPORT, "getResourceAsStream", RESOURCE_STREAM_DESCRIPTOR);
+                changeCount.incrementAndGet();
+                return;
+            }
             if (element instanceof BranchInstruction branch && seenLabels.contains(branch.target())) {
                 builder.invokestatic(SPIN_SUPPORT, "spinLoopHint", SPIN_HINT_DESCRIPTOR);
                 changeCount.incrementAndGet();
             }
             builder.with(element);
+        }
+
+        private static boolean isClassResourceLookup(InvokeInstruction invoke) {
+            return invoke.owner().asInternalName().equals("java/lang/Class")
+                    && invoke.name().equalsString("getResourceAsStream")
+                    && invoke.type().equalsString("(Ljava/lang/String;)Ljava/io/InputStream;");
         }
     }
 }

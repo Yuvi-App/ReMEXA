@@ -1,5 +1,10 @@
 package javax.microedition.midlet;
 
+import java.awt.Desktop;
+import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
+import javax.microedition.io.ConnectionNotFoundException;
 import remexa.host.runtime.MidletRuntime;
 import remexa.probes.SdkStubSupport;
 
@@ -30,5 +35,24 @@ public abstract class MIDlet {
     public String getAppProperty(String key) {
         SdkStubSupport.log(getClass().getName(), "getAppProperty", key);
         return MidletRuntime.getAppProperty(this, key);
+    }
+
+    public final boolean platformRequest(String url) throws ConnectionNotFoundException {
+        SdkStubSupport.log(getClass().getName(), "platformRequest", url);
+        if (url == null) {
+            throw new NullPointerException("url");
+        }
+        if (url.isEmpty()) {
+            return false;
+        }
+        try {
+            if (!Desktop.isDesktopSupported() || !Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
+                throw new ConnectionNotFoundException("Platform browsing is not supported: " + url);
+            }
+            Desktop.getDesktop().browse(new URI(url));
+            return false;
+        } catch (IllegalArgumentException | IOException | SecurityException | URISyntaxException exception) {
+            throw new ConnectionNotFoundException("Platform cannot handle URL: " + url, exception);
+        }
     }
 }

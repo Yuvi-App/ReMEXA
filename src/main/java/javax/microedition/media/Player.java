@@ -1,6 +1,6 @@
 package javax.microedition.media;
 
-public interface Player {
+public interface Player extends Controllable {
     int CLOSED = 0;
     int UNREALIZED = 100;
     int REALIZED = 200;
@@ -24,8 +24,4 @@ public interface Player {
     int getState();
 
     String getContentType();
-
-    Control getControl(String controlType);
-
-    Control[] getControls();
 }
