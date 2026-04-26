@@ -3,6 +3,9 @@ package javax.microedition.lcdui;
 import remexa.host.LaunchConfig;
 
 public final class Font {
+    public static final int FONT_STATIC_TEXT = 0;
+    public static final int FONT_INPUT_TEXT = 1;
+
     public static final int FACE_SYSTEM = 0;
     public static final int FACE_MONOSPACE = 32;
     public static final int FACE_PROPORTIONAL = 64;
@@ -30,6 +33,13 @@ public final class Font {
 
     public static Font getDefaultFont() {
         return getFont(FACE_SYSTEM, STYLE_PLAIN, SIZE_MEDIUM);
+    }
+
+    public static Font getFont(int fontSpecifier) {
+        return switch (fontSpecifier) {
+            case FONT_STATIC_TEXT, FONT_INPUT_TEXT -> getDefaultFont();
+            default -> throw new IllegalArgumentException("Unsupported font specifier: " + fontSpecifier);
+        };
     }
 
     public static Font getFont(int face, int style, int size) {
