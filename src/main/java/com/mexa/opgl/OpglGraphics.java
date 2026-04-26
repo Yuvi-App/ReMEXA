@@ -1,6 +1,11 @@
 package com.mexa.opgl;
 
+import java.util.HashSet;
+import java.util.Set;
+import javax.microedition.lcdui.Graphics;
+
 public class OpglGraphics {
+    private static volatile OpglGraphics instance;
     public static final int GL_ACTIVE_TEXTURE = 0;
     public static final int GL_ADD = 0;
     public static final int GL_ADD_SIGNED = 0;
@@ -369,18 +374,56 @@ public class OpglGraphics {
     public static final int GL_WRITE_ONLY = 0;
     public static final int GL_XOR = 0;
     public static final int GL_ZERO = 0;
+    private final Set<Integer> textures = new HashSet<>();
+    private final Set<Integer> buffers = new HashSet<>();
+    private Object boundTarget;
+    private int nextTextureId = 1;
+    private int nextBufferId = 1;
+
+    private OpglGraphics() {
+    }
 
     public static com.mexa.opgl.OpglGraphics getInstance () {
-        remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "getInstance");
-        return null;
+        OpglGraphics current = instance;
+        if (current == null) {
+            synchronized (OpglGraphics.class) {
+                current = instance;
+                if (current == null) {
+                    current = new OpglGraphics();
+                    instance = current;
+                }
+            }
+        }
+        remexa.probes.SdkStubSupport.log(
+                "com.mexa.opgl.OpglGraphics",
+                "getInstance",
+                describeInstance(current)
+        );
+        return current;
     }
 
     public void bind (java.lang.Object target) {
-        remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "bind", target);
+        remexa.probes.SdkStubSupport.log(
+                "com.mexa.opgl.OpglGraphics",
+                "bind",
+                describeInstance(this),
+                target
+        );
+        if (target == null) {
+            throw new NullPointerException("target");
+        }
+        if (!(target instanceof Graphics)) {
+            throw new IllegalArgumentException("target");
+        }
+        if (boundTarget != null) {
+            throw new IllegalStateException("target already bound");
+        }
+        boundTarget = target;
     }
 
     public void release () {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "release");
+        boundTarget = null;
     }
 
     public void glActiveTexture (int texture) {
@@ -393,6 +436,7 @@ public class OpglGraphics {
 
     public void glBindTexture (int target, int texture) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glBindTexture", target, texture);
+        ensureBound();
     }
 
     public void glBlendFunc (int sfactor, int dfactor) {
@@ -401,10 +445,12 @@ public class OpglGraphics {
 
     public void glClear (int mask) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glClear", mask);
+        ensureBound();
     }
 
     public void glClearColor (float red, float green, float blue, float alpha) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glClearColor", red, green, blue, alpha);
+        ensureBound();
     }
 
     public void glClearDepthf (float depth) {
@@ -457,6 +503,12 @@ public class OpglGraphics {
 
     public void glDeleteTextures (int[] textures) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glDeleteTextures", textures);
+        if (textures == null) {
+            throw new NullPointerException("textures");
+        }
+        for (int texture : textures) {
+            this.textures.remove(texture);
+        }
     }
 
     public void glDepthFunc (int func) {
@@ -501,6 +553,7 @@ public class OpglGraphics {
 
     public void glFlush () {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glFlush");
+        ensureBound();
     }
 
     public void glFogf (int pname, float param) {
@@ -521,6 +574,14 @@ public class OpglGraphics {
 
     public void glGenTextures (int[] textures) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glGenTextures", textures);
+        if (textures == null) {
+            throw new NullPointerException("textures");
+        }
+        for (int index = 0; index < textures.length; index++) {
+            int texture = nextTextureId++;
+            this.textures.add(texture);
+            textures[index] = texture;
+        }
     }
 
     public int glGetError () {
@@ -530,11 +591,14 @@ public class OpglGraphics {
 
     public void glGetIntegerv (int pname, int[] params) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glGetIntegerv", pname, params);
+        if (params == null) {
+            throw new NullPointerException("params");
+        }
     }
 
     public java.lang.String glGetString (int name) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glGetString", name);
-        return "";
+        return "ReMEXA-OPGL";
     }
 
     public void glHint (int target, int mode) {
@@ -563,10 +627,15 @@ public class OpglGraphics {
 
     public void glLoadIdentity () {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glLoadIdentity");
+        ensureBound();
     }
 
     public void glLoadMatrixf (float[] m) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glLoadMatrixf", m);
+        ensureBound();
+        if (m == null) {
+            throw new NullPointerException("m");
+        }
     }
 
     public void glLogicOp (int opcode) {
@@ -583,6 +652,7 @@ public class OpglGraphics {
 
     public void glMatrixMode (int mode) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glMatrixMode", mode);
+        ensureBound();
     }
 
     public void glMultMatrixf (float[] m) {
@@ -607,10 +677,12 @@ public class OpglGraphics {
 
     public void glOrthof (float left, float right, float bottom, float top, float zNear, float zFar) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glOrthof", left, right, bottom, top, zNear, zFar);
+        ensureBound();
     }
 
     public void glPixelStorei (int pname, int param) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glPixelStorei", pname, param);
+        ensureBound();
     }
 
     public void glPointSize (float size) {
@@ -663,14 +735,20 @@ public class OpglGraphics {
 
     public void glTexCoordPointer (int size, int type, int stride, com.mexa.opgl.Buffer pointer) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glTexCoordPointer", size, type, stride, pointer);
+        ensureBound();
+        if (pointer == null) {
+            throw new NullPointerException("pointer");
+        }
     }
 
     public void glTexCoordPointer (int size, int type, int stride, int offset) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glTexCoordPointer", size, type, stride, offset);
+        ensureBound();
     }
 
     public void glTexEnvf (int target, int pname, float param) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glTexEnvf", target, pname, param);
+        ensureBound();
     }
 
     public void glTexEnvfv (int target, int pname, float[] params) {
@@ -679,10 +757,12 @@ public class OpglGraphics {
 
     public void glTexImage2D (int target, int level, int internalformat, int width, int height, int border, int format, int type, com.mexa.opgl.Buffer pixels) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glTexImage2D", target, level, internalformat, width, height, border, format, type, pixels);
+        ensureBound();
     }
 
     public void glTexParameterf (int target, int pname, float param) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glTexParameterf", target, pname, param);
+        ensureBound();
     }
 
     public void glTexSubImage2D (int target, int level, int xoffset, int yoffset, int width, int height, int format, int type, com.mexa.opgl.Buffer pixels) {
@@ -691,26 +771,38 @@ public class OpglGraphics {
 
     public void glTranslatef (float x, float y, float z) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glTranslatef", x, y, z);
+        ensureBound();
     }
 
     public void glVertexPointer (int size, int type, int stride, com.mexa.opgl.Buffer pointer) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glVertexPointer", size, type, stride, pointer);
+        ensureBound();
+        if (pointer == null) {
+            throw new NullPointerException("pointer");
+        }
     }
 
     public void glVertexPointer (int size, int type, int stride, int offset) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glVertexPointer", size, type, stride, offset);
+        ensureBound();
     }
 
     public void glViewport (int x, int y, int width, int height) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glViewport", x, y, width, height);
+        ensureBound();
     }
 
     public void glBindBuffer (int target, int buffer) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glBindBuffer", target, buffer);
+        ensureBound();
     }
 
     public void glBufferData (int target, com.mexa.opgl.Buffer data, int usage) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glBufferData", target, data, usage);
+        ensureBound();
+        if (data == null) {
+            throw new NullPointerException("data");
+        }
     }
 
     public void glBufferSubData (int target, int offset, com.mexa.opgl.Buffer data) {
@@ -723,10 +815,17 @@ public class OpglGraphics {
 
     public void glColor4ub (byte red, byte green, byte blue, byte alpha) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glColor4ub", red, green, blue, alpha);
+        ensureBound();
     }
 
     public void glDeleteBuffers (int[] buffers) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glDeleteBuffers", buffers);
+        if (buffers == null) {
+            throw new NullPointerException("buffers");
+        }
+        for (int buffer : buffers) {
+            this.buffers.remove(buffer);
+        }
     }
 
     public void glGetBooleanv (int pname, boolean[] params) {
@@ -763,6 +862,14 @@ public class OpglGraphics {
 
     public void glGenBuffers (int[] buffers) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glGenBuffers", buffers);
+        if (buffers == null) {
+            throw new NullPointerException("buffers");
+        }
+        for (int index = 0; index < buffers.length; index++) {
+            int buffer = nextBufferId++;
+            this.buffers.add(buffer);
+            buffers[index] = buffer;
+        }
     }
 
     public void glGetTexEnviv (int env, int pname, int[] params) {
@@ -775,7 +882,7 @@ public class OpglGraphics {
 
     public boolean glIsBuffer (int buffer) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glIsBuffer", buffer);
-        return false;
+        return buffers.contains(buffer);
     }
 
     public boolean glIsEnabled (int cap) {
@@ -785,7 +892,7 @@ public class OpglGraphics {
 
     public boolean glIsTexture (int texture) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glIsTexture", texture);
-        return false;
+        return textures.contains(texture);
     }
 
     public void glPointParameterf (int pname, float param) {
@@ -858,5 +965,18 @@ public class OpglGraphics {
 
     public void glDrawTexfOES (float x, float y, float z, float width, float height) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glDrawTexfOES", x, y, z, width, height);
+    }
+
+    private void ensureBound() {
+        if (boundTarget == null) {
+            throw new IllegalStateException("bind not active");
+        }
+    }
+
+    private static String describeInstance(OpglGraphics value) {
+        if (value == null) {
+            return "null";
+        }
+        return value.getClass().getSimpleName() + '@' + Integer.toHexString(System.identityHashCode(value));
     }
 }
