@@ -459,9 +459,11 @@ public final class MidletRuntime {
         ensureThreadActive();
         var displayable = currentDisplayable();
         if (displayable instanceof Canvas canvas) {
-            // J-Phone/Vodafone DeviceControl.KEY_STATE reports the handset-style
-            // keypad bit layout, not MIDP GameCanvas pressed bits.
-            return canvas.phoneKeyStateMask(eightDirectionsEnabled);
+            // DeviceControl.KEY_STATE is a richer handset bitmap than MIDP key
+            // events alone: it includes softkeys, select/fire, keypad digits,
+            // and optional diagonal synthesis. J-Phone and Vodafone titles
+            // frequently poll this bitfield directly every frame.
+            return canvas.deviceKeyStateMask(eightDirectionsEnabled);
         }
         return 0;
     }
