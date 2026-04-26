@@ -29,10 +29,11 @@ public abstract class ACanvas extends javax.microedition.lcdui.Canvas implements
         }
         palette = new int[numPalettes];
         patterns = new byte[numPatterns][];
-        remexa.host.runtime.MidletRuntime.updateDisplayMetrics(
-                this,
-                new remexa.host.profile.DisplayMetrics(fw, fh, "ACanvas framebuffer")
-        );
+        // The ACanvas framebuffer is a separate off-screen surface. The real
+        // handset display size remains whatever the active profile/JAD chose,
+        // and titles can flush the framebuffer into that screen at arbitrary
+        // coordinates. Updating the display metrics here breaks games that
+        // probe getWidth()/getHeight() before the canvas is shown.
         remexa.host.runtime.MidletRuntime.createAmuseFrameBuffer(this, fw, fh);
     }
 
