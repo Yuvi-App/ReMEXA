@@ -51,6 +51,9 @@ public abstract class Canvas extends Displayable {
     protected void hideNotify() {
     }
 
+    protected void keyStateChanged(int keyCode, boolean pressed) {
+    }
+
     protected void sizeChanged(int width, int height) {
     }
 
@@ -160,16 +163,19 @@ public abstract class Canvas extends Displayable {
 
     public final void fireKeyPressed(int keyCode) {
         pressedKeys.add(keyCode);
+        keyStateChanged(keyCode, true);
         keyPressed(keyCode);
     }
 
     public final void fireKeyReleased(int keyCode) {
         pressedKeys.remove(keyCode);
+        keyStateChanged(keyCode, false);
         keyReleased(keyCode);
     }
 
     public final void fireKeyRepeated(int keyCode) {
         pressedKeys.add(keyCode);
+        keyStateChanged(keyCode, true);
         keyRepeated(keyCode);
     }
 

@@ -6,21 +6,22 @@ import javax.microedition.lcdui.Image;
 import remexa.host.runtime.MidletRuntime;
 
 public abstract class GameCanvas extends Canvas {
-    public static final int UP_PRESSED = 0x0001;
-    public static final int DOWN_PRESSED = 0x0002;
+    public static final int UP_PRESSED = 0x0002;
     public static final int LEFT_PRESSED = 0x0004;
-    public static final int RIGHT_PRESSED = 0x0008;
-    public static final int FIRE_PRESSED = 0x0010;
-    public static final int GAME_A_PRESSED = 0x0020;
-    public static final int GAME_B_PRESSED = 0x0040;
-    public static final int GAME_C_PRESSED = 0x0080;
-    public static final int GAME_D_PRESSED = 0x0100;
+    public static final int RIGHT_PRESSED = 0x0020;
+    public static final int DOWN_PRESSED = 0x0040;
+    public static final int FIRE_PRESSED = 0x0100;
+    public static final int GAME_A_PRESSED = 0x0200;
+    public static final int GAME_B_PRESSED = 0x0400;
+    public static final int GAME_C_PRESSED = 0x0800;
+    public static final int GAME_D_PRESSED = 0x1000;
 
     private final boolean suppressKeyEvents;
     private Image backBuffer;
-    private Graphics backBufferGraphics;
     private int backBufferWidth = -1;
     private int backBufferHeight = -1;
+    private int currentKeyState;
+    private int latchedKeyState;
 
     protected GameCanvas(boolean suppressKeyEvents) {
         this.suppressKeyEvents = suppressKeyEvents;
@@ -28,7 +29,7 @@ public abstract class GameCanvas extends Canvas {
 
     public Graphics getGraphics() {
         ensureBackBuffer();
-        return backBufferGraphics;
+        return backBuffer.getGraphics();
     }
 
     public void flushGraphics() {
@@ -36,44 +37,47 @@ public abstract class GameCanvas extends Canvas {
     }
 
     public void flushGraphics(int x, int y, int width, int height) {
+        if (!isShown() || width < 1 || height < 1) {
+            return;
+        }
         ensureBackBuffer();
         MidletRuntime.renderCanvas(this, graphics -> graphics.drawImage(backBuffer, 0, 0, Graphics.LEFT | Graphics.TOP));
     }
 
     public int getKeyStates() {
-        var state = 0;
-        if (containsAnyPressedKey(KEYCODE_UP, UP, (int) '2')) {
-            state |= UP_PRESSED;
+        if (!isShown()) {
+            return 0;
         }
-        if (containsAnyPressedKey(KEYCODE_DOWN, DOWN, (int) '8')) {
-            state |= DOWN_PRESSED;
-        }
-        if (containsAnyPressedKey(KEYCODE_LEFT, LEFT, (int) '4')) {
-            state |= LEFT_PRESSED;
-        }
-        if (containsAnyPressedKey(KEYCODE_RIGHT, RIGHT, (int) '6')) {
-            state |= RIGHT_PRESSED;
-        }
-        if (containsAnyPressedKey(KEYCODE_FIRE, FIRE, (int) '\n', (int) '5')) {
-            state |= FIRE_PRESSED;
-        }
-        if (containsAnyPressedKey((int) '7')) {
-            state |= GAME_A_PRESSED;
-        }
-        if (containsAnyPressedKey((int) '9')) {
-            state |= GAME_B_PRESSED;
-        }
-        if (containsAnyPressedKey((int) '*')) {
-            state |= GAME_C_PRESSED;
-        }
-        if (containsAnyPressedKey((int) '#')) {
-            state |= GAME_D_PRESSED;
-        }
+        var state = currentKeyState | latchedKeyState;
+        latchedKeyState = 0;
         return state;
+    }
+
+    @Override
+    public void paint(Graphics graphics) {
+        if (graphics == null) {
+            throw new NullPointerException("graphics");
+        }
+        ensureBackBuffer();
+        graphics.drawImage(backBuffer, 0, 0, Graphics.LEFT | Graphics.TOP);
     }
 
     protected final boolean suppressKeyEvents() {
         return suppressKeyEvents;
+    }
+
+    @Override
+    protected void keyStateChanged(int keyCode, boolean pressed) {
+        int stateBit = stateBitFor(keyCode);
+        if (stateBit == 0) {
+            return;
+        }
+        if (pressed) {
+            currentKeyState |= stateBit;
+            latchedKeyState |= stateBit;
+        } else {
+            currentKeyState &= ~stateBit;
+        }
     }
 
     private void ensureBackBuffer() {
@@ -83,8 +87,31 @@ public abstract class GameCanvas extends Canvas {
             return;
         }
         backBuffer = Image.createImage(width, height);
-        backBufferGraphics = backBuffer.getGraphics();
+        var graphics = backBuffer.getGraphics();
+        graphics.setColor(0xFFFFFF);
+        graphics.fillRect(0, 0, width, height);
         backBufferWidth = width;
         backBufferHeight = height;
+    }
+
+    private int stateBitFor(int keyCode) {
+        return switch (getGameAction(keyCode)) {
+            case UP -> UP_PRESSED;
+            case LEFT -> LEFT_PRESSED;
+            case RIGHT -> RIGHT_PRESSED;
+            case DOWN -> DOWN_PRESSED;
+            case FIRE -> FIRE_PRESSED;
+            case GAME_A -> GAME_A_PRESSED;
+            case GAME_B -> GAME_B_PRESSED;
+            case GAME_C -> GAME_C_PRESSED;
+            case GAME_D -> GAME_D_PRESSED;
+            default -> switch (keyCode) {
+                case '7' -> GAME_A_PRESSED;
+                case '9' -> GAME_B_PRESSED;
+                case '*' -> GAME_C_PRESSED;
+                case '#' -> GAME_D_PRESSED;
+                default -> 0;
+            };
+        };
     }
 }
