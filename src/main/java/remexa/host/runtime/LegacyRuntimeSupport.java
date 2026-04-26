@@ -1,11 +1,14 @@
 package remexa.host.runtime;
 
 import java.io.InputStream;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import remexa.probes.DebugLog;
 import remexa.probes.LogCategory;
 
 public final class LegacyRuntimeSupport {
     private static final Object SPIN_MONITOR = new Object();
+    private static final Set<String> COMPLETED_BOOTSTRAP_TARGETS = ConcurrentHashMap.newKeySet();
 
     private LegacyRuntimeSupport() {
     }
@@ -63,6 +66,17 @@ public final class LegacyRuntimeSupport {
             cause = cause.getCause();
         }
         DebugLog.log(LogCategory.HOST, LegacyRuntimeSupport.class.getName(), "Legacy catch swallowed: " + stack);
+    }
+
+    public static boolean completeBootstrapStub(String target) {
+        if (target != null && COMPLETED_BOOTSTRAP_TARGETS.add(target)) {
+            DebugLog.log(
+                    LogCategory.HOST,
+                    LegacyRuntimeSupport.class.getName(),
+                    "Completed legacy bootstrap stub for " + target
+            );
+        }
+        return true;
     }
 
     private static String resolveResourceName(Class<?> anchor, String name) {

@@ -4,16 +4,29 @@ import java.lang.classfile.ClassFile;
 import java.lang.classfile.ClassTransform;
 import java.lang.classfile.CodeBuilder;
 import java.lang.classfile.CodeElement;
+import java.lang.classfile.CodeModel;
 import java.lang.classfile.CodeTransform;
+import java.lang.classfile.Instruction;
 import java.lang.classfile.Label;
+import java.lang.classfile.MethodBuilder;
+import java.lang.classfile.MethodElement;
+import java.lang.classfile.MethodModel;
+import java.lang.classfile.MethodTransform;
+import java.lang.classfile.Opcode;
 import java.lang.classfile.instruction.BranchInstruction;
+import java.lang.classfile.instruction.ConstantInstruction;
 import java.lang.classfile.instruction.InvokeInstruction;
 import java.lang.classfile.instruction.LabelTarget;
+import java.lang.classfile.instruction.NopInstruction;
+import java.lang.classfile.instruction.ReturnInstruction;
+import java.lang.classfile.instruction.ThrowInstruction;
 import java.lang.constant.ClassDesc;
 import java.lang.constant.MethodTypeDesc;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -21,6 +34,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 final class ClassFileSanitizer {
     private static final ClassDesc SPIN_SUPPORT = ClassDesc.of("remexa.host.runtime.LegacyRuntimeSupport");
     private static final MethodTypeDesc SPIN_HINT_DESCRIPTOR = MethodTypeDesc.ofDescriptor("()V");
+    private static final MethodTypeDesc BOOLEAN_STRING_DESCRIPTOR = MethodTypeDesc.ofDescriptor("(Ljava/lang/String;)Z");
     private static final MethodTypeDesc RESOURCE_STREAM_DESCRIPTOR = MethodTypeDesc.of(
             ClassDesc.of("java.io.InputStream"),
             ClassDesc.of("java.lang.Class"),
@@ -95,9 +109,13 @@ final class ClassFileSanitizer {
             var changes = new AtomicInteger();
             byte[] transformed = classFile.transformClass(
                     classModel,
-                    ClassTransform.transformingMethodBodies(
-                            CodeTransform.ofStateful(() -> new LegacyCodeTransform(changes))
-                    )
+                    ClassTransform.transformingMethods(
+                                    ClassFileSanitizer::isLegacyBootstrapStub,
+                                    MethodTransform.ofStateful(() -> new LegacyBootstrapStubTransform(changes))
+                            )
+                            .andThen(ClassTransform.transformingMethodBodies(
+                                    CodeTransform.ofStateful(() -> new LegacyCodeTransform(changes))
+                            ))
             );
             return changes.get() == 0 ? new SanitizeResult(classBytes, 0) : new SanitizeResult(transformed, changes.get());
         } catch (RuntimeException ignored) {
@@ -223,6 +241,41 @@ final class ClassFileSanitizer {
     record SanitizeResult(byte[] classBytes, int changes) {
     }
 
+    private static boolean isLegacyBootstrapStub(MethodModel method) {
+        if (!BOOLEAN_STRING_DESCRIPTOR.equals(method.methodTypeSymbol())) {
+            return false;
+        }
+        var code = method.code().orElse(null);
+        if (code == null) {
+            return false;
+        }
+        List<Instruction> instructions = new ArrayList<>();
+        for (CodeElement element : code) {
+            if (element instanceof Instruction instruction) {
+                instructions.add(instruction);
+            }
+        }
+        if (instructions.size() < 3) {
+            return false;
+        }
+        if (!(instructions.getFirst() instanceof ConstantInstruction constant)
+                || constant.opcode() != Opcode.ICONST_0
+                || !(instructions.get(1) instanceof ReturnInstruction returnInstruction)
+                || returnInstruction.opcode() != Opcode.IRETURN) {
+            return false;
+        }
+        boolean sawPadding = false;
+        for (int index = 2; index < instructions.size(); index++) {
+            var instruction = instructions.get(index);
+            if (instruction instanceof NopInstruction || instruction instanceof ThrowInstruction) {
+                sawPadding = true;
+                continue;
+            }
+            return false;
+        }
+        return sawPadding;
+    }
+
     private static final class LegacyCodeTransform implements CodeTransform {
         private final AtomicInteger changeCount;
         private final Set<Label> seenLabels = Collections.newSetFromMap(new IdentityHashMap<>());
@@ -254,6 +307,32 @@ final class ClassFileSanitizer {
             return invoke.owner().asInternalName().equals("java/lang/Class")
                     && invoke.name().equalsString("getResourceAsStream")
                     && invoke.type().equalsString("(Ljava/lang/String;)Ljava/io/InputStream;");
+        }
+    }
+
+    private static final class LegacyBootstrapStubTransform implements MethodTransform {
+        private final AtomicInteger changeCount;
+        private boolean replaced;
+
+        private LegacyBootstrapStubTransform(AtomicInteger changeCount) {
+            this.changeCount = changeCount;
+        }
+
+        @Override
+        public void accept(MethodBuilder builder, MethodElement element) {
+            if (element instanceof CodeModel) {
+                builder.withCode(code -> {
+                    code.aload(code.parameterSlot(0));
+                    code.invokestatic(SPIN_SUPPORT, "completeBootstrapStub", BOOLEAN_STRING_DESCRIPTOR);
+                    code.ireturn();
+                });
+                if (!replaced) {
+                    changeCount.incrementAndGet();
+                    replaced = true;
+                }
+                return;
+            }
+            builder.with(element);
         }
     }
 }
