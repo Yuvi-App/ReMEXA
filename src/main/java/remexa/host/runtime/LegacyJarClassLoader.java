@@ -60,14 +60,7 @@ final class LegacyJarClassLoader extends URLClassLoader {
                         "Injected " + spinResult.changes() + " spin loop hint(s) into " + name
                 );
             }
-            var catchResult = ClassFileSanitizer.injectCatchLogging(spinResult.classBytes());
-            if (catchResult.changes() > 0) {
-                DebugLog.log(
-                        LogCategory.HOST,
-                        LegacyJarClassLoader.class.getName(),
-                        "Instrumented " + catchResult.changes() + " catch handler(s) in " + name
-                );
-            }
+
             int packageSeparator = name.lastIndexOf('.');
             if (packageSeparator > 0) {
                 String packageName = name.substring(0, packageSeparator);
@@ -77,9 +70,9 @@ final class LegacyJarClassLoader extends URLClassLoader {
             }
             return defineClass(
                     name,
-                    catchResult.classBytes(),
+                    spinResult.classBytes(),
                     0,
-                    catchResult.classBytes().length,
+                    spinResult.classBytes().length,
                     new CodeSource(resource, (java.security.cert.Certificate[]) null)
             );
         } catch (IOException exception) {

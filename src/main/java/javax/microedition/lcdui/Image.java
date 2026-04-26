@@ -39,6 +39,33 @@ public class Image {
         return createImage(1, 1);
     }
 
+    public static Image createRGBImage(int[] rgb, int width, int height, boolean processAlpha) {
+        if (rgb == null) {
+            throw new NullPointerException("rgb");
+        }
+        if (width <= 0 || height <= 0) {
+            throw new IllegalArgumentException("non-positive image dimensions: " + width + "x" + height);
+        }
+        if (rgb.length < width * height) {
+            throw new ArrayIndexOutOfBoundsException(
+                    "rgb array too small: have " + rgb.length + ", need " + (width * height));
+        }
+        var imageType = processAlpha ? BufferedImage.TYPE_INT_ARGB : BufferedImage.TYPE_INT_RGB;
+        var image = new BufferedImage(width, height, imageType);
+        if (processAlpha) {
+            image.setRGB(0, 0, width, height, rgb, 0, width);
+        } else {
+            // Force opaque alpha for non-alpha images so callers don't see ghosting
+            // when the source array happens to carry stray alpha bits.
+            int[] opaque = new int[width * height];
+            for (int i = 0; i < opaque.length; i++) {
+                opaque[i] = 0xFF000000 | rgb[i];
+            }
+            image.setRGB(0, 0, width, height, opaque, 0, width);
+        }
+        return new Image(image);
+    }
+
     public static Image createImage(String name) throws IOException {
         try (InputStream stream = MidletRuntime.openResource(name)) {
             if (stream == null) {
