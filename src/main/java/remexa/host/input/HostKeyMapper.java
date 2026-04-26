@@ -14,11 +14,15 @@ public final class HostKeyMapper {
     public static int toPhoneKeyCode(int awtKeyCode, boolean jPhoneDirectionalLayout) {
         if (jPhoneDirectionalLayout) {
             return switch (awtKeyCode) {
-                case KeyEvent.VK_UP -> Canvas.UP;
-                case KeyEvent.VK_LEFT -> Canvas.LEFT;
-                case KeyEvent.VK_RIGHT -> Canvas.RIGHT;
-                case KeyEvent.VK_DOWN -> Canvas.DOWN;
-                case KeyEvent.VK_ENTER -> Canvas.FIRE;
+                // MIDP key events are reported as device key codes; applications
+                // are expected to translate them with Canvas.getGameAction().
+                // Keep raw phone keypad access on the number keys/numpad, and use
+                // the host arrows/Enter to emulate dedicated navigation keys.
+                case KeyEvent.VK_UP -> Canvas.KEYCODE_UP;
+                case KeyEvent.VK_LEFT -> Canvas.KEYCODE_LEFT;
+                case KeyEvent.VK_RIGHT -> Canvas.KEYCODE_RIGHT;
+                case KeyEvent.VK_DOWN -> Canvas.KEYCODE_DOWN;
+                case KeyEvent.VK_ENTER -> Canvas.KEYCODE_FIRE;
                 case KeyEvent.VK_A, KeyEvent.VK_F1 -> Canvas.SOFT1;
                 case KeyEvent.VK_S, KeyEvent.VK_F2 -> Canvas.SOFT2;
                 case KeyEvent.VK_0, KeyEvent.VK_NUMPAD0 -> '0';
@@ -37,13 +41,13 @@ public final class HostKeyMapper {
             };
         }
         return switch (awtKeyCode) {
-            // Some MIDP titles compare raw keyPressed values against the Canvas action
-            // constants directly instead of using KEYCODE_* device codes.
-            case KeyEvent.VK_UP, KeyEvent.VK_KP_UP -> Canvas.UP;
-            case KeyEvent.VK_LEFT, KeyEvent.VK_KP_LEFT -> Canvas.LEFT;
-            case KeyEvent.VK_RIGHT, KeyEvent.VK_KP_RIGHT -> Canvas.RIGHT;
-            case KeyEvent.VK_DOWN, KeyEvent.VK_KP_DOWN -> Canvas.DOWN;
-            case KeyEvent.VK_ENTER -> Canvas.FIRE;
+            // Per MIDP, key events are reported as key codes; portable titles then
+            // convert them with Canvas.getGameAction().
+            case KeyEvent.VK_UP, KeyEvent.VK_KP_UP -> Canvas.KEYCODE_UP;
+            case KeyEvent.VK_LEFT, KeyEvent.VK_KP_LEFT -> Canvas.KEYCODE_LEFT;
+            case KeyEvent.VK_RIGHT, KeyEvent.VK_KP_RIGHT -> Canvas.KEYCODE_RIGHT;
+            case KeyEvent.VK_DOWN, KeyEvent.VK_KP_DOWN -> Canvas.KEYCODE_DOWN;
+            case KeyEvent.VK_ENTER -> Canvas.KEYCODE_FIRE;
             case KeyEvent.VK_A, KeyEvent.VK_F1 -> Canvas.SOFT1;
             case KeyEvent.VK_S, KeyEvent.VK_F2 -> Canvas.SOFT2;
             case KeyEvent.VK_0 -> '0';

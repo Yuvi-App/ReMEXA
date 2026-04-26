@@ -459,7 +459,9 @@ public final class MidletRuntime {
         ensureThreadActive();
         var displayable = currentDisplayable();
         if (displayable instanceof Canvas canvas) {
-            return canvas.deviceKeyStateMask(eightDirectionsEnabled);
+            // J-Phone/Vodafone DeviceControl.KEY_STATE reports the handset-style
+            // keypad bit layout, not MIDP GameCanvas pressed bits.
+            return canvas.phoneKeyStateMask(eightDirectionsEnabled);
         }
         return 0;
     }

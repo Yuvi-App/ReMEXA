@@ -184,10 +184,12 @@ public abstract class Canvas extends Displayable {
     }
 
     public final int deviceKeyStateMask(boolean eightDirectionsEnabled) {
-        var up = containsAnyKey(KEYCODE_UP, UP);
-        var left = containsAnyKey(KEYCODE_LEFT, LEFT);
-        var right = containsAnyKey(KEYCODE_RIGHT, RIGHT);
-        var down = containsAnyKey(KEYCODE_DOWN, DOWN);
+        // MIDP allows directional game actions to be mapped either to dedicated
+        // navigation keys or to the phone keypad (2/4/6/8, 5 for FIRE).
+        var up = containsAnyKey(KEYCODE_UP, UP, (int) '2');
+        var left = containsAnyKey(KEYCODE_LEFT, LEFT, (int) '4');
+        var right = containsAnyKey(KEYCODE_RIGHT, RIGHT, (int) '6');
+        var down = containsAnyKey(KEYCODE_DOWN, DOWN, (int) '8');
         var state = 0;
         if (eightDirectionsEnabled) {
             if (up && right) {
@@ -223,7 +225,7 @@ public abstract class Canvas extends Displayable {
                 state |= 0x8000;
             }
         }
-        if (containsAnyKey(KEYCODE_FIRE, (int) '\n', FIRE)) {
+        if (containsAnyKey(KEYCODE_FIRE, (int) '\n', FIRE, (int) '5')) {
             state |= 0x10000;
         }
         // J-Phone JSCL reverses the MIDP convention: bit 0x20000 ("SK1" in the
