@@ -14,6 +14,7 @@ public final class SoftwareJ3dRenderer {
     private static final int RASTER_SUBPIXEL_SCALE = 1 << RASTER_SUBPIXEL_SHIFT;
     private static final int COMMAND_LIST_VERSION_1_0 = 0xFE000001;
     private static final int COMMAND_END = 0x80000000;
+    private static final int COMMAND_NOP = 0x81000000;
     private static final int COMMAND_ATTRIBUTE = 0x83000000;
     private static final int COMMAND_CLIP = 0x84000000;
     private static final int COMMAND_FLUSH = 0x82000000;
@@ -97,6 +98,10 @@ public final class SoftwareJ3dRenderer {
                 originY,
                 surfaceWidth,
                 surfaceHeight,
+                clipX,
+                clipY,
+                clipWidth,
+                clipHeight,
                 layout,
                 effect,
                 null,
@@ -146,6 +151,10 @@ public final class SoftwareJ3dRenderer {
                 originY,
                 surfaceWidth,
                 surfaceHeight,
+                clipX,
+                clipY,
+                clipWidth,
+                clipHeight,
                 layout,
                 effect,
                 textures,
@@ -162,6 +171,10 @@ public final class SoftwareJ3dRenderer {
             if (command == COMMAND_END) {
                 break;
             }
+            if ((command & COMMAND_MASK) == COMMAND_NOP) {
+                cursor = Math.min(commandList.length, cursor + (command & 0x00FFFFFF));
+                continue;
+            }
             if (command == COMMAND_FLUSH) {
                 rendered = true;
                 continue;
@@ -176,7 +189,11 @@ public final class SoftwareJ3dRenderer {
                 if (cursor + 3 >= commandList.length) {
                     break;
                 }
-                cursor += 4;
+                int left = originX + commandList[cursor++];
+                int top = originY + commandList[cursor++];
+                int right = originX + commandList[cursor++];
+                int bottom = originY + commandList[cursor++];
+                state.setCommandClip(left, top, right, bottom);
                 continue;
             }
             if ((command & COMMAND_MASK) == COMMAND_TEXTURE_INDEX) {
@@ -1381,6 +1398,12 @@ public final class SoftwareJ3dRenderer {
         if (primitiveCount <= 0) {
             return commandIndex + 1;
         }
+        int effectiveClipX = Math.max(clipX, state.clipX);
+        int effectiveClipY = Math.max(clipY, state.clipY);
+        int effectiveClipRight = Math.min(clipX + clipWidth, state.clipX + state.clipWidth);
+        int effectiveClipBottom = Math.min(clipY + clipHeight, state.clipY + state.clipHeight);
+        int effectiveClipWidth = Math.max(0, effectiveClipRight - effectiveClipX);
+        int effectiveClipHeight = Math.max(0, effectiveClipBottom - effectiveClipY);
         int cursor = commandIndex + 1;
         int blendMode = state.semiTransparentEnabled ? (command & 0x60) : 0;
         boolean sphereMapEnabled = state.sphereMapEnabled && (command & ENV_ATTR_SPHERE_MAP) != 0;
@@ -1437,10 +1460,10 @@ public final class SoftwareJ3dRenderer {
                             depthBuffer,
                             surfaceWidth,
                             surfaceHeight,
-                            clipX,
-                            clipY,
-                            clipWidth,
-                            clipHeight,
+                            effectiveClipX,
+                            effectiveClipY,
+                            effectiveClipWidth,
+                            effectiveClipHeight,
                             v0,
                             v1,
                             colorValue,
@@ -1455,10 +1478,10 @@ public final class SoftwareJ3dRenderer {
                         depthBuffer,
                         surfaceWidth,
                         surfaceHeight,
-                        clipX,
-                        clipY,
-                        clipWidth,
-                        clipHeight,
+                        effectiveClipX,
+                        effectiveClipY,
+                        effectiveClipWidth,
+                        effectiveClipHeight,
                         state,
                         commandList,
                         cursor,
@@ -1476,10 +1499,10 @@ public final class SoftwareJ3dRenderer {
                         depthBuffer,
                         surfaceWidth,
                         surfaceHeight,
-                        clipX,
-                        clipY,
-                        clipWidth,
-                        clipHeight,
+                        effectiveClipX,
+                        effectiveClipY,
+                        effectiveClipWidth,
+                        effectiveClipHeight,
                         state,
                         commandList,
                         cursor,
@@ -1513,10 +1536,10 @@ public final class SoftwareJ3dRenderer {
                             depthBuffer,
                             surfaceWidth,
                             surfaceHeight,
-                            clipX,
-                            clipY,
-                            clipWidth,
-                            clipHeight,
+                            effectiveClipX,
+                            effectiveClipY,
+                            effectiveClipWidth,
+                            effectiveClipHeight,
                             state,
                             vertices[vertexBase],
                             vertices[vertexBase + 1],
@@ -2182,11 +2205,19 @@ public final class SoftwareJ3dRenderer {
         private final com.jblend.graphics.j3d.FigureLayout layout;
         private final Texture[] textures;
         private final Texture sphereMap;
+        private final int baseClipX;
+        private final int baseClipY;
+        private final int baseClipWidth;
+        private final int baseClipHeight;
         private int nearClip;
         private int farClip;
         private final boolean yDownProjection;
         private boolean semiTransparentEnabled;
         private boolean sphereMapEnabled;
+        private int clipX;
+        private int clipY;
+        private int clipWidth;
+        private int clipHeight;
         private AffineTrans affineTrans;
         private Texture texture;
         private int centerX;
@@ -2199,6 +2230,10 @@ public final class SoftwareJ3dRenderer {
                 com.jblend.graphics.j3d.FigureLayout layout,
                 Texture[] textures,
                 Texture sphereMap,
+                int baseClipX,
+                int baseClipY,
+                int baseClipWidth,
+                int baseClipHeight,
                 int nearClip,
                 int farClip,
                 boolean yDownProjection,
@@ -2215,11 +2250,19 @@ public final class SoftwareJ3dRenderer {
             this.layout = layout;
             this.textures = textures;
             this.sphereMap = sphereMap;
+            this.baseClipX = baseClipX;
+            this.baseClipY = baseClipY;
+            this.baseClipWidth = baseClipWidth;
+            this.baseClipHeight = baseClipHeight;
             this.nearClip = nearClip;
             this.farClip = farClip;
             this.yDownProjection = yDownProjection;
             this.semiTransparentEnabled = semiTransparentEnabled;
             this.sphereMapEnabled = sphereMapEnabled;
+            this.clipX = baseClipX;
+            this.clipY = baseClipY;
+            this.clipWidth = Math.max(0, baseClipWidth);
+            this.clipHeight = Math.max(0, baseClipHeight);
             this.affineTrans = affineTrans;
             this.texture = texture;
             this.centerX = centerX;
@@ -2241,11 +2284,30 @@ public final class SoftwareJ3dRenderer {
             }
         }
 
+        private void setCommandClip(int left, int top, int right, int bottom) {
+            int commandLeft = Math.min(left, right);
+            int commandTop = Math.min(top, bottom);
+            int commandRight = Math.max(left, right);
+            int commandBottom = Math.max(top, bottom);
+            int baseRight = baseClipX + baseClipWidth;
+            int baseBottom = baseClipY + baseClipHeight;
+            clipX = Math.max(baseClipX, commandLeft);
+            clipY = Math.max(baseClipY, commandTop);
+            int clippedRight = Math.min(baseRight, commandRight);
+            int clippedBottom = Math.min(baseBottom, commandBottom);
+            clipWidth = Math.max(0, clippedRight - clipX);
+            clipHeight = Math.max(0, clippedBottom - clipY);
+        }
+
         private static CommandState fromLayout(
                 int originX,
                 int originY,
                 int surfaceWidth,
                 int surfaceHeight,
+                int clipX,
+                int clipY,
+                int clipWidth,
+                int clipHeight,
                 com.jblend.graphics.j3d.FigureLayout layout,
                 Effect3D effect,
                 Texture[] textures,
@@ -2295,6 +2357,10 @@ public final class SoftwareJ3dRenderer {
                     layout,
                     textures,
                     effect == null ? null : effect.getSphereMap(),
+                    clipX,
+                    clipY,
+                    clipWidth,
+                    clipHeight,
                     layout.getPerspectiveNear(),
                     layout.getPerspectiveFar(),
                     yDownProjection,
