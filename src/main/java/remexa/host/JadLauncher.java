@@ -9,6 +9,7 @@ import javax.swing.Timer;
 import remexa.host.HostUiSettings;
 import remexa.host.jad.JadDescriptor;
 import remexa.host.jad.JadIconLoader;
+import remexa.host.jad.JadManifestOverlay;
 import remexa.host.jad.JadParser;
 import remexa.host.jad.RecentJadsRepository;
 import remexa.host.profile.LaunchProfileResolver;
@@ -55,7 +56,7 @@ public final class JadLauncher {
 
     public void launch(Path jadPath) {
         try {
-            var descriptor = JadParser.parse(jadPath);
+            var descriptor = descriptorForLaunch(JadParser.parse(jadPath));
             recentJads.remember(descriptor);
             openFrame(descriptor);
         } catch (Exception exception) {
@@ -76,6 +77,18 @@ public final class JadLauncher {
 
     public RecentJadsRepository recentJads() {
         return recentJads;
+    }
+
+    private JadDescriptor descriptorForLaunch(JadDescriptor descriptor) throws LaunchException {
+        var jarPath = descriptor.resolveJarPath();
+        if (jarPath.isEmpty() || !Files.exists(jarPath.get())) {
+            return descriptor;
+        }
+        try {
+            return JadManifestOverlay.merge(descriptor, jarPath.get());
+        } catch (Exception exception) {
+            throw new LaunchException("Failed to read JAR manifest.", exception);
+        }
     }
 
     private void openFrame(JadDescriptor descriptor) throws LaunchException {

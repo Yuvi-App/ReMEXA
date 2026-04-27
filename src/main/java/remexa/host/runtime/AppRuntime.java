@@ -4,14 +4,13 @@ import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.net.URL;
 import java.net.URLClassLoader;
-import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.Optional;
 import java.util.jar.JarFile;
 import java.util.concurrent.locks.LockSupport;
 import java.util.function.Consumer;
 import remexa.host.input.HostTextInputRequest;
 import remexa.host.jad.JadDescriptor;
+import remexa.host.jad.JadManifestOverlay;
 import remexa.host.profile.DisplayMetrics;
 import remexa.host.profile.LaunchProfile;
 import remexa.probes.DebugLog;
@@ -246,24 +245,8 @@ public final class AppRuntime {
     }
 
     private JadDescriptor mergeDescriptorWithJarManifest(JadDescriptor descriptor, java.nio.file.Path jarPath) throws LaunchException {
-        try (var jarFile = new JarFile(jarPath.toFile())) {
-            var manifest = jarFile.getManifest();
-            if (manifest == null) {
-                return descriptor;
-            }
-
-            var mergedProperties = new LinkedHashMap<String, String>();
-            for (Map.Entry<Object, Object> entry : manifest.getMainAttributes().entrySet()) {
-                var key = String.valueOf(entry.getKey());
-                var value = entry.getValue();
-                if (value == null) {
-                    continue;
-                }
-                mergedProperties.put(key, value.toString());
-            }
-            mergedProperties.putAll(descriptor.properties());
-
-            return new JadDescriptor(descriptor.sourcePath(), Map.copyOf(mergedProperties), descriptor.midlets());
+        try {
+            return JadManifestOverlay.merge(descriptor, jarPath);
         } catch (IOException exception) {
             throw new LaunchException("Failed to read JAR manifest.", exception);
         }
