@@ -1,6 +1,7 @@
 package remexa.app;
 
 import java.io.IOException;
+import java.lang.management.ManagementFactory;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.charset.Charset;
@@ -17,12 +18,14 @@ import remexa.probes.LogCategory;
 public final class ReMEXA {
     private static final String DEFAULT_LEGACY_ENCODING = "windows-31j";
     private static final String ENCODING_BOOTSTRAPPED_PROPERTY = "remexa.encoding.applied";
+    private static final String NATIVE_ACCESS_BOOTSTRAPPED_PROPERTY = "remexa.nativeAccess.applied";
+    private static final String NATIVE_ACCESS_FLAG = "--enable-native-access=ALL-UNNAMED";
 
     private ReMEXA() {
     }
 
     public static void main(String[] args) {
-        bootstrapLegacyEncodingIfNeeded(args);
+        bootstrapJvmConfigurationIfNeeded(args);
         var arguments = List.of(args);
         var launchRequest = parseLaunchRequest(arguments);
         LaunchConfig.applyFontType(launchRequest.fontType() == null ? HostUiSettings.fontType() : launchRequest.fontType());
@@ -53,21 +56,28 @@ public final class ReMEXA {
         SwingUtilities.invokeLater(() -> new LauncherFrame(new JadLauncher()).setVisible(true));
     }
 
-    private static void bootstrapLegacyEncodingIfNeeded(String[] args) {
+    private static void bootstrapJvmConfigurationIfNeeded(String[] args) {
         var configured = configuredLegacyEncoding();
-        if (Boolean.getBoolean(ENCODING_BOOTSTRAPPED_PROPERTY)) {
-            return;
-        }
-        if (Charset.defaultCharset().name().equalsIgnoreCase(configured)) {
+        boolean encodingReady = Boolean.getBoolean(ENCODING_BOOTSTRAPPED_PROPERTY)
+                || Charset.defaultCharset().name().equalsIgnoreCase(configured);
+        boolean nativeAccessReady = Boolean.getBoolean(NATIVE_ACCESS_BOOTSTRAPPED_PROPERTY)
+                || hasNativeAccessFlag();
+        if (encodingReady && nativeAccessReady) {
             return;
         }
 
         try {
             var command = new ArrayList<String>();
             command.add(javaBinary().toString());
-            command.add("-Dfile.encoding=" + configured);
-            command.add("-Dnative.encoding=" + configured);
-            command.add("-D" + ENCODING_BOOTSTRAPPED_PROPERTY + "=true");
+            if (!encodingReady) {
+                command.add("-Dfile.encoding=" + configured);
+                command.add("-Dnative.encoding=" + configured);
+                command.add("-D" + ENCODING_BOOTSTRAPPED_PROPERTY + "=true");
+            }
+            if (!nativeAccessReady) {
+                command.add(NATIVE_ACCESS_FLAG);
+                command.add("-D" + NATIVE_ACCESS_BOOTSTRAPPED_PROPERTY + "=true");
+            }
             appendRemexaSystemProperties(command);
             appendCurrentLaunchTarget(command);
             command.addAll(List.of(args));
@@ -81,7 +91,7 @@ public final class ReMEXA {
             if (exception instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
-            throw new IllegalStateException("Failed to bootstrap legacy encoding.", exception);
+            throw new IllegalStateException("Failed to bootstrap JVM configuration.", exception);
         }
     }
 
@@ -106,12 +116,24 @@ public final class ReMEXA {
             if (ENCODING_BOOTSTRAPPED_PROPERTY.equals(propertyName)) {
                 continue;
             }
+            if (NATIVE_ACCESS_BOOTSTRAPPED_PROPERTY.equals(propertyName)) {
+                continue;
+            }
             var value = System.getProperty(propertyName);
             if (value == null) {
                 continue;
             }
             command.add("-D" + propertyName + "=" + value);
         }
+    }
+
+    private static boolean hasNativeAccessFlag() {
+        for (var argument : ManagementFactory.getRuntimeMXBean().getInputArguments()) {
+            if (argument != null && argument.startsWith("--enable-native-access=")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static Path applicationPath() {

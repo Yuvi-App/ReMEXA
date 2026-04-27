@@ -88,10 +88,12 @@ public final class JadLauncher {
             frame.showFrame();
             frame.updateStatus("Loading " + descriptor.title());
             var result = runtime.launch(descriptor, launchProfile, frame::updateDisplayMetrics, frame::requestTextInput);
+            MidletRuntime.registerHostFrame(result.classLoader(), frame);
             previousDefaultHandler = installExitOnUncaughtException(frame, descriptor, result.classLoader());
             var restoredDefaultHandler = previousDefaultHandler;
             frame.setCloseHandler(() -> {
                 restoreDefaultExceptionHandler(restoredDefaultHandler);
+                MidletRuntime.unregisterHostFrame(result.classLoader());
                 shutdownLaunch(result, shutdownOnce);
             });
             frame.updateStatus("Loaded " + result.entryClass());

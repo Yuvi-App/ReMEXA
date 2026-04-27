@@ -1,6 +1,8 @@
 package com.j_phone.io;
 
 import java.io.IOException;
+import java.nio.file.Files;
+import java.util.Arrays;
 
 public final class FileUtility {
     public static final int WRITABLE = 0;
@@ -31,6 +33,55 @@ public final class FileUtility {
 
     public void play (byte[] data, int type) throws java.io.IOException {
         remexa.probes.SdkStubSupport.log("com.j_phone.io.FileUtility", "play", data, type);
+        if (data == null || data.length == 0) {
+            throw new IOException("FileUtility.play: media buffer is empty.");
+        }
+
+        var hostFrame = remexa.host.runtime.MidletRuntime.currentHostFrame();
+        if (hostFrame == null) {
+            throw new IOException("FileUtility.play: no host frame is available for in-window playback.");
+        }
+
+        int payloadLength = trimmedLength(data);
+        if (payloadLength <= 0) {
+            throw new IOException("FileUtility.play: media buffer only contains padding.");
+        }
+
+        var mediaRoot = remexa.host.runtime.MidletRuntime.appStorageRoot().resolve("media-cache");
+        Files.createDirectories(mediaRoot);
+        var mediaPath = Files.createTempFile(
+                mediaRoot,
+                sanitizeTitle(remexa.host.runtime.MidletRuntime.currentAppTitle()) + "-",
+                extensionForType(type)
+        );
+        Files.write(mediaPath, Arrays.copyOf(data, payloadLength));
+
+        remexa.probes.DebugLog.log(
+                remexa.probes.LogCategory.MEDIA,
+                FileUtility.class.getName(),
+                "Playing hosted media " + mediaPath.getFileName() + " (" + payloadLength + " bytes, type=" + type + ")"
+        );
+        hostFrame.playHostedVideoBlocking(mediaPath);
+    }
+
+    private static int trimmedLength(byte[] data) {
+        int length = data.length;
+        while (length > 0 && data[length - 1] == 0) {
+            length--;
+        }
+        return length;
+    }
+
+    private static String extensionForType(int type) {
+        return switch (type) {
+            case 16 -> ".3gp";
+            default -> ".bin";
+        };
+    }
+
+    private static String sanitizeTitle(String title) {
+        var source = title == null || title.isBlank() ? "media" : title;
+        return source.replaceAll("[^A-Za-z0-9._-]", "_");
     }
 
     public com.jblend.media.MediaPlayer getMediaPlayer (java.lang.String path) throws java.io.IOException {

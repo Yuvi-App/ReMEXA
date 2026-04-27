@@ -16,6 +16,7 @@ import javax.microedition.lcdui.Display;
 import javax.microedition.lcdui.Displayable;
 import javax.microedition.lcdui.DisplayableHostAccess;
 import javax.microedition.midlet.MIDlet;
+import remexa.host.JadFrame;
 import remexa.host.input.HostTextInputRequest;
 import remexa.host.jad.JadDescriptor;
 import remexa.host.profile.DisplayMetrics;
@@ -40,6 +41,7 @@ public final class MidletRuntime {
     private static final Map<MIDlet, Display> DISPLAYS = Collections.synchronizedMap(new WeakHashMap<>());
     private static final Map<Displayable, LaunchContext> DISPLAYABLES = Collections.synchronizedMap(new WeakHashMap<>());
     private static final Map<ClassLoader, HostTextInputRequest.Handler> TEXT_INPUT_HANDLERS = Collections.synchronizedMap(new WeakHashMap<>());
+    private static final Map<ClassLoader, JadFrame> HOST_FRAMES = Collections.synchronizedMap(new WeakHashMap<>());
 
     private MidletRuntime() {
     }
@@ -120,6 +122,41 @@ public final class MidletRuntime {
             return;
         }
         TEXT_INPUT_HANDLERS.remove(classLoader);
+    }
+
+    public static void registerHostFrame(ClassLoader classLoader, JadFrame hostFrame) {
+        if (classLoader == null || hostFrame == null) {
+            return;
+        }
+        HOST_FRAMES.put(classLoader, hostFrame);
+    }
+
+    public static void unregisterHostFrame(ClassLoader classLoader) {
+        if (classLoader == null) {
+            return;
+        }
+        HOST_FRAMES.remove(classLoader);
+    }
+
+    public static JadFrame currentHostFrame() {
+        var threadContextClassLoader = Thread.currentThread().getContextClassLoader();
+        if (threadContextClassLoader != null) {
+            var hostFrame = HOST_FRAMES.get(threadContextClassLoader);
+            if (hostFrame != null) {
+                return hostFrame;
+            }
+        }
+
+        var context = CURRENT_CONTEXT.get();
+        if (context != null) {
+            var hostFrame = HOST_FRAMES.get(context.classLoader());
+            if (hostFrame != null) {
+                return hostFrame;
+            }
+        }
+
+        context = activeContext();
+        return context == null ? null : HOST_FRAMES.get(context.classLoader());
     }
 
     public static String requestTextInput(HostTextInputRequest request) {

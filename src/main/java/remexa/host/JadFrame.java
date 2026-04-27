@@ -15,10 +15,12 @@ import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
 import java.awt.GridLayout;
 import java.awt.RenderingHints;
+import java.io.IOException;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import javax.swing.BorderFactory;
@@ -45,6 +47,7 @@ import javax.microedition.lcdui.Command;
 import remexa.host.input.HostKeyMapper;
 import remexa.host.input.HostTextInputRequest;
 import remexa.host.jad.JadDescriptor;
+import remexa.host.media.VlcVideoWindow;
 import remexa.host.profile.DisplayMetrics;
 import remexa.host.profile.LaunchProfile;
 import remexa.host.runtime.MidletRuntime;
@@ -115,6 +118,7 @@ public final class JadFrame extends JFrame {
     private final Object closeHandlerLock = new Object();
     private final int hostScale;
     private volatile ActiveTextInput activeTextInput;
+    private volatile ActiveHostedVideo activeHostedVideo;
     private Runnable closeHandler;
 
     public JadFrame(JadDescriptor descriptor, LaunchProfile launchProfile, boolean showHostDetails) {
@@ -186,6 +190,41 @@ public final class JadFrame extends JFrame {
         }
     }
 
+    public void playHostedVideoBlocking(java.nio.file.Path mediaPath) throws IOException {
+        if (mediaPath == null) {
+            throw new IOException("Hosted video path is missing.");
+        }
+        if (disposed.get()) {
+            throw new IOException("Host frame is already disposed.");
+        }
+
+        var completion = new CompletableFuture<Void>();
+        Runnable showTask = () -> presentHostedVideo(mediaPath.toAbsolutePath(), completion);
+        if (SwingUtilities.isEventDispatchThread()) {
+            showTask.run();
+        } else {
+            try {
+                SwingUtilities.invokeAndWait(showTask);
+            } catch (Exception exception) {
+                throw new IOException("Failed to initialize hosted video playback.", exception);
+            }
+        }
+
+        try {
+            completion.get();
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            SwingUtilities.invokeLater(this::dismissHostedVideoAsCancelled);
+            throw new IOException("Hosted video playback was interrupted.", exception);
+        } catch (ExecutionException exception) {
+            var cause = exception.getCause();
+            if (cause instanceof IOException ioException) {
+                throw ioException;
+            }
+            throw new IOException("Hosted video playback failed.", cause);
+        }
+    }
+
     public void setAppIcon(Image image) {
         if (image != null) {
             setIconImage(image);
@@ -208,6 +247,7 @@ public final class JadFrame extends JFrame {
             pendingInput.result().complete(pendingInput.request().initialText());
             activeTextInput = null;
         }
+        dismissHostedVideoOnDispose();
         if (showHostDetails) {
             DebugLog.removeListener(listener);
         }
@@ -359,6 +399,11 @@ public final class JadFrame extends JFrame {
     }
 
     private void refreshSoftKeyLabels() {
+        if (activeHostedVideo != null) {
+            leftSoftKeyLabel.setText("Skip");
+            rightSoftKeyLabel.setText("Skip");
+            return;
+        }
         if (activeTextInput != null) {
             leftSoftKeyLabel.setText("Cancel");
             rightSoftKeyLabel.setText("OK");
@@ -624,6 +669,75 @@ public final class JadFrame extends JFrame {
         session.result().complete(accept ? normalizeInputText(session.request(), text) : session.request().initialText());
     }
 
+    private void presentHostedVideo(java.nio.file.Path mediaPath, CompletableFuture<Void> completion) {
+        if (disposed.get()) {
+            completion.completeExceptionally(new IOException("Host frame was closed before playback started."));
+            return;
+        }
+        if (activeHostedVideo != null) {
+            completion.completeExceptionally(new IOException("Another hosted video is already playing."));
+            return;
+        }
+        if (activeTextInput != null) {
+            completion.completeExceptionally(new IOException("Cannot start hosted video while a text input overlay is open."));
+            return;
+        }
+
+        VlcVideoWindow videoWindow;
+        try {
+            videoWindow = new VlcVideoWindow(this, currentTitleText());
+        } catch (IOException exception) {
+            completion.completeExceptionally(exception);
+            return;
+        }
+
+        var session = new ActiveHostedVideo(completion, videoWindow);
+        activeHostedVideo = session;
+        setHostInputBindingsEnabled(false);
+        refreshSoftKeyLabels();
+        videoWindow.play(
+                mediaPath,
+                () -> SwingUtilities.invokeLater(() -> completeHostedVideo(session, null)),
+                exception -> SwingUtilities.invokeLater(() -> completeHostedVideo(session, exception))
+        );
+    }
+
+    private void dismissHostedVideoAsCancelled() {
+        var session = activeHostedVideo;
+        if (session == null) {
+            return;
+        }
+        completeHostedVideo(session, null);
+    }
+
+    private void dismissHostedVideoOnDispose() {
+        var session = activeHostedVideo;
+        if (session == null) {
+            return;
+        }
+        completeHostedVideo(session, new IOException("Host frame was closed during video playback."));
+    }
+
+    private void completeHostedVideo(ActiveHostedVideo session, IOException error) {
+        if (session == null || activeHostedVideo != session) {
+            return;
+        }
+        activeHostedVideo = null;
+        try {
+            session.videoWindow().close();
+        } finally {
+            setHostInputBindingsEnabled(true);
+            refreshSoftKeyLabels();
+            getRootPane().requestFocusInWindow();
+        }
+
+        if (error == null) {
+            session.completion().complete(null);
+        } else {
+            session.completion().completeExceptionally(error);
+        }
+    }
+
     private JComponent createEditorHost(HostTextInputRequest request, JTextComponent editor) {
         int width = Math.max(260, Math.min(420, scaledWidth(launchProfile.initialDisplay()) - 48));
         if (request.wrapAllowed()) {
@@ -789,6 +903,11 @@ public final class JadFrame extends JFrame {
         return normalized;
     }
 
+    private String currentTitleText() {
+        var title = getTitle();
+        return title == null || title.isBlank() ? "Video Playback" : title;
+    }
+
     private static java.util.List<String> summaryLines(JadDescriptor descriptor, LaunchProfile launchProfile) {
         var lines = new ArrayList<>(descriptor.summaryLines());
         lines.add("Profile: " + launchProfile.profile().displayName());
@@ -858,6 +977,12 @@ public final class JadFrame extends JFrame {
     private record ActiveTextInput(
             HostTextInputRequest request,
             CompletableFuture<String> result
+    ) {
+    }
+
+    private record ActiveHostedVideo(
+            CompletableFuture<Void> completion,
+            VlcVideoWindow videoWindow
     ) {
     }
 }
