@@ -20,7 +20,13 @@ import remexa.probes.DebugLog;
 import remexa.probes.LogCategory;
 
 public final class AudioPhraseTrack {
+    public static final int NO_DATA = PhraseTrack.NO_DATA;
+    public static final int READY = PhraseTrack.READY;
+    public static final int PLAYING = PhraseTrack.PLAYING;
+    public static final int PAUSED = PhraseTrack.PAUSED;
+
     private final PhraseTrack delegate;
+    private int lastLoop = 1;
 
     AudioPhraseTrack(int id) {
         this.delegate = new PhraseTrack(id);
@@ -44,11 +50,13 @@ public final class AudioPhraseTrack {
 
     public void play() {
         DebugLog.log(LogCategory.MEDIA, AudioPhraseTrack.class.getName(), "Track " + getID() + " play(loop=1)");
+        lastLoop = 1;
         delegate.play();
     }
 
     public void play(int loop) {
         DebugLog.log(LogCategory.MEDIA, AudioPhraseTrack.class.getName(), "Track " + getID() + " play(loop=" + loop + ")");
+        lastLoop = loop;
         delegate.play(loop);
     }
 
@@ -62,6 +70,12 @@ public final class AudioPhraseTrack {
     }
 
     public void resume() {
+        if (delegate.getState() == PhraseTrack.PAUSED) {
+            DebugLog.log(LogCategory.MEDIA, AudioPhraseTrack.class.getName(),
+                    "Track " + getID() + " resume() restarting phrase from beginning");
+            delegate.play(lastLoop);
+            return;
+        }
         delegate.resume();
     }
 
@@ -74,7 +88,7 @@ public final class AudioPhraseTrack {
     }
 
     public int getVolume() {
-        return delegate.volume();
+        return delegate.getVolume();
     }
 
     public void setPanpot(int value) {
@@ -82,7 +96,15 @@ public final class AudioPhraseTrack {
     }
 
     public int getPanpot() {
-        return delegate.panpot();
+        return delegate.getPanpot();
+    }
+
+    public void mute(boolean mute) {
+        delegate.mute(mute);
+    }
+
+    public boolean isMute() {
+        return delegate.isMute();
     }
 
     public int getID() {
