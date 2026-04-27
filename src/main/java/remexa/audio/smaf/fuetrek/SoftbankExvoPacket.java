@@ -7,6 +7,7 @@ import java.util.Arrays;
  */
 final class SoftbankExvoPacket {
     enum Kind {
+        LEGACY_VOICE_PROGRAM,
         WAVE_UPLOAD,
         VOICE_PROGRAM,
         CONTROL_TEMPLATE,
@@ -17,6 +18,7 @@ final class SoftbankExvoPacket {
     }
 
     private static final int MANUFACTURER_YAMAHA = 0x43;
+    private static final int YAMAHA_MA_LEGACY_FAMILY = 0x03;
     private static final int YAMAHA_MA_EXVO_FAMILY = 0x04;
     private static final int SOFTBANK_EXVO_FAMILY = 0x05;
 
@@ -69,6 +71,9 @@ final class SoftbankExvoPacket {
         }
         int family = message[1] & 0xff;
         int type = message[2] & 0xff;
+        if (family == YAMAHA_MA_LEGACY_FAMILY) {
+            return parseLegacyYamahaPacket(message, end, family, type);
+        }
         if (family == YAMAHA_MA_EXVO_FAMILY) {
             return parseYamahaMaPacket(message, end, family, type);
         }
@@ -81,7 +86,22 @@ final class SoftbankExvoPacket {
     }
 
     private static boolean isKnownExvoFamily(int family) {
-        return family == YAMAHA_MA_EXVO_FAMILY || family == SOFTBANK_EXVO_FAMILY;
+        return family == YAMAHA_MA_LEGACY_FAMILY
+                || family == YAMAHA_MA_EXVO_FAMILY
+                || family == SOFTBANK_EXVO_FAMILY;
+    }
+
+    private static SoftbankExvoPacket parseLegacyYamahaPacket(byte[] message, int end, int family, int type) {
+        if (type == 0x00 && end > 7) {
+            // Early MA-2/MA-3 phrases carry short Yamaha voice definitions in
+            // `43 03 00 00 00 ...` packets. The native player hands these to a
+            // dedicated repacker starting at the legacy type byte, so expose
+            // the whole family-specific body and let the sampler decode it.
+            return new SoftbankExvoPacket(message, end, Kind.LEGACY_VOICE_PROGRAM, family, type,
+                    -1, -1, -1, -1, -1, 2);
+        }
+        return new SoftbankExvoPacket(message, end, Kind.UNKNOWN, family, type,
+                -1, -1, -1, -1, -1, end);
     }
 
     private static SoftbankExvoPacket parseYamahaMaPacket(byte[] message, int end, int family, int type) {
@@ -200,6 +220,9 @@ final class SoftbankExvoPacket {
         }
         if (kind == Kind.VOICE_PROGRAM) {
             return "vm35-fm-short-" + length;
+        }
+        if (kind == Kind.LEGACY_VOICE_PROGRAM) {
+            return "legacy-vm35-" + length;
         }
         if (kind == Kind.CONTROL_TEMPLATE) {
             return "template-tail-" + length;

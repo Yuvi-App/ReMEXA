@@ -1892,7 +1892,7 @@ public final class SMAFDecoder
         int triggerTick = startTick + gateTimeMs;
         pcmDataPositions.put(triggerTick, noteValue);
         pcmDataVelocities.put(triggerTick, velocity);
-        pcmSequenceTriggers.add(new PcmSequenceTrigger(startTick, gateTime, gateTimeMs, noteValue, velocity, channel));
+        pcmSequenceTriggers.add(new PcmSequenceTrigger(triggerTick, startTick, gateTime, gateTimeMs, noteValue, velocity, channel));
     }
 
     public static record SequenceSysExEvent(int tick, byte[] data)
@@ -1903,7 +1903,8 @@ public final class SMAFDecoder
     {
     }
 
-    public static record PcmSequenceTrigger(int startTick,
+    public static record PcmSequenceTrigger(int triggerTick,
+                                            int startTick,
                                             int gateTime,
                                             int gateTimeMs,
                                             int noteValue,

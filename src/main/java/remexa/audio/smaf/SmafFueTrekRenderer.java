@@ -231,11 +231,7 @@ final class SmafFueTrekRenderer {
                 continue;
             }
             PcmClip clip = resolved.clip();
-            int clipFrames = clip.frameCount;
-            if (trigger.gateTimeMs() > 0) {
-                clipFrames = Math.min(clipFrames, tickToFrames(trigger.gateTimeMs()));
-            }
-            mixedFrameCount = Math.max(mixedFrameCount, tickToFrames(trigger.startTick()) + clipFrames);
+            mixedFrameCount = Math.max(mixedFrameCount, tickToFrames(trigger.triggerTick()) + clip.frameCount);
         }
         return mixedFrameCount;
     }
@@ -250,11 +246,8 @@ final class SmafFueTrekRenderer {
                 continue;
             }
             PcmClip clip = resolved.clip();
-            int startFrame = tickToFrames(trigger.startTick());
+            int startFrame = tickToFrames(trigger.triggerTick());
             int clipFrames = clip.frameCount;
-            if (trigger.gateTimeMs() > 0) {
-                clipFrames = Math.min(clipFrames, tickToFrames(trigger.gateTimeMs()));
-            }
             if (clipFrames <= 0) {
                 continue;
             }
@@ -263,6 +256,7 @@ final class SmafFueTrekRenderer {
                 SmafDebug.info("render",
                         "Mixing PCM trigger note=" + trigger.noteValue()
                                 + " resolvedClip=" + resolved.index()
+                                + " triggerTick=" + trigger.triggerTick()
                                 + " startTick=" + trigger.startTick()
                                 + " gateTime=" + trigger.gateTime()
                                 + " gateTimeMs=" + trigger.gateTimeMs()

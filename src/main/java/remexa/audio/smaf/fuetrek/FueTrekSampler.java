@@ -51,6 +51,7 @@ final class FueTrekSampler implements Sampler {
     private int rawGlobalLaneB0 = 0x7f;
     private int rawGlobalLaneB1 = 0x40;
     private int implicitRawExvoProgramSlot = 0;
+    private int implicitLegacyVmProgramSlot = 0;
 
     FueTrekSampler(FueTrekRom rom, float sampleRate, int maxPolyphony) {
         this.rom = rom;
@@ -336,6 +337,7 @@ final class FueTrekSampler implements Sampler {
         rawGlobalLaneB0 = 0x7f;
         rawGlobalLaneB1 = 0x40;
         implicitRawExvoProgramSlot = 0;
+        implicitLegacyVmProgramSlot = 0;
         pendingRawExvoUpload81 = null;
         Arrays.fill(rawExvoUploads81ByNote, null);
         Arrays.fill(rawExvoProgramSlots, null);
@@ -480,6 +482,7 @@ final class FueTrekSampler implements Sampler {
             return false;
         }
         return switch (packet.kind()) {
+            case LEGACY_VOICE_PROGRAM -> applyRawLegacyYamahaVoice(packet, message);
             case WAVE_UPLOAD -> applyRawSoftbankExvoWave(packet, message);
             case VOICE_PROGRAM -> applyRawSoftbankExvoVoice(packet, message);
             case CONTROL_TEMPLATE, CONTROL_UPLOAD_81 -> applyRawSoftbankExvoControl(packet, message);
@@ -489,6 +492,26 @@ final class FueTrekSampler implements Sampler {
                 yield false;
             }
         };
+    }
+
+    private boolean applyRawLegacyYamahaVoice(SoftbankExvoPacket packet, byte[] message) {
+        int programSlot = packet.channel() >= 0
+                ? packet.channel() & 0x3f
+                : implicitLegacyVmProgramSlot++ & 0x3f;
+        RawExvoVoiceProgram program = parseRawLegacyYamahaVoiceProgram(message, packet.payloadOffset());
+        if (program == null) {
+            return false;
+        }
+        RawExvoProgramSlot slot = new RawExvoProgramSlot(programSlot, -1, -1, program, null);
+        rawExvoProgramSlots[programSlot] = slot;
+        for (ChannelState state : channels) {
+            if (state.programSelected && (state.program & 0x3f) == programSlot) {
+                slot.applyTo(state, rom);
+            }
+        }
+        debugRawExvoVoiceProgram(programSlot, program);
+        debugRawExvoPacket("legacy-voice", packet, message);
+        return true;
     }
 
     private boolean applyRawSoftbankExvoWave(SoftbankExvoPacket packet, byte[] message) {
@@ -629,6 +652,20 @@ final class FueTrekSampler implements Sampler {
             return null;
         }
         return RawExvoVoiceProgram.decode(Arrays.copyOfRange(message, offset, end));
+    }
+
+    private static RawExvoVoiceProgram parseRawLegacyYamahaVoiceProgram(byte[] message, int offset) {
+        if (message == null || offset < 0 || offset >= message.length) {
+            return null;
+        }
+        int end = message.length;
+        if ((message[end - 1] & 0xff) == 0xf7) {
+            end--;
+        }
+        if (end <= offset) {
+            return null;
+        }
+        return RawExvoVoiceProgram.decodeLegacyYamahaStartup(Arrays.copyOfRange(message, offset, end));
     }
 
     private static DecodedCompactValue decodeRawExvoCompactValue(byte[] message, int offset) {
@@ -1854,20 +1891,26 @@ final class FueTrekSampler implements Sampler {
                 RawExvoVoiceProgram voiceProgram,
                 RawExvoUpload81 upload81) {
             this.programSlot = programSlot & 0x3f;
-            this.groupId = groupId & 0xff;
-            this.objectIndex = objectIndex & 0x7f;
+            this.groupId = groupId;
+            this.objectIndex = objectIndex;
             this.voiceProgram = voiceProgram;
             this.upload81 = upload81;
         }
 
         boolean hasValidObject(FueTrekRom rom) {
+            if (groupId < 0 || objectIndex < 0) {
+                return voiceProgram != null;
+            }
             FueTrekRom.Group group = rom.group(groupId);
             return group != null && group.entry(objectIndex) != null;
         }
 
         boolean applyTo(ChannelState state, FueTrekRom rom) {
-            if (!state.applyRawObjectOverride(rom, groupId, objectIndex)) {
+            if (groupId >= 0 && objectIndex >= 0 && !state.applyRawObjectOverride(rom, groupId, objectIndex)) {
                 return false;
+            }
+            if (voiceProgram == null) {
+                return groupId >= 0 && objectIndex >= 0;
             }
             state.applyRawVoiceProgram(voiceProgram, upload81);
             return true;
@@ -1925,8 +1968,86 @@ final class FueTrekSampler implements Sampler {
                     operators);
         }
 
+        static RawExvoVoiceProgram decodeLegacyYamahaStartup(byte[] data) {
+            if (data == null || data.length < 10) {
+                return null;
+            }
+            int type = data[0] & 0xff;
+            if (type != 0x00) {
+                return null;
+            }
+            int header0 = data[3] & 0xff;
+            int header1 = data[4] & 0xff;
+            int algorithm = header0 & 0x7;
+            int operatorCount = vm35OperatorCount(algorithm);
+            int requiredLength = 5 + (operatorCount * 5);
+            if (data.length < requiredLength) {
+                return null;
+            }
+
+            RawExvoOperator[] operators = new RawExvoOperator[operatorCount];
+            byte[] vm35Like = new byte[3 + (operatorCount * 7)];
+            vm35Like[0] = 0x3c;
+            vm35Like[1] = (byte) (header1 & 0x3);
+            vm35Like[2] = (byte) (((header0 >> 6) & 0x3) << 6 | algorithm);
+
+            int legacyHeaderTail = (header0 >> 3) & 0x7;
+            for (int i = 0; i < operatorCount; i++) {
+                int sourceOffset = 5 + (i * 5);
+                byte[] operatorBytes = decodeLegacyYamahaOperator(data, sourceOffset, i == 0 ? legacyHeaderTail : 0);
+                if (operatorBytes == null) {
+                    return null;
+                }
+                int targetOffset = 3 + (i * 7);
+                System.arraycopy(operatorBytes, 0, vm35Like, targetOffset, operatorBytes.length);
+                operators[i] = RawExvoOperator.decode(vm35Like, targetOffset);
+            }
+
+            return new RawExvoVoiceProgram(
+                    vm35Like,
+                    vm35Like[0] & 0x7f,
+                    0,
+                    vm35Like[1] & 0x3,
+                    (vm35Like[2] >> 6) & 0x3,
+                    0,
+                    algorithm,
+                    operators);
+        }
+
         private static int vm35OperatorCount(int algorithm) {
             return algorithm < 2 ? 2 : 4;
+        }
+
+        private static byte[] decodeLegacyYamahaOperator(byte[] data, int offset, int sharedBits) {
+            if (offset < 0 || offset + 5 > data.length) {
+                return null;
+            }
+            int b0 = data[offset] & 0xff;
+            int b1 = data[offset + 1] & 0xff;
+            int b2 = data[offset + 2] & 0xff;
+            int b3 = data[offset + 3] & 0xff;
+            int b4 = data[offset + 4] & 0xff;
+
+            int keyScaleRate = b0 & 0x1;
+            boolean zeroTotalLevel = (b0 & 0x4) != 0;
+            int releaseNibble = ((b0 & 0x2) != 0) ? 0x4 : (b1 >> 4);
+            int amplitudeDepth = (b4 >> 4) & 0x3;
+            int amplitudeEnabled = (b4 >> 3) & 0x1;
+            int vibratoDepth = (b4 >> 6) & 0x3;
+            int vibratoEnabled = (b0 >> 3) & 0x1;
+
+            return new byte[]{
+                    (byte) ((((zeroTotalLevel ? 0 : (b1 >> 4)) & 0xf) << 4) | keyScaleRate),
+                    (byte) (((releaseNibble & 0xf) << 4) | (b1 & 0xf)),
+                    (byte) b2,
+                    (byte) b3,
+                    (byte) ((((amplitudeDepth & 0x3) << 5)
+                            | ((amplitudeEnabled & 0x1) << 4)
+                            | ((vibratoDepth & 0x3) << 1)
+                            | (vibratoEnabled & 0x1)) & 0xff),
+                    (byte) (b0 & 0xf0),
+                    (byte) ((((b4 & 0x7) << 3) | (sharedBits & 0x7)) & 0xff)
+            };
         }
 
         int pointCount() {
