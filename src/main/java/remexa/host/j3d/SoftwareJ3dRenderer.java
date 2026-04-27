@@ -14,17 +14,23 @@ public final class SoftwareJ3dRenderer {
     private static final int RASTER_SUBPIXEL_SCALE = 1 << RASTER_SUBPIXEL_SHIFT;
     private static final int COMMAND_LIST_VERSION_1_0 = 0xFE000001;
     private static final int COMMAND_END = 0x80000000;
+    private static final int COMMAND_ATTRIBUTE = 0x83000000;
+    private static final int COMMAND_CLIP = 0x84000000;
     private static final int COMMAND_FLUSH = 0x82000000;
     private static final int COMMAND_CENTER = 0x85000000;
     private static final int COMMAND_TEXTURE_INDEX = 0x86000000;
     private static final int COMMAND_AFFINE_INDEX = 0x87000000;
     private static final int COMMAND_PARALLEL_SCALE = 0x90000000;
     private static final int COMMAND_PARALLEL_SIZE = 0x91000000;
+    private static final int COMMAND_PERSPECTIVE_FOV = 0x92000000;
+    private static final int COMMAND_PERSPECTIVE_WH = 0x93000000;
     private static final int COMMAND_AMBIENT_LIGHT = 0xA0000000;
     private static final int COMMAND_DIRECTION_LIGHT = 0xA1000000;
+    private static final int COMMAND_THRESHOLD = 0xAF000000;
     private static final int COMMAND_MASK = 0xFF000000;
     private static final int ENV_ATTR_LIGHTING = 0x01;
     private static final int ENV_ATTR_SPHERE_MAP = 0x02;
+    private static final int ENV_ATTR_SEMI_TRANSPARENT = 0x08;
     private static final int PATTR_COLORKEY = 0x10;
     private static final int PDATA_NORMAL_MASK = 0x0300;
     private static final int PDATA_NORMAL_PER_FACE = 0x0200;
@@ -160,6 +166,19 @@ public final class SoftwareJ3dRenderer {
                 rendered = true;
                 continue;
             }
+            if ((command & COMMAND_MASK) == COMMAND_ATTRIBUTE) {
+                int attributes = command & 0x00FFFFFF;
+                state.sphereMapEnabled = (attributes & ENV_ATTR_SPHERE_MAP) != 0;
+                state.semiTransparentEnabled = (attributes & ENV_ATTR_SEMI_TRANSPARENT) != 0;
+                continue;
+            }
+            if (command == COMMAND_CLIP) {
+                if (cursor + 3 >= commandList.length) {
+                    break;
+                }
+                cursor += 4;
+                continue;
+            }
             if ((command & COMMAND_MASK) == COMMAND_TEXTURE_INDEX) {
                 int textureIndex = command & 0xF;
                 state.texture = textureIndex >= 0 && state.textures != null && textureIndex < state.textures.length
@@ -199,6 +218,39 @@ public final class SoftwareJ3dRenderer {
                 state.projectionScaleY = height > 0 ? (float) surfaceHeight / height : 0.0f;
                 continue;
             }
+            if (command == COMMAND_PERSPECTIVE_FOV) {
+                if (cursor + 2 >= commandList.length) {
+                    break;
+                }
+                state.perspective = true;
+                state.nearClip = commandList[cursor++];
+                state.farClip = commandList[cursor++];
+                int angle = commandList[cursor++];
+                float angleRadians = (float) (angle * (Math.PI * 2.0 / 4096.0));
+                float focal = angleRadians <= 0.0f || angleRadians >= Math.PI
+                        ? surfaceWidth * 0.5f
+                        : (float) ((surfaceWidth * 0.5f) / Math.tan(angleRadians * 0.5f));
+                state.projectionScaleX = focal;
+                state.projectionScaleY = focal;
+                continue;
+            }
+            if (command == COMMAND_PERSPECTIVE_WH) {
+                if (cursor + 3 >= commandList.length) {
+                    break;
+                }
+                state.perspective = true;
+                state.nearClip = commandList[cursor++];
+                state.farClip = commandList[cursor++];
+                int width = commandList[cursor++];
+                int height = commandList[cursor++];
+                state.projectionScaleX = width > 0 && state.nearClip > 0
+                        ? (surfaceWidth * (float) state.nearClip) / width
+                        : 0.0f;
+                state.projectionScaleY = height > 0 && state.nearClip > 0
+                        ? (surfaceHeight * (float) state.nearClip) / height
+                        : 0.0f;
+                continue;
+            }
             if (command == COMMAND_AMBIENT_LIGHT) {
                 if (cursor >= commandList.length) {
                     break;
@@ -211,6 +263,13 @@ public final class SoftwareJ3dRenderer {
                     break;
                 }
                 cursor += 4;
+                continue;
+            }
+            if (command == COMMAND_THRESHOLD) {
+                if (cursor + 2 >= commandList.length) {
+                    break;
+                }
+                cursor += 3;
                 continue;
             }
             if (command >= 0) {
@@ -1218,16 +1277,14 @@ public final class SoftwareJ3dRenderer {
         if (texture == null || texture.getWidth() <= 0 || texture.getHeight() <= 0) {
             return 0;
         }
-        // Primitive/command-list callers frequently atlas many tiles into one texture sheet and
-        // address the last texel inclusively (for example 255 on a 256-wide BMP). Clamp the
-        // interpolated UVs here so tiny edge overshoots do not wrap back to column/row 0.
-        float biasedU = u - 0.5f;
-        float biasedV = v - 0.5f;
+        // Command-list texture coordinates in these Vodafone titles are authored as absolute
+        // texel positions inside an atlas, so preserve the integer boundaries the content uses
+        // and only clamp tiny overshoots back inside the sheet.
         float maxU = Math.nextDown((float) texture.getWidth());
         float maxV = Math.nextDown((float) texture.getHeight());
         return texture.sampleColor(
-                Math.max(0.0f, Math.min(biasedU, maxU)),
-                Math.max(0.0f, Math.min(biasedV, maxV)),
+                Math.max(0.0f, Math.min(u, maxU)),
+                Math.max(0.0f, Math.min(v, maxV)),
                 transparent
         );
     }
@@ -1326,7 +1383,7 @@ public final class SoftwareJ3dRenderer {
         }
         int cursor = commandIndex + 1;
         int blendMode = state.semiTransparentEnabled ? (command & 0x60) : 0;
-        boolean sphereMapEnabled = (command & ENV_ATTR_SPHERE_MAP) != 0;
+        boolean sphereMapEnabled = state.sphereMapEnabled && (command & ENV_ATTR_SPHERE_MAP) != 0;
         boolean colorKeyEnabled = (command & PATTR_COLORKEY) != 0;
         switch (primitiveType) {
             case PRIMITIVE_LINES -> {
@@ -2125,10 +2182,11 @@ public final class SoftwareJ3dRenderer {
         private final com.jblend.graphics.j3d.FigureLayout layout;
         private final Texture[] textures;
         private final Texture sphereMap;
-        private final int nearClip;
-        private final int farClip;
+        private int nearClip;
+        private int farClip;
         private final boolean yDownProjection;
-        private final boolean semiTransparentEnabled;
+        private boolean semiTransparentEnabled;
+        private boolean sphereMapEnabled;
         private AffineTrans affineTrans;
         private Texture texture;
         private int centerX;
@@ -2145,6 +2203,7 @@ public final class SoftwareJ3dRenderer {
                 int farClip,
                 boolean yDownProjection,
                 boolean semiTransparentEnabled,
+                boolean sphereMapEnabled,
                 AffineTrans affineTrans,
                 Texture texture,
                 int centerX,
@@ -2160,6 +2219,7 @@ public final class SoftwareJ3dRenderer {
             this.farClip = farClip;
             this.yDownProjection = yDownProjection;
             this.semiTransparentEnabled = semiTransparentEnabled;
+            this.sphereMapEnabled = sphereMapEnabled;
             this.affineTrans = affineTrans;
             this.texture = texture;
             this.centerX = centerX;
@@ -2239,6 +2299,7 @@ public final class SoftwareJ3dRenderer {
                     layout.getPerspectiveFar(),
                     yDownProjection,
                     effect == null || effect.isSemiTransparentEnabled(),
+                    effect != null && effect.getSphereMap() != null,
                     layout.getAffineTrans(),
                     currentTexture,
                     centerX,
