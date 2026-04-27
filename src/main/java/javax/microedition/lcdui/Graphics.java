@@ -1,5 +1,5 @@
 package javax.microedition.lcdui;
-
+import java.awt.AlphaComposite;
 import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.Polygon;
@@ -319,6 +319,22 @@ public class Graphics {
         delegate.setClip(0, 0, surfaceWidth, surfaceHeight);
         delegate.setFont(font.awtFont());
         delegate.setColor(new Color(argbColor, true));
+    }
+
+    public void clearSurface(int argbColor) {
+        var previousComposite = delegate.getComposite();
+        var previousClip = delegate.getClip();
+        var previousColor = delegate.getColor();
+        try {
+            delegate.setComposite(AlphaComposite.Src);
+            delegate.setClip(0, 0, surfaceWidth, surfaceHeight);
+            delegate.setColor(new Color(argbColor, true));
+            delegate.fillRect(0, 0, surfaceWidth, surfaceHeight);
+        } finally {
+            delegate.setComposite(previousComposite);
+            delegate.setClip(previousClip);
+            delegate.setColor(previousColor);
+        }
     }
 
     private Rectangle clipBounds() {
