@@ -1,6 +1,8 @@
 package javax.microedition.media;
 
 public interface Player extends Controllable {
+    long TIME_UNKNOWN = -1L;
+
     int CLOSED = 0;
     int UNREALIZED = 100;
     int REALIZED = 200;
@@ -20,6 +22,16 @@ public interface Player extends Controllable {
     void close();
 
     void setLoopCount(int count);
+
+    void addPlayerListener(PlayerListener listener);
+
+    void removePlayerListener(PlayerListener listener);
+
+    long setMediaTime(long now) throws MediaException;
+
+    long getMediaTime();
+
+    long getDuration();
 
     int getState();
 
