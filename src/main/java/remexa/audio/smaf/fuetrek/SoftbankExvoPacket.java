@@ -8,6 +8,7 @@ import java.util.Arrays;
 final class SoftbankExvoPacket {
     enum Kind {
         LEGACY_VOICE_PROGRAM,
+        LEGACY_NOTE_CONTROL,
         WAVE_UPLOAD,
         VOICE_PROGRAM,
         CONTROL_TEMPLATE,
@@ -99,6 +100,12 @@ final class SoftbankExvoPacket {
             // the whole family-specific body and let the sampler decode it.
             return new SoftbankExvoPacket(message, end, Kind.LEGACY_VOICE_PROGRAM, family, type,
                     -1, -1, -1, -1, -1, 2);
+        }
+        if (type == 0x90 && end > 4) {
+            int subtype = message[3] & 0xf0;
+            int channel = message[3] & 0x3;
+            return new SoftbankExvoPacket(message, end, Kind.LEGACY_NOTE_CONTROL, family, type,
+                    subtype, channel, -1, -1, -1, 4);
         }
         return new SoftbankExvoPacket(message, end, Kind.UNKNOWN, family, type,
                 -1, -1, -1, -1, -1, end);
@@ -223,6 +230,9 @@ final class SoftbankExvoPacket {
         }
         if (kind == Kind.LEGACY_VOICE_PROGRAM) {
             return "legacy-vm35-" + length;
+        }
+        if (kind == Kind.LEGACY_NOTE_CONTROL) {
+            return "legacy-note-" + length;
         }
         if (kind == Kind.CONTROL_TEMPLATE) {
             return "template-tail-" + length;

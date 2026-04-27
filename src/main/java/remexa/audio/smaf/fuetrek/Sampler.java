@@ -378,6 +378,19 @@ public interface Sampler
     void sysEx(byte[] message);
 
     /**
+     * Process a SysEx message while preserving the original 4-channel SMAF
+     * source bank when available.
+     *
+     * @param sourceBank The originating SMAF 4-channel bank, or a negative
+     * value when unknown.
+     * @param message The body data of the vendor-exclusive message.
+     */
+    default void sysEx(int sourceBank, byte[] message)
+    {
+        sysEx(message);
+    }
+
+    /**
      * Whether repeated key-on events for an already-active key should be
      * coalesced into the existing note state instead of retriggering the
      * sampler voice.

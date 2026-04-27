@@ -103,7 +103,7 @@ final class SmafFueTrekRenderer {
             if (startupPacket == null || startupPacket.length == 0) {
                 continue;
             }
-            events.add(RenderEvent.sysEx(0L, order++, startupPacket));
+            events.add(RenderEvent.sysEx(0L, order++, 0, startupPacket));
         }
         for (Track track : sequence.getTracks()) {
             for (int i = 0; i < track.size(); i++) {
@@ -117,12 +117,12 @@ final class SmafFueTrekRenderer {
                     continue;
                 }
                 if (message instanceof SysexMessage sysexMessage) {
-                    events.add(RenderEvent.sysEx(event.getTick(), order++, sysexMessage.getData()));
+                    events.add(RenderEvent.sysEx(event.getTick(), order++, -1, sysexMessage.getData()));
                 }
             }
         }
         for (SMAFDecoder.SequenceSysExEvent event : sysExEvents) {
-            events.add(RenderEvent.sysEx(event.tick(), order++, event.data()));
+            events.add(RenderEvent.sysEx(event.tick(), order++, event.sourceBank(), event.data()));
         }
         events.sort(Comparator
                 .comparingLong(RenderEvent::tick)
@@ -133,7 +133,7 @@ final class SmafFueTrekRenderer {
 
     private static void applyEvent(Sampler sampler, MidiChannelState[] channelStates, RenderEvent event) {
         if (event.sysEx != null) {
-            sampler.sysEx(event.sysEx);
+            sampler.sysEx(event.sysExSourceBank, event.sysEx);
             return;
         }
 
@@ -513,6 +513,7 @@ final class SmafFueTrekRenderer {
                                int channel,
                                int data1,
                                int data2,
+                               int sysExSourceBank,
                                byte[] sysEx) {
         private static RenderEvent shortMessage(long tick, int order, ShortMessage message) {
             int command = message.getCommand();
@@ -524,11 +525,21 @@ final class SmafFueTrekRenderer {
                     message.getChannel(),
                     message.getData1(),
                     message.getData2(),
+                    -1,
                     null);
         }
 
-        private static RenderEvent sysEx(long tick, int order, byte[] sysEx) {
-            return new RenderEvent(tick, order, 0, 0, 0, 0, 0, sysEx == null ? new byte[0] : sysEx.clone());
+        private static RenderEvent sysEx(long tick, int order, int sourceBank, byte[] sysEx) {
+            return new RenderEvent(
+                    tick,
+                    order,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    sourceBank,
+                    sysEx == null ? new byte[0] : sysEx.clone());
         }
 
         private static int priorityFor(int command, int velocity) {

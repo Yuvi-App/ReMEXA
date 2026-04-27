@@ -162,6 +162,10 @@ public final class SMAFDecoder
     public static List<byte[]> exclusiveVoices = new ArrayList<byte[]>();
     public static List<SequenceSysExEvent> sequenceSysExEvents = new ArrayList<SequenceSysExEvent>();
     public static List<SequenceUserEvent> sequenceUserEvents = new ArrayList<SequenceUserEvent>();
+    private static final int INTERNAL_LEGACY_YAMAHA_SELECTOR = 0x06;
+    private static final int INTERNAL_LEGACY_YAMAHA_VOLUME = 0x08;
+    private static final int INTERNAL_LEGACY_YAMAHA_PAN = 0x09;
+    private static final int INTERNAL_LEGACY_YAMAHA_PITCH = 0x11;
 
     private static boolean smafLogEnabled(int level)
     {
@@ -1162,7 +1166,10 @@ public final class SMAFDecoder
                         }
                         offset++; // Move out of offset containing 0xF7, as the next one is the next status byte
 
-                        sequenceSysExEvents.add(new SequenceSysExEvent(totalDuration, toByteArray(exclusiveMessage)));
+                        sequenceSysExEvents.add(new SequenceSysExEvent(
+                                totalDuration,
+                                handyChannelIdx >> 2,
+                                toByteArray(exclusiveMessage)));
                         
                         smafLog(SMAF_LOG_DEBUG, SMAFDecoder.class.getPackage().getName() + "." + SMAFDecoder.class.getSimpleName() + ": " + "SysEx event received");
                         // TODO: Maybe use this SysEx for something?
@@ -1476,6 +1483,12 @@ public final class SMAFDecoder
                         setChannelMessage(event, ShortMessage.CONTROL_CHANGE, channel, 11, shortExpressionValues[eventType]);
                         midiEvent = new MidiEvent(event, totalDuration);
                         track.add(midiEvent);
+                        recordInternalLegacyYamahaStateEvent(
+                                totalDuration,
+                                handyChannelIdx >> 2,
+                                (controlEvent >> 6) & 0x03,
+                                INTERNAL_LEGACY_YAMAHA_VOLUME,
+                                shortExpressionValues[eventType] & 0x7f);
                     }
                     else if (eventType >= (byte) 0x11 && eventType <= (byte) 0x1E) // Short Pitch Bend event
                     {
@@ -1504,6 +1517,12 @@ public final class SMAFDecoder
                         setChannelMessage(event, ShortMessage.PROGRAM_CHANGE, channel, eventValue, 0);
                         midiEvent = new MidiEvent(event, totalDuration);
                         track.add(midiEvent);
+                        recordInternalLegacyYamahaStateEvent(
+                                totalDuration,
+                                handyChannelIdx >> 2,
+                                (controlEvent >> 6) & 0x03,
+                                INTERNAL_LEGACY_YAMAHA_SELECTOR,
+                                eventValue & 0x03);
                     }
                     else if (eventType == (byte) 0x31) // Bank Select event
                     {
@@ -1568,6 +1587,12 @@ public final class SMAFDecoder
                         setChannelMessage(event, ShortMessage.PITCH_BEND, channel, pitchBendLSB, pitchBendMSB);
                         midiEvent = new MidiEvent(event, totalDuration);
                         track.add(midiEvent);
+                        recordInternalLegacyYamahaStateEvent(
+                                totalDuration,
+                                handyChannelIdx >> 2,
+                                (controlEvent >> 6) & 0x03,
+                                INTERNAL_LEGACY_YAMAHA_PITCH,
+                                eventValue & 0x7f);
                     }
                     else if (eventType == (byte) 0x35) // Reserved one-byte mix/control event
                     {
@@ -1602,6 +1627,12 @@ public final class SMAFDecoder
                         setChannelMessage(event, ShortMessage.CONTROL_CHANGE, channel, 10, eventValue);
                         midiEvent = new MidiEvent(event, totalDuration);
                         track.add(midiEvent);
+                        recordInternalLegacyYamahaStateEvent(
+                                totalDuration,
+                                handyChannelIdx >> 2,
+                                (controlEvent >> 6) & 0x03,
+                                INTERNAL_LEGACY_YAMAHA_PAN,
+                                eventValue & 0x7f);
                     }
                     else if (eventType == (byte) 0x3B) // TODO: Expression event again?
                     {
@@ -1611,6 +1642,12 @@ public final class SMAFDecoder
                         setChannelMessage(event, ShortMessage.CONTROL_CHANGE, channel, 11, eventValue);
                         midiEvent = new MidiEvent(event, totalDuration);
                         track.add(midiEvent);
+                        recordInternalLegacyYamahaStateEvent(
+                                totalDuration,
+                                handyChannelIdx >> 2,
+                                (controlEvent >> 6) & 0x03,
+                                INTERNAL_LEGACY_YAMAHA_VOLUME,
+                                eventValue & 0x7f);
                     }
                     else 
                     {
@@ -1637,7 +1674,10 @@ public final class SMAFDecoder
                         }
                         offset++; // Move out of offset containing 0xF7 or the last byte according to size (in case there's no 0xF7), as the next one is the next status byte
 
-                        sequenceSysExEvents.add(new SequenceSysExEvent(totalDuration, toByteArray(exclusiveMessage)));
+                        sequenceSysExEvents.add(new SequenceSysExEvent(
+                                totalDuration,
+                                handyChannelIdx >> 2,
+                                toByteArray(exclusiveMessage)));
                         
                         smafLog(SMAF_LOG_DEBUG, SMAFDecoder.class.getPackage().getName() + "." + SMAFDecoder.class.getSimpleName() + ": " + "SysEx event received");
                         // TODO: Maybe use this SysEx for something?
@@ -1886,6 +1926,19 @@ public final class SMAFDecoder
         return result;
     }
 
+    private static void recordInternalLegacyYamahaStateEvent(int tick, int sourceBank, int channelInBank, int command, int value)
+    {
+        sequenceSysExEvents.add(new SequenceSysExEvent(
+                tick,
+                sourceBank,
+                new byte[]{
+                        0x72,
+                        (byte) (command & 0x7f),
+                        (byte) (channelInBank & 0x03),
+                        (byte) (value & 0x7f)
+                }));
+    }
+
     private static void recordPcmSequenceTrigger(int startTick, int gateTime, int noteValue, int velocity, int channel)
     {
         int gateTimeMs = gateTime * timeBasetoMs(TimeBase_G);
@@ -1895,7 +1948,7 @@ public final class SMAFDecoder
         pcmSequenceTriggers.add(new PcmSequenceTrigger(triggerTick, startTick, gateTime, gateTimeMs, noteValue, velocity, channel));
     }
 
-    public static record SequenceSysExEvent(int tick, byte[] data)
+    public static record SequenceSysExEvent(int tick, int sourceBank, byte[] data)
     {
     }
 

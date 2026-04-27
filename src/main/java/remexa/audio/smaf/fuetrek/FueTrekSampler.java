@@ -13,6 +13,17 @@ import java.util.Set;
 final class FueTrekSampler implements Sampler {
     private static final int CHANNEL_COUNT = 16;
     private static final int CUSTOM_SLOT_COUNT = 16;
+    private static final int LEGACY_YAMAHA_SLOT_COUNT = 4;
+    private static final int LEGACY_YAMAHA_SOURCE_BANK_COUNT = 4;
+    private static final int LEGACY_YAMAHA_STATE_COUNT =
+            LEGACY_YAMAHA_SLOT_COUNT * LEGACY_YAMAHA_SOURCE_BANK_COUNT;
+    private static final int LEGACY_YAMAHA_HIDDEN_CHANNEL_BASE = 12;
+    private static final int INTERNAL_LEGACY_YAMAHA_MESSAGE = 0x72;
+    private static final int INTERNAL_LEGACY_YAMAHA_SELECTOR = 0x06;
+    private static final int INTERNAL_LEGACY_YAMAHA_VOLUME = 0x08;
+    private static final int INTERNAL_LEGACY_YAMAHA_PAN = 0x09;
+    private static final int INTERNAL_LEGACY_YAMAHA_PITCH = 0x11;
+    private static final int INTERNAL_LEGACY_YAMAHA_BEND_RANGE = 0x12;
     private static final int MIDI_A4 = 69;
     private static final float ROM_SAMPLE_RATE = FueTrekSamplerProvider.SAMPLE_RATE;
     private static final float OUTPUT_SCALE = 1.0f / 32768.0f;
@@ -39,6 +50,7 @@ final class FueTrekSampler implements Sampler {
     private final RawExvoUpload81[] rawExvoUploads81ByNote = new RawExvoUpload81[0x80];
     private final RawExvoProgramSlot[] rawExvoProgramSlots = new RawExvoProgramSlot[0x40];
     private final RawWaveUpload[] rawWaveUploadsByIndex = new RawWaveUpload[0x80];
+    private final LegacyYamahaSlotState[] legacyYamahaSlots = new LegacyYamahaSlotState[LEGACY_YAMAHA_STATE_COUNT];
     private RawExvoUpload81 pendingRawExvoUpload81;
     private final int maxPolyphony;
     private final float sampleRate;
@@ -52,6 +64,7 @@ final class FueTrekSampler implements Sampler {
     private int rawGlobalLaneB1 = 0x40;
     private int implicitRawExvoProgramSlot = 0;
     private int implicitLegacyVmProgramSlot = 0;
+    private int loadedLegacyVmProgramCount = 0;
 
     FueTrekSampler(FueTrekRom rom, float sampleRate, int maxPolyphony) {
         this.rom = rom;
@@ -61,6 +74,9 @@ final class FueTrekSampler implements Sampler {
         this.romStepScale = ROM_SAMPLE_RATE / sampleRate;
         for (int i = 0; i < channels.length; i++) {
             channels[i] = new ChannelState(i);
+        }
+        for (int i = 0; i < legacyYamahaSlots.length; i++) {
+            legacyYamahaSlots[i] = new LegacyYamahaSlotState(i / LEGACY_YAMAHA_SLOT_COUNT, i % LEGACY_YAMAHA_SLOT_COUNT);
         }
     }
 
@@ -338,6 +354,7 @@ final class FueTrekSampler implements Sampler {
         rawGlobalLaneB1 = 0x40;
         implicitRawExvoProgramSlot = 0;
         implicitLegacyVmProgramSlot = 0;
+        loadedLegacyVmProgramCount = 0;
         pendingRawExvoUpload81 = null;
         Arrays.fill(rawExvoUploads81ByNote, null);
         Arrays.fill(rawExvoProgramSlots, null);
@@ -346,6 +363,9 @@ final class FueTrekSampler implements Sampler {
         refreshGlobalVolumeByte();
         wrapperState.reset();
         selectorCache.reset();
+        for (LegacyYamahaSlotState slot : legacyYamahaSlots) {
+            slot.reset();
+        }
         for (ChannelState state : channels) {
             state.reset();
         }
@@ -363,15 +383,23 @@ final class FueTrekSampler implements Sampler {
 
     @Override
     public void sysEx(byte[] message) {
+        sysEx(-1, message);
+    }
+
+    @Override
+    public void sysEx(int sourceBank, byte[] message) {
         if (message == null || message.length < 2) {
             return;
         }
         byte[] normalizedMessage = unwrapRawVendorEnvelope(message);
         if (normalizedMessage != message) {
-            sysEx(normalizedMessage);
+            sysEx(sourceBank, normalizedMessage);
             return;
         }
-        if (applyRawYamahaPacket(message)) {
+        if (applyInternalLegacyYamahaMessage(sourceBank, message)) {
+            return;
+        }
+        if (applyRawYamahaPacket(message, sourceBank)) {
             return;
         }
         if (looksLikeUnsupportedRawYamahaPacket(message)) {
@@ -476,17 +504,18 @@ final class FueTrekSampler implements Sampler {
         SmafDebug.debug("smaf", sb.toString());
     }
 
-    private boolean applyRawYamahaPacket(byte[] message) {
+    private boolean applyRawYamahaPacket(byte[] message, int sourceBank) {
         SoftbankExvoPacket packet = SoftbankExvoPacket.parse(message);
         if (packet == null) {
             return false;
         }
         return switch (packet.kind()) {
             case LEGACY_VOICE_PROGRAM -> applyRawLegacyYamahaVoice(packet, message);
+            case LEGACY_NOTE_CONTROL -> applyRawLegacyYamahaNoteControl(packet, message, sourceBank);
             case WAVE_UPLOAD -> applyRawSoftbankExvoWave(packet, message);
             case VOICE_PROGRAM -> applyRawSoftbankExvoVoice(packet, message);
             case CONTROL_TEMPLATE, CONTROL_UPLOAD_81 -> applyRawSoftbankExvoControl(packet, message);
-            case CONTROL_PITCH_BEND_RANGE -> applyRawYamahaMaPitchBendRange(packet, message);
+            case CONTROL_PITCH_BEND_RANGE -> applyRawYamahaMaPitchBendRange(packet, message, sourceBank);
             case CONTROL_UNKNOWN, UNKNOWN -> {
                 debugRawExvoPacket("unsupported", packet, message);
                 yield false;
@@ -504,6 +533,8 @@ final class FueTrekSampler implements Sampler {
         }
         RawExvoProgramSlot slot = new RawExvoProgramSlot(programSlot, -1, -1, program, null);
         rawExvoProgramSlots[programSlot] = slot;
+        loadedLegacyVmProgramCount = Math.max(loadedLegacyVmProgramCount, programSlot + 1);
+        refreshLegacyYamahaSlotDefaults();
         for (ChannelState state : channels) {
             if (state.programSelected && (state.program & 0x3f) == programSlot) {
                 slot.applyTo(state, rom);
@@ -512,6 +543,101 @@ final class FueTrekSampler implements Sampler {
         debugRawExvoVoiceProgram(programSlot, program);
         debugRawExvoPacket("legacy-voice", packet, message);
         return true;
+    }
+
+    private boolean applyRawLegacyYamahaNoteControl(SoftbankExvoPacket packet, byte[] message, int sourceBank) {
+        if (message.length < 5 || packet.channel() < 0 || packet.channel() >= LEGACY_YAMAHA_SLOT_COUNT) {
+            return false;
+        }
+        LegacyYamahaSlotState slot = legacyYamahaSlot(sourceBank, packet.channel());
+        int controlByte = message[3] & 0xff;
+        int valueByte = message[4] & 0xff;
+        int modeNibble = controlByte & 0xf0;
+        if (modeNibble == 0xb0) {
+            slot.noteLowByte = valueByte;
+            slot.pairMask |= 0x1;
+            debugRawExvoPacket("legacy-note-low", packet, message);
+            return true;
+        }
+        if (modeNibble != 0xc0) {
+            debugRawExvoPacket("legacy-note-unknown", packet, message);
+            return false;
+        }
+        slot.noteHighByte = valueByte;
+        slot.pairMask |= 0x2;
+        debugRawExvoPacket("legacy-note-high", packet, message);
+        if ((slot.pairMask & 0x3) != 0x3) {
+            return true;
+        }
+        int noteWord = ((slot.noteHighByte & 0x1f) << 8) | (slot.noteLowByte & 0xff);
+        boolean keyOn = (slot.noteHighByte & 0x20) != 0;
+        slot.pairMask = 0;
+        if (noteWord <= 0) {
+            return true;
+        }
+        if (keyOn) {
+            applyPendingLegacyYamahaProgram(slot);
+        }
+        configureLegacyYamahaHiddenChannel(slot);
+        int hiddenChannel = slot.hiddenChannel();
+        int key = decodeLegacyYamahaExtendedKey(noteWord);
+        if (keyOn) {
+            if (slot.hasActiveNote() && slot.activeKey != key) {
+                keyOff(hiddenChannel, slot.activeKey);
+            }
+            keyOn(hiddenChannel, key, slot.velocity());
+            slot.setActiveNote(noteWord, key);
+        } else {
+            if (slot.matchesActiveNote(noteWord, key)) {
+                keyOff(hiddenChannel, slot.activeKey);
+                slot.clearActiveNote();
+            }
+        }
+        if (debugControlEnabled()) {
+            SmafDebug.debug("smaf", String.format(
+                    "[FueTrekCtrl] legacy-note bank=%d slot=%d ch=%d %s word=0x%04x midi=%d key=%d vel=%d program=%d",
+                    slot.sourceBank,
+                    slot.slotId,
+                    hiddenChannel,
+                    keyOn ? "on" : "off",
+                    noteWord & 0x3fff,
+                    key + MIDI_A4,
+                    key,
+                    Math.round(slot.velocity() * 127.0f),
+                    slot.programSlot));
+        }
+        return true;
+    }
+
+    private boolean applyInternalLegacyYamahaMessage(int sourceBank, byte[] message) {
+        if (message.length < 4 || (message[0] & 0xff) != INTERNAL_LEGACY_YAMAHA_MESSAGE) {
+            return false;
+        }
+        LegacyYamahaSlotState slot = legacyYamahaSlot(sourceBank, message[2] & 0x03);
+        int value = message[3] & 0x7f;
+        switch (message[1] & 0xff) {
+            case INTERNAL_LEGACY_YAMAHA_SELECTOR:
+                slot.pendingProgramSlot = value & 0x03;
+                return true;
+            case INTERNAL_LEGACY_YAMAHA_VOLUME:
+                slot.volumeByte = value;
+                refreshLegacyYamahaActiveChannel(slot);
+                return true;
+            case INTERNAL_LEGACY_YAMAHA_PAN:
+                slot.panByte = value;
+                refreshLegacyYamahaActiveChannel(slot);
+                return true;
+            case INTERNAL_LEGACY_YAMAHA_PITCH:
+                slot.pitchWord = clampRange(value << 7, 0, 0x3fff);
+                refreshLegacyYamahaActiveChannel(slot);
+                return true;
+            case INTERNAL_LEGACY_YAMAHA_BEND_RANGE:
+                slot.bendRangeByte = clampRange(value, 0, 0x18);
+                refreshLegacyYamahaActiveChannel(slot);
+                return true;
+            default:
+                return false;
+        }
     }
 
     private boolean applyRawSoftbankExvoWave(SoftbankExvoPacket packet, byte[] message) {
@@ -596,9 +722,16 @@ final class FueTrekSampler implements Sampler {
         return true;
     }
 
-    private boolean applyRawYamahaMaPitchBendRange(SoftbankExvoPacket packet, byte[] message) {
+    private boolean applyRawYamahaMaPitchBendRange(SoftbankExvoPacket packet, byte[] message, int sourceBank) {
         if (packet.channel() < 0 || packet.payloadLength() < 1) {
             return false;
+        }
+        if (sourceBank >= 0 && packet.channel() < LEGACY_YAMAHA_SLOT_COUNT) {
+            LegacyYamahaSlotState slot = legacyYamahaSlot(sourceBank, packet.channel());
+            slot.bendRangeByte = clampRange(packet.payload()[0] & 0x7f, 0, 0x18);
+            refreshLegacyYamahaActiveChannel(slot);
+            debugRawExvoPacket("legacy-pitch-bend-range", packet, message);
+            return true;
         }
         ChannelState state = channel(packet.channel());
         if (state == null) {
@@ -638,6 +771,69 @@ final class FueTrekSampler implements Sampler {
 
     private static int decodeRawExvoObjectIndex(int rawValue) {
         return SoftbankExvoPacket.decodeObjectIndex(rawValue);
+    }
+
+    private void refreshLegacyYamahaSlotDefaults() {
+        if (loadedLegacyVmProgramCount <= 0) {
+            return;
+        }
+        for (LegacyYamahaSlotState slot : legacyYamahaSlots) {
+            slot.programSlot = slot.slotId % loadedLegacyVmProgramCount;
+        }
+    }
+
+    private LegacyYamahaSlotState legacyYamahaSlot(int sourceBank, int slotId) {
+        int bank = clampRange(sourceBank, 0, LEGACY_YAMAHA_SOURCE_BANK_COUNT - 1);
+        int normalizedSlot = clampRange(slotId, 0, LEGACY_YAMAHA_SLOT_COUNT - 1);
+        return legacyYamahaSlots[bank * LEGACY_YAMAHA_SLOT_COUNT + normalizedSlot];
+    }
+
+    private void configureLegacyYamahaHiddenChannel(LegacyYamahaSlotState slot) {
+        ChannelState state = channel(slot.hiddenChannel());
+        if (state == null) {
+            return;
+        }
+        state.programSelected = true;
+        state.applyFamilyMode(0);
+        bankChange(slot.hiddenChannel(), 0);
+        programChange(slot.hiddenChannel(), slot.programSlot);
+        state.expressionByte = slot.expressionByte;
+        state.setRawPitchWord(slot.pitchWord);
+        state.setBendRangeByte(slot.bendRangeByte);
+        volume(slot.hiddenChannel(), slot.channelVolume());
+        panpot(slot.hiddenChannel(), slot.panpot());
+    }
+
+    private void refreshLegacyYamahaActiveChannel(LegacyYamahaSlotState slot) {
+        ChannelState state = channel(slot.hiddenChannel());
+        if (state == null) {
+            return;
+        }
+        state.expressionByte = slot.expressionByte;
+        state.setRawPitchWord(slot.pitchWord);
+        state.setBendRangeByte(slot.bendRangeByte);
+        volume(slot.hiddenChannel(), slot.channelVolume());
+        panpot(slot.hiddenChannel(), slot.panpot());
+        if (slot.hasActiveNote()) {
+            updateActiveVoicePitchRange(state);
+        }
+    }
+
+    private void applyPendingLegacyYamahaProgram(LegacyYamahaSlotState slot) {
+        if (slot.pendingProgramSlot < 0) {
+            return;
+        }
+        int programSlot = slot.pendingProgramSlot;
+        if (loadedLegacyVmProgramCount > 0) {
+            programSlot %= loadedLegacyVmProgramCount;
+        }
+        slot.programSlot = clampRange(programSlot, 0, 0x3f);
+        slot.pendingProgramSlot = -1;
+    }
+
+    private static int decodeLegacyYamahaExtendedKey(int noteWord) {
+        int midiNote = clampRange((noteWord + 0x40) >> 7, 0, 0x7f);
+        return midiNote - MIDI_A4;
     }
 
     private static RawExvoVoiceProgram parseRawExvoVoiceProgram(byte[] message, int offset) {
@@ -1850,6 +2046,78 @@ final class FueTrekSampler implements Sampler {
 
         private static int mulWord(int lhs, int rhs) {
             return (lhs * rhs) >> 15;
+        }
+    }
+
+    private static final class LegacyYamahaSlotState {
+        final int sourceBank;
+        final int slotId;
+        int programSlot;
+        int pendingProgramSlot;
+        int volumeByte;
+        int expressionByte;
+        int panByte;
+        int pitchWord;
+        int bendRangeByte;
+        int pairMask;
+        int noteLowByte;
+        int noteHighByte;
+        int activeNoteWord;
+        int activeKey;
+
+        LegacyYamahaSlotState(int sourceBank, int slotId) {
+            this.sourceBank = sourceBank;
+            this.slotId = slotId;
+            reset();
+        }
+
+        void reset() {
+            programSlot = 0;
+            pendingProgramSlot = -1;
+            volumeByte = 0x64;
+            expressionByte = 0x64;
+            panByte = 0x40;
+            pitchWord = 0x2000;
+            bendRangeByte = 0x18;
+            pairMask = 0;
+            noteLowByte = 0;
+            noteHighByte = 0;
+            activeNoteWord = -1;
+            activeKey = Integer.MIN_VALUE;
+        }
+
+        int hiddenChannel() {
+            return LEGACY_YAMAHA_HIDDEN_CHANNEL_BASE + slotId;
+        }
+
+        boolean hasActiveNote() {
+            return activeNoteWord >= 0;
+        }
+
+        boolean matchesActiveNote(int noteWord, int key) {
+            return activeNoteWord == noteWord || activeKey == key;
+        }
+
+        void setActiveNote(int noteWord, int key) {
+            activeNoteWord = noteWord;
+            activeKey = key;
+        }
+
+        void clearActiveNote() {
+            activeNoteWord = -1;
+            activeKey = Integer.MIN_VALUE;
+        }
+
+        float channelVolume() {
+            return clampRange(volumeByte, 0, 0x7f) / 127.0f;
+        }
+
+        float velocity() {
+            return combineVolumeByteLanes(volumeByte, expressionByte) / 127.0f;
+        }
+
+        float panpot() {
+            return Math.max(-1.0f, Math.min(1.0f, (panByte - 64.0f) / 63.0f));
         }
     }
 

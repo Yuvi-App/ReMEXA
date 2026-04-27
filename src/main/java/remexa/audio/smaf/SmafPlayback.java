@@ -779,7 +779,7 @@ public final class SmafPlayback implements AutoCloseable {
     private static List<SMAFDecoder.SequenceSysExEvent> copySequenceSysExEvents(List<SMAFDecoder.SequenceSysExEvent> sourceEvents) {
         List<SMAFDecoder.SequenceSysExEvent> copy = new ArrayList<>(sourceEvents.size());
         for (SMAFDecoder.SequenceSysExEvent event : sourceEvents) {
-            copy.add(new SMAFDecoder.SequenceSysExEvent(event.tick(), event.data().clone()));
+            copy.add(new SMAFDecoder.SequenceSysExEvent(event.tick(), event.sourceBank(), event.data().clone()));
         }
         return List.copyOf(copy);
     }
