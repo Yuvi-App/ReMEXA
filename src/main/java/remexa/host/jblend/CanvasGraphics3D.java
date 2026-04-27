@@ -56,7 +56,6 @@ public final class CanvasGraphics3D extends Graphics implements Graphics3D {
                         + " explicitCenter=" + layout.hasExplicitCenter()
         );
         ensureSceneBuffers();
-        seedSceneFromBackingImageIfNeeded(command);
         if (SoftwareJ3dRenderer.renderPrimitivesToBuffers(
                 scenePixels,
                 sceneDepth,
@@ -369,28 +368,13 @@ public final class CanvasGraphics3D extends Graphics implements Graphics3D {
             sceneDepth = new float[size];
         }
         if (!sceneDirty) {
-            Arrays.fill(scenePixels, 0);
+            if (backingImage != null) {
+                backingImage.getRGB(0, 0, surfaceWidth, surfaceHeight, scenePixels, 0, surfaceWidth);
+            } else {
+                Arrays.fill(scenePixels, 0);
+            }
             Arrays.fill(sceneDepth, Float.NEGATIVE_INFINITY);
         }
-    }
-
-    private void seedSceneFromBackingImageIfNeeded(int command) {
-        if (sceneDirty || backingImage == null || !hasBlendMode(command)) {
-            return;
-        }
-        // Blend/subtract primitive batches compose over the pixels already
-        // painted into this graphics surface, rather than an empty black scene.
-        DebugLog.log(
-                LogCategory.J3D,
-                CanvasGraphics3D.class.getName(),
-                "Seeding blended primitive batch from live backing surface cmd=0x" + Integer.toHexString(command)
-        );
-        backingImage.getRGB(0, 0, surfaceWidth, surfaceHeight, scenePixels, 0, surfaceWidth);
-        Arrays.fill(sceneDepth, Float.NEGATIVE_INFINITY);
-    }
-
-    private static boolean hasBlendMode(int command) {
-        return (command & 0x60) != 0;
     }
 
     private void clearSceneBuffers() {
