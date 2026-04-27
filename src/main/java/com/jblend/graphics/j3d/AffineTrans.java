@@ -163,7 +163,10 @@ public class AffineTrans {
         forward.unit();
         Vector3D side = Vector3D.outerProduct(forward, up);
         side.unit();
-        Vector3D actualUp = Vector3D.outerProduct(side, forward);
+        // SoftBank JSCL and KEmulator's Micro3D bridge both derive the view-up
+        // row from look x side, which yields the negative-Y camera row handset
+        // renderers expect before screen-space projection.
+        Vector3D actualUp = Vector3D.outerProduct(forward, side);
         actualUp.unit();
         m00 = side.x;
         m01 = side.y;

@@ -144,7 +144,7 @@ public final class SoftwareJ3dRenderer {
                 effect,
                 textures,
                 fallbackTexture,
-                false
+                true
         );
         boolean rendered = false;
         int cursor = 0;
@@ -325,6 +325,7 @@ public final class SoftwareJ3dRenderer {
             int screenCenterY,
             float projectionScaleX,
             float projectionScaleY,
+            boolean yDownProjection,
             boolean perspective,
             int nearClip,
             int farClip,
@@ -352,6 +353,7 @@ public final class SoftwareJ3dRenderer {
                 screenCenterY,
                 projectionScaleX,
                 projectionScaleY,
+                yDownProjection,
                 perspective,
                 nearClip,
                 farClip,
@@ -376,6 +378,7 @@ public final class SoftwareJ3dRenderer {
             int screenCenterY,
             float projectionScaleX,
             float projectionScaleY,
+            boolean yDownProjection,
             boolean perspective,
             int nearClip,
             int farClip,
@@ -423,7 +426,7 @@ public final class SoftwareJ3dRenderer {
                 // Figure vertices stay in 12-bit fixed-point through posing/affine transforms.
                 // Parallel projection sizes are also fixed-point, so normalize coordinates first.
                 screenX[i] = screenCenterX + (tx * projectionScaleX);
-                screenY[i] = screenCenterY - (ty * projectionScaleY);
+                screenY[i] = screenCenterY + ((yDownProjection ? ty : -ty) * projectionScaleY);
                 depth[i] = -tz;
             }
         }
@@ -458,6 +461,7 @@ public final class SoftwareJ3dRenderer {
                         screenCenterY,
                         projectionScaleX,
                         projectionScaleY,
+                        yDownProjection,
                         nearClip,
                         farClip,
                         polygon,
@@ -590,6 +594,7 @@ public final class SoftwareJ3dRenderer {
             int screenCenterY,
             float projectionScaleX,
             float projectionScaleY,
+            boolean yDownProjection,
             int nearClip,
             int farClip,
             MbacModel.Polygon polygon,
@@ -643,41 +648,58 @@ public final class SoftwareJ3dRenderer {
             return;
         }
         if (vertices.size() == 4) {
-            boolean stripOrderedQuad = isStripOrderedQuad(vertices, uv, screenCenterX, screenCenterY, projectionScaleX, projectionScaleY);
-            if (stripOrderedQuad) {
-                rasterizePerspectiveTriangle(
-                        pixels, depthBuffer, surfaceWidth, surfaceHeight, clipX, clipY, clipWidth, clipHeight,
-                        screenCenterX, screenCenterY, projectionScaleX, projectionScaleY, nearClip, farClip,
-                        polygon, polygonBlendMode, texture, sphereMap,
-                        vertices.get(0), vertices.get(1), vertices.get(2), uv != null
+            if (!polygonNeedsPerspectiveClipping(vertices, nearClip, farClip)) {
+                boolean stripOrderedQuad = isStripOrderedQuad(
+                        vertices,
+                        uv,
+                        screenCenterX,
+                        screenCenterY,
+                        projectionScaleX,
+                        projectionScaleY,
+                        yDownProjection
                 );
-                rasterizePerspectiveTriangle(
-                        pixels, depthBuffer, surfaceWidth, surfaceHeight, clipX, clipY, clipWidth, clipHeight,
-                        screenCenterX, screenCenterY, projectionScaleX, projectionScaleY, nearClip, farClip,
-                        polygon, polygonBlendMode, texture, sphereMap,
-                        vertices.get(1), vertices.get(3), vertices.get(2), uv != null
-                );
-            } else {
-                rasterizePerspectiveTriangle(
-                        pixels, depthBuffer, surfaceWidth, surfaceHeight, clipX, clipY, clipWidth, clipHeight,
-                        screenCenterX, screenCenterY, projectionScaleX, projectionScaleY, nearClip, farClip,
-                        polygon, polygonBlendMode, texture, sphereMap,
-                        vertices.get(0), vertices.get(1), vertices.get(2), uv != null
-                );
-                rasterizePerspectiveTriangle(
-                        pixels, depthBuffer, surfaceWidth, surfaceHeight, clipX, clipY, clipWidth, clipHeight,
-                        screenCenterX, screenCenterY, projectionScaleX, projectionScaleY, nearClip, farClip,
-                        polygon, polygonBlendMode, texture, sphereMap,
-                        vertices.get(0), vertices.get(2), vertices.get(3), uv != null
-                );
+                if (stripOrderedQuad) {
+                    rasterizePerspectiveTriangle(
+                            pixels, depthBuffer, surfaceWidth, surfaceHeight, clipX, clipY, clipWidth, clipHeight,
+                            screenCenterX, screenCenterY, projectionScaleX, projectionScaleY, nearClip, farClip,
+                            polygon, polygonBlendMode, texture, sphereMap,
+                            vertices.get(0), vertices.get(1), vertices.get(2), uv != null
+                    );
+                    rasterizePerspectiveTriangle(
+                            pixels, depthBuffer, surfaceWidth, surfaceHeight, clipX, clipY, clipWidth, clipHeight,
+                            screenCenterX, screenCenterY, projectionScaleX, projectionScaleY, nearClip, farClip,
+                            polygon, polygonBlendMode, texture, sphereMap,
+                            vertices.get(1), vertices.get(3), vertices.get(2), uv != null
+                    );
+                } else {
+                    rasterizePerspectiveTriangle(
+                            pixels, depthBuffer, surfaceWidth, surfaceHeight, clipX, clipY, clipWidth, clipHeight,
+                            screenCenterX, screenCenterY, projectionScaleX, projectionScaleY, nearClip, farClip,
+                            polygon, polygonBlendMode, texture, sphereMap,
+                            vertices.get(0), vertices.get(1), vertices.get(2), uv != null
+                    );
+                    rasterizePerspectiveTriangle(
+                            pixels, depthBuffer, surfaceWidth, surfaceHeight, clipX, clipY, clipWidth, clipHeight,
+                            screenCenterX, screenCenterY, projectionScaleX, projectionScaleY, nearClip, farClip,
+                            polygon, polygonBlendMode, texture, sphereMap,
+                            vertices.get(0), vertices.get(2), vertices.get(3), uv != null
+                    );
+                }
+                return;
             }
-            return;
         }
         List<PolygonVertex> clipped = clipPerspectivePolygon(vertices, nearClip, farClip);
         if (clipped.size() < 3) {
             return;
         }
-        List<ProjectedVertex> projected = projectPolygon(clipped, screenCenterX, screenCenterY, projectionScaleX, projectionScaleY);
+        List<ProjectedVertex> projected = projectPolygon(
+                clipped,
+                screenCenterX,
+                screenCenterY,
+                projectionScaleX,
+                projectionScaleY,
+                yDownProjection
+        );
         if (projected.size() < 3) {
             return;
         }
@@ -736,7 +758,14 @@ public final class SoftwareJ3dRenderer {
         if (clipped.size() < 3) {
             return;
         }
-        List<ProjectedVertex> projected = projectPolygon(clipped, screenCenterX, screenCenterY, projectionScaleX, projectionScaleY);
+        List<ProjectedVertex> projected = projectPolygon(
+                clipped,
+                screenCenterX,
+                screenCenterY,
+                projectionScaleX,
+                projectionScaleY,
+                true
+        );
         if (projected.size() < 3) {
             return;
         }
@@ -775,16 +804,37 @@ public final class SoftwareJ3dRenderer {
         return clipped;
     }
 
+    private static boolean polygonNeedsPerspectiveClipping(List<PolygonVertex> vertices, int nearClip, int farClip) {
+        float nearZ = Math.max(DEPTH_EPSILON, nearClip > 0 ? nearClip : DEPTH_EPSILON);
+        for (PolygonVertex vertex : vertices) {
+            if (vertex.z() < nearZ) {
+                return true;
+            }
+            if (farClip > 0 && vertex.z() > farClip) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static List<ProjectedVertex> projectPolygon(
             List<PolygonVertex> vertices,
             int screenCenterX,
             int screenCenterY,
             float projectionScaleX,
-            float projectionScaleY
+            float projectionScaleY,
+            boolean yDownProjection
     ) {
         List<ProjectedVertex> projected = new ArrayList<>(vertices.size());
         for (PolygonVertex vertex : vertices) {
-            ProjectedVertex projectedVertex = projectVertex(vertex, screenCenterX, screenCenterY, projectionScaleX, projectionScaleY);
+            ProjectedVertex projectedVertex = projectVertex(
+                    vertex,
+                    screenCenterX,
+                    screenCenterY,
+                    projectionScaleX,
+                    projectionScaleY,
+                    yDownProjection
+            );
             if (projectedVertex == null) {
                 return List.of();
             }
@@ -799,7 +849,8 @@ public final class SoftwareJ3dRenderer {
             int screenCenterX,
             int screenCenterY,
             float projectionScaleX,
-            float projectionScaleY
+            float projectionScaleY,
+            boolean yDownProjection
     ) {
         if (uv != null && uv.length >= 8 && isSelfIntersectingQuad(
                 uv[0], uv[1],
@@ -809,10 +860,10 @@ public final class SoftwareJ3dRenderer {
         )) {
             return true;
         }
-        ProjectedVertex p0 = projectVertex(vertices.get(0), screenCenterX, screenCenterY, projectionScaleX, projectionScaleY);
-        ProjectedVertex p1 = projectVertex(vertices.get(1), screenCenterX, screenCenterY, projectionScaleX, projectionScaleY);
-        ProjectedVertex p2 = projectVertex(vertices.get(2), screenCenterX, screenCenterY, projectionScaleX, projectionScaleY);
-        ProjectedVertex p3 = projectVertex(vertices.get(3), screenCenterX, screenCenterY, projectionScaleX, projectionScaleY);
+        ProjectedVertex p0 = projectVertex(vertices.get(0), screenCenterX, screenCenterY, projectionScaleX, projectionScaleY, yDownProjection);
+        ProjectedVertex p1 = projectVertex(vertices.get(1), screenCenterX, screenCenterY, projectionScaleX, projectionScaleY, yDownProjection);
+        ProjectedVertex p2 = projectVertex(vertices.get(2), screenCenterX, screenCenterY, projectionScaleX, projectionScaleY, yDownProjection);
+        ProjectedVertex p3 = projectVertex(vertices.get(3), screenCenterX, screenCenterY, projectionScaleX, projectionScaleY, yDownProjection);
         if (p0 == null || p1 == null || p2 == null || p3 == null) {
             return false;
         }
@@ -1234,14 +1285,15 @@ public final class SoftwareJ3dRenderer {
             int screenCenterX,
             int screenCenterY,
             float projectionScaleX,
-            float projectionScaleY
+            float projectionScaleY,
+            boolean yDownProjection
     ) {
         if (vertex.z() <= DEPTH_EPSILON) {
             return null;
         }
         return new ProjectedVertex(
                 screenCenterX + ((vertex.x() * projectionScaleX) / vertex.z()),
-                screenCenterY - ((vertex.y() * projectionScaleY) / vertex.z()),
+                screenCenterY + (((yDownProjection ? vertex.y() : -vertex.y()) * projectionScaleY) / vertex.z()),
                 -vertex.z(),
                 1.0f / vertex.z(),
                 vertex.u(),
@@ -1617,7 +1669,8 @@ public final class SoftwareJ3dRenderer {
                     state.centerX,
                     state.centerY,
                     state.projectionScaleX,
-                    state.projectionScaleY
+                    state.projectionScaleY,
+                    state.yDownProjection
             );
             if (projectedVertex == null) {
                 return;
@@ -1860,11 +1913,18 @@ public final class SoftwareJ3dRenderer {
             tz = transformZ(state.affineTrans, x, y, z);
         }
         if (state.perspective) {
-            return projectVertex(new PolygonVertex(tx, ty, tz, u, v), state.centerX, state.centerY, state.projectionScaleX, state.projectionScaleY);
+            return projectVertex(
+                    new PolygonVertex(tx, ty, tz, u, v),
+                    state.centerX,
+                    state.centerY,
+                    state.projectionScaleX,
+                    state.projectionScaleY,
+                    state.yDownProjection
+            );
         }
         return new ProjectedVertex(
                 state.centerX + (tx * state.projectionScaleX),
-                state.centerY + ((state.yDownParallel ? ty : -ty) * state.projectionScaleY),
+                state.centerY + ((state.yDownProjection ? ty : -ty) * state.projectionScaleY),
                 -tz,
                 0.0f,
                 u,
@@ -2067,7 +2127,7 @@ public final class SoftwareJ3dRenderer {
         private final Texture sphereMap;
         private final int nearClip;
         private final int farClip;
-        private final boolean yDownParallel;
+        private final boolean yDownProjection;
         private final boolean semiTransparentEnabled;
         private AffineTrans affineTrans;
         private Texture texture;
@@ -2083,7 +2143,7 @@ public final class SoftwareJ3dRenderer {
                 Texture sphereMap,
                 int nearClip,
                 int farClip,
-                boolean yDownParallel,
+                boolean yDownProjection,
                 boolean semiTransparentEnabled,
                 AffineTrans affineTrans,
                 Texture texture,
@@ -2098,7 +2158,7 @@ public final class SoftwareJ3dRenderer {
             this.sphereMap = sphereMap;
             this.nearClip = nearClip;
             this.farClip = farClip;
-            this.yDownParallel = yDownParallel;
+            this.yDownProjection = yDownProjection;
             this.semiTransparentEnabled = semiTransparentEnabled;
             this.affineTrans = affineTrans;
             this.texture = texture;
@@ -2130,7 +2190,7 @@ public final class SoftwareJ3dRenderer {
                 Effect3D effect,
                 Texture[] textures,
                 Texture fallbackTexture,
-                boolean yDownParallel
+                boolean yDownProjection
         ) {
             float projectionScaleX;
             float projectionScaleY;
@@ -2177,7 +2237,7 @@ public final class SoftwareJ3dRenderer {
                     effect == null ? null : effect.getSphereMap(),
                     layout.getPerspectiveNear(),
                     layout.getPerspectiveFar(),
-                    yDownParallel,
+                    yDownProjection,
                     effect == null || effect.isSemiTransparentEnabled(),
                     layout.getAffineTrans(),
                     currentTexture,

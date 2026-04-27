@@ -198,6 +198,7 @@ public final class CanvasGraphics3D extends Graphics implements Graphics3D {
                 centerY,
                 projectionScaleX,
                 projectionScaleY,
+                true,
                 perspective,
                 nearClip,
                 farClip,
