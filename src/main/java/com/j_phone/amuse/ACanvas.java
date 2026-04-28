@@ -9,8 +9,6 @@ public abstract class ACanvas extends javax.microedition.lcdui.Canvas implements
 
     private final int[] palette;
     private final byte[][] patterns;
-    private javax.microedition.lcdui.Graphics hostGraphics;
-
     protected ACanvas() {
         remexa.probes.SdkStubSupport.log("com.j_phone.amuse.ACanvas", "ACanvas");
         var metrics = remexa.host.runtime.MidletRuntime.getDisplayMetrics((javax.microedition.lcdui.Displayable) null);
@@ -157,16 +155,7 @@ public abstract class ACanvas extends javax.microedition.lcdui.Canvas implements
         if (deferRepaintIfPainting(this::repaint)) {
             return;
         }
-        if (hostGraphics == null) {
-            attachHostGraphics();
-            return;
-        }
-        beginHostPaint();
-        try {
-            paint(hostGraphics);
-        } finally {
-            endHostPaint();
-        }
+        paintToCurrentVirtualSurface();
     }
 
     public final void sequenceStart () {
@@ -178,17 +167,21 @@ public abstract class ACanvas extends javax.microedition.lcdui.Canvas implements
     }
 
     public final void attachHostGraphics() {
-        if (hostGraphics != null) {
+        paintToCurrentVirtualSurface();
+    }
+
+    private void paintToCurrentVirtualSurface() {
+        var graphics = remexa.host.runtime.MidletRuntime.beginAmuseVirtualGraphics(this);
+        if (graphics == null) {
             return;
         }
-        hostGraphics = remexa.host.runtime.MidletRuntime.beginAmuseVirtualGraphics(this);
-        if (hostGraphics != null) {
-            beginHostPaint();
-            try {
-                paint(hostGraphics);
-            } finally {
-                endHostPaint();
-            }
+        beginHostPaint();
+        try {
+            graphics.resetState();
+            paint(graphics);
+        } finally {
+            endHostPaint();
+            graphics.dispose();
         }
     }
 

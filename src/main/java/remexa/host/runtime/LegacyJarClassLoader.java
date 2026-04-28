@@ -3,6 +3,7 @@ package remexa.host.runtime;
 import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.DataInputStream;
 import java.net.URL;
 import java.net.URLConnection;
 import java.net.URLClassLoader;
@@ -28,7 +29,7 @@ final class LegacyJarClassLoader extends URLClassLoader {
         try {
             URLConnection connection = resource.openConnection();
             connection.setUseCaches(false);
-            return new LegacyResourceStream(connection.getInputStream(), connection.getContentLengthLong());
+            return new DataInputStream(new LegacyResourceStream(connection.getInputStream(), connection.getContentLengthLong()));
         } catch (IOException exception) {
             return null;
         }

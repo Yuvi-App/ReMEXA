@@ -3,6 +3,7 @@ package remexa.host.runtime;
 import com.j_phone.amuse.ACanvas;
 import com.jblend.graphics.sprite.SpriteCanvas;
 import java.awt.image.BufferedImage;
+import java.io.DataInputStream;
 import java.io.FilterInputStream;
 import java.io.InputStream;
 import java.nio.file.Path;
@@ -27,12 +28,6 @@ import remexa.probes.LogCategory;
 
 public final class MidletRuntime {
     private static final DisplayMetrics DEFAULT_DISPLAY = new DisplayMetrics(240, 320, "MIDP default");
-    // Original J3D-capable J-Phone/Vodafone handsets ran 3D titles at ~20 FPS;
-    // most legacy frame loops were paced by paint cost rather than a clock.
-    // Capping serviceRepaints() to ~50ms/frame (20 FPS) prevents these games
-    // from running uncapped on modern hardware. Override via -Dremexa.frameIntervalMs.
-    private static final String FRAME_INTERVAL_PROPERTY = "remexa.frameIntervalMs";
-    private static final long DEFAULT_FRAME_INTERVAL_NS = 50_000_000L;
     private static final long FRAME_INTERVAL_NS = resolveFrameIntervalNanos();
     private static final Map<Canvas, Long> NEXT_FRAME_DEADLINE_NS = Collections.synchronizedMap(new WeakHashMap<>());
     private static final ThreadLocal<LaunchContext> CURRENT_CONTEXT = new ThreadLocal<>();
@@ -42,6 +37,13 @@ public final class MidletRuntime {
     private static final Map<Displayable, LaunchContext> DISPLAYABLES = Collections.synchronizedMap(new WeakHashMap<>());
     private static final Map<ClassLoader, HostTextInputRequest.Handler> TEXT_INPUT_HANDLERS = Collections.synchronizedMap(new WeakHashMap<>());
     private static final Map<ClassLoader, JadFrame> HOST_FRAMES = Collections.synchronizedMap(new WeakHashMap<>());
+
+    // Original J3D-capable J-Phone/Vodafone handsets ran 3D titles at ~20 FPS;
+    // most legacy frame loops were paced by paint cost rather than a clock.
+    // Capping serviceRepaints() to ~50ms/frame (20 FPS) prevents these games
+    // from running uncapped on modern hardware. Override via -Dremexa.frameIntervalMs.
+    private static final String FRAME_INTERVAL_PROPERTY = "remexa.frameIntervalMs";
+    private static final long DEFAULT_FRAME_INTERVAL_NS = 50_000_000L;
 
     private MidletRuntime() {
     }
@@ -386,7 +388,7 @@ public final class MidletRuntime {
     }
 
     private static InputStream wrapLegacyResourceStream(InputStream stream) {
-        return stream == null ? null : new LegacyResourceInputStream(stream);
+        return stream == null ? null : new DataInputStream(new LegacyResourceInputStream(stream));
     }
 
     private static final class LegacyResourceInputStream extends FilterInputStream {
