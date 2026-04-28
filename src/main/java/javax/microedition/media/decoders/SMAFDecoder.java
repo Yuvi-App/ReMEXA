@@ -163,8 +163,12 @@ public final class SMAFDecoder
     public static List<SequenceSysExEvent> sequenceSysExEvents = new ArrayList<SequenceSysExEvent>();
     public static List<SequenceUserEvent> sequenceUserEvents = new ArrayList<SequenceUserEvent>();
     private static final int INTERNAL_LEGACY_YAMAHA_SELECTOR = 0x06;
+    private static final int INTERNAL_LEGACY_YAMAHA_MODULATION = 0x07;
     private static final int INTERNAL_LEGACY_YAMAHA_VOLUME = 0x08;
     private static final int INTERNAL_LEGACY_YAMAHA_PAN = 0x09;
+    private static final int INTERNAL_LEGACY_YAMAHA_PHRASE_VOLUME = 0x0A;
+    private static final int INTERNAL_LEGACY_YAMAHA_PROGRAM = 0x0B;
+    private static final int INTERNAL_LEGACY_YAMAHA_BANK = 0x0C;
     private static final int INTERNAL_LEGACY_YAMAHA_PITCH = 0x11;
 
     private static boolean smafLogEnabled(int level)
@@ -1508,6 +1512,12 @@ public final class SMAFDecoder
                         setChannelMessage(event, ShortMessage.CONTROL_CHANGE, channel, 1, shortModValues[eventType-0x20]);
                         midiEvent = new MidiEvent(event, totalDuration);
                         track.add(midiEvent);
+                        recordInternalLegacyYamahaStateEvent(
+                                totalDuration,
+                                handyChannelIdx >> 2,
+                                (controlEvent >> 6) & 0x03,
+                                INTERNAL_LEGACY_YAMAHA_MODULATION,
+                                shortModValues[eventType - 0x20] & 0x7f);
                     }
                     else if (eventType == (byte) 0x30) // Program Change event
                     {
@@ -1523,6 +1533,12 @@ public final class SMAFDecoder
                                 (controlEvent >> 6) & 0x03,
                                 INTERNAL_LEGACY_YAMAHA_SELECTOR,
                                 eventValue & 0x03);
+                        recordInternalLegacyYamahaStateEvent(
+                                totalDuration,
+                                handyChannelIdx >> 2,
+                                (controlEvent >> 6) & 0x03,
+                                INTERNAL_LEGACY_YAMAHA_PROGRAM,
+                                eventValue & 0x7f);
                     }
                     else if (eventType == (byte) 0x31) // Bank Select event
                     {
@@ -1541,6 +1557,12 @@ public final class SMAFDecoder
                         // Send the bank select message
                         midiEvent = new MidiEvent(event, totalDuration);
                         track.add(midiEvent);
+                        recordInternalLegacyYamahaStateEvent(
+                                totalDuration,
+                                handyChannelIdx >> 2,
+                                (controlEvent >> 6) & 0x03,
+                                INTERNAL_LEGACY_YAMAHA_BANK,
+                                eventValue & 0xff);
                     }
                     else if (eventType == (byte) 0x32) // Octave Shift event
                     {
@@ -1570,6 +1592,12 @@ public final class SMAFDecoder
                         setChannelMessage(event, ShortMessage.CONTROL_CHANGE, channel, 1, eventValue);
                         midiEvent = new MidiEvent(event, totalDuration);
                         track.add(midiEvent);
+                        recordInternalLegacyYamahaStateEvent(
+                                totalDuration,
+                                handyChannelIdx >> 2,
+                                (controlEvent >> 6) & 0x03,
+                                INTERNAL_LEGACY_YAMAHA_MODULATION,
+                                eventValue & 0x7f);
                     }
                     else if (eventType == (byte) 0x34) // Pitch Bend event
                     {
@@ -1617,6 +1645,12 @@ public final class SMAFDecoder
                         setChannelMessage(event, ShortMessage.CONTROL_CHANGE, channel, 7, eventValue);
                         midiEvent = new MidiEvent(event, totalDuration);
                         track.add(midiEvent);
+                        recordInternalLegacyYamahaStateEvent(
+                                totalDuration,
+                                handyChannelIdx >> 2,
+                                (controlEvent >> 6) & 0x03,
+                                INTERNAL_LEGACY_YAMAHA_PHRASE_VOLUME,
+                                eventValue & 0x7f);
                     }
                     // TODO: Same as above, and this gap is even bigger
                     else if (eventType == (byte) 0x3A) // Panpot event
@@ -1935,7 +1969,7 @@ public final class SMAFDecoder
                         0x72,
                         (byte) (command & 0x7f),
                         (byte) (channelInBank & 0x03),
-                        (byte) (value & 0x7f)
+                        (byte) value
                 }));
     }
 
