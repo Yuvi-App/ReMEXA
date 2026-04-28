@@ -571,88 +571,42 @@ public final class SoftwareJ3dRenderer {
                 );
             } else if (indices.length == 4) {
                 float[] uv = polygon.textureCoords();
-                boolean stripOrderedQuad = isStripOrderedQuad(
+                rasterizeTriangle(
+                        pixels,
+                        depthBuffer,
+                        surfaceWidth,
+                        surfaceHeight,
+                        clipX,
+                        clipY,
+                        clipWidth,
+                        clipHeight,
+                        polygon,
+                        polygonBlendMode,
+                        polygonTexture,
+                        sphereMap,
+                        screenX, screenY, depth,
+                        indices[0], indices[1], indices[2],
                         uv,
-                        screenX[indices[0]], screenY[indices[0]],
-                        screenX[indices[1]], screenY[indices[1]],
-                        screenX[indices[2]], screenY[indices[2]],
-                        screenX[indices[3]], screenY[indices[3]]
+                        0, 2, 4
                 );
-                if (stripOrderedQuad) {
-                    rasterizeTriangle(
-                            pixels,
-                            depthBuffer,
-                            surfaceWidth,
-                            surfaceHeight,
-                            clipX,
-                            clipY,
-                            clipWidth,
-                            clipHeight,
-                            polygon,
-                            polygonBlendMode,
-                            polygonTexture,
-                            sphereMap,
-                            screenX, screenY, depth,
-                            indices[0], indices[1], indices[2],
-                            uv,
-                            0, 2, 4
-                    );
-                    rasterizeTriangle(
-                            pixels,
-                            depthBuffer,
-                            surfaceWidth,
-                            surfaceHeight,
-                            clipX,
-                            clipY,
-                            clipWidth,
-                            clipHeight,
-                            polygon,
-                            polygonBlendMode,
-                            polygonTexture,
-                            sphereMap,
-                            screenX, screenY, depth,
-                            indices[1], indices[3], indices[2],
-                            uv,
-                            2, 6, 4
-                    );
-                } else {
-                    rasterizeTriangle(
-                            pixels,
-                            depthBuffer,
-                            surfaceWidth,
-                            surfaceHeight,
-                            clipX,
-                            clipY,
-                            clipWidth,
-                            clipHeight,
-                            polygon,
-                            polygonBlendMode,
-                            polygonTexture,
-                            sphereMap,
-                            screenX, screenY, depth,
-                            indices[0], indices[1], indices[2],
-                            uv,
-                            0, 2, 4
-                    );
-                    rasterizeTriangle(
-                            pixels,
-                            depthBuffer,
-                            surfaceWidth,
-                            surfaceHeight,
-                            clipX,
-                            clipY,
-                            clipWidth,
-                            clipHeight,
-                            polygon,
-                            polygonBlendMode,
-                            polygonTexture,
-                            sphereMap,
-                            screenX, screenY, depth,
-                            indices[0], indices[2], indices[3],
-                            uv,
-                            0, 4, 6
-                    );
-                }
+                rasterizeTriangle(
+                        pixels,
+                        depthBuffer,
+                        surfaceWidth,
+                        surfaceHeight,
+                        clipX,
+                        clipY,
+                        clipWidth,
+                        clipHeight,
+                        polygon,
+                        polygonBlendMode,
+                        polygonTexture,
+                        sphereMap,
+                        screenX, screenY, depth,
+                        indices[2], indices[1], indices[3],
+                        uv,
+                        4, 2, 6
+                );
             }
         }
     }
@@ -724,45 +678,19 @@ public final class SoftwareJ3dRenderer {
             return;
         }
         if (vertices.size() == 4) {
-            if (!polygonNeedsPerspectiveClipping(vertices, nearClip, farClip)) {
-                boolean stripOrderedQuad = isStripOrderedQuad(
-                        vertices,
-                        uv,
-                        screenCenterX,
-                        screenCenterY,
-                        projectionScaleX,
-                        projectionScaleY,
-                        yDownProjection
-                );
-                if (stripOrderedQuad) {
-                    rasterizePerspectiveTriangle(
-                            pixels, depthBuffer, surfaceWidth, surfaceHeight, clipX, clipY, clipWidth, clipHeight,
-                            screenCenterX, screenCenterY, projectionScaleX, projectionScaleY, nearClip, farClip,
-                            polygon, polygonBlendMode, texture, sphereMap,
-                            vertices.get(0), vertices.get(1), vertices.get(2), uv != null
-                    );
-                    rasterizePerspectiveTriangle(
-                            pixels, depthBuffer, surfaceWidth, surfaceHeight, clipX, clipY, clipWidth, clipHeight,
-                            screenCenterX, screenCenterY, projectionScaleX, projectionScaleY, nearClip, farClip,
-                            polygon, polygonBlendMode, texture, sphereMap,
-                            vertices.get(1), vertices.get(3), vertices.get(2), uv != null
-                    );
-                } else {
-                    rasterizePerspectiveTriangle(
-                            pixels, depthBuffer, surfaceWidth, surfaceHeight, clipX, clipY, clipWidth, clipHeight,
-                            screenCenterX, screenCenterY, projectionScaleX, projectionScaleY, nearClip, farClip,
-                            polygon, polygonBlendMode, texture, sphereMap,
-                            vertices.get(0), vertices.get(1), vertices.get(2), uv != null
-                    );
-                    rasterizePerspectiveTriangle(
-                            pixels, depthBuffer, surfaceWidth, surfaceHeight, clipX, clipY, clipWidth, clipHeight,
-                            screenCenterX, screenCenterY, projectionScaleX, projectionScaleY, nearClip, farClip,
-                            polygon, polygonBlendMode, texture, sphereMap,
-                            vertices.get(0), vertices.get(2), vertices.get(3), uv != null
-                    );
-                }
-                return;
-            }
+            rasterizePerspectiveTriangle(
+                    pixels, depthBuffer, surfaceWidth, surfaceHeight, clipX, clipY, clipWidth, clipHeight,
+                    screenCenterX, screenCenterY, projectionScaleX, projectionScaleY, nearClip, farClip,
+                    polygon, polygonBlendMode, texture, sphereMap,
+                    vertices.get(0), vertices.get(1), vertices.get(2), uv != null
+            );
+            rasterizePerspectiveTriangle(
+                    pixels, depthBuffer, surfaceWidth, surfaceHeight, clipX, clipY, clipWidth, clipHeight,
+                    screenCenterX, screenCenterY, projectionScaleX, projectionScaleY, nearClip, farClip,
+                    polygon, polygonBlendMode, texture, sphereMap,
+                    vertices.get(2), vertices.get(1), vertices.get(3), uv != null
+            );
+            return;
         }
         List<PolygonVertex> clipped = clipPerspectivePolygon(vertices, nearClip, farClip);
         if (clipped.size() < 3) {
