@@ -469,6 +469,11 @@ public final class RecordStore {
                 return entry;
             }
         }
+        if (recordId == 1 && records.size() == 1) {
+            // Some vendor RMS templates ship a single logical record with a non-1 ID.
+            // A few games still hardcode get/setRecord(1), so treat the sole record as slot 1.
+            return records.get(0);
+        }
         throw new InvalidRecordIDException("Unknown record id: " + recordId);
     }
 
