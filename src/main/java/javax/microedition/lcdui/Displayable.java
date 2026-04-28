@@ -32,13 +32,11 @@ public class Displayable {
     }
 
     public void addCommand(Command command) {
-        if (command != null && !commands.contains(command)) {
-            commands.add(command);
-        }
+        addCommandInternal(command);
     }
 
     public void removeCommand(Command command) {
-        commands.remove(command);
+        removeCommandInternal(command);
     }
 
     public void setCommandListener(CommandListener commandListener) {
@@ -65,19 +63,11 @@ public class Displayable {
     }
 
     public void fireCommand(int index) {
-        var availableCommands = orderedCommands();
-        if (commandListener == null || availableCommands.isEmpty()) {
+        var command = resolveCommand(index);
+        if (commandListener == null || command == null) {
             return;
         }
-
-        var softKeys = softKeyCommands();
-        if (index >= 0 && index < softKeys.length && softKeys[index] != null) {
-            commandListener.commandAction(softKeys[index], this);
-            return;
-        }
-
-        var resolvedIndex = Math.max(0, Math.min(index, availableCommands.size() - 1));
-        commandListener.commandAction(availableCommands.get(resolvedIndex), this);
+        commandListener.commandAction(command, this);
     }
 
     public Command[] softKeyCommands() {
@@ -105,9 +95,49 @@ public class Displayable {
         return new Command[]{left, right};
     }
 
+    protected List<Command> commandSnapshot() {
+        return List.copyOf(commands);
+    }
+
+    protected final boolean addCommandInternal(Command command) {
+        if (command == null || commands.contains(command)) {
+            return false;
+        }
+        commands.add(command);
+        return true;
+    }
+
+    protected final boolean removeCommandInternal(Command command) {
+        return commands.remove(command);
+    }
+
+    protected final boolean containsCommandInternal(Command command) {
+        return commands.contains(command);
+    }
+
+    protected final int commandCountInternal() {
+        return commands.size();
+    }
+
+    protected final Command resolveCommand(int index) {
+        var availableCommands = orderedCommands();
+        if (availableCommands.isEmpty()) {
+            return null;
+        }
+
+        var softKeys = softKeyCommands();
+        if (index >= 0 && index < softKeys.length && softKeys[index] != null) {
+            return softKeys[index];
+        }
+
+        var resolvedIndex = Math.max(0, Math.min(index, availableCommands.size() - 1));
+        return availableCommands.get(resolvedIndex);
+    }
+
     private ArrayList<Command> orderedCommands() {
-        var ordered = new ArrayList<Command>(commands.size());
-        for (var command : commands) {
+        var snapshot = commandSnapshot();
+        var ordered = new ArrayList<Command>(snapshot.size());
+        for (var command : snapshot) {
             if (command != null) {
                 ordered.add(command);
             }
