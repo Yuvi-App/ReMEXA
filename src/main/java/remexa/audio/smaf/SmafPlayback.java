@@ -54,7 +54,13 @@ public final class SmafPlayback implements AutoCloseable {
     public static final int PLAYING = 3;
     public static final int PAUSED = 5;
     private static final SmafFueTrekRenderer FUETREK_RENDERER = new SmafFueTrekRenderer();
+    private static final int DECODE_CACHE_LIMIT = 32;
+    private static final int RENDER_CACHE_LIMIT = 32;
+    // Some game Destory and recreate the same short action phrases per input event.
+    private static final Map<SmafCacheKey, DecodedSmaf> DECODE_CACHE = createLruCache(DECODE_CACHE_LIMIT);
+    private static final Map<SmafCacheKey, SmafRenderedAudio> RENDER_CACHE = createLruCache(RENDER_CACHE_LIMIT);
 
+    private final SmafCacheKey cacheKey;
     private final byte[] source;
     private final Sequence sequence;
     private final Sequence midiSequence;
@@ -106,7 +112,8 @@ public final class SmafPlayback implements AutoCloseable {
     private Map<Integer, Integer> channelRouting = Collections.emptyMap();
     private Set<Integer> outputChannels = Collections.emptySet();
 
-    private SmafPlayback(byte[] source,
+    private SmafPlayback(SmafCacheKey cacheKey,
+                         byte[] source,
                          Sequence sequence,
                          Sequence midiSequence,
                          List<SMAFDecoder.SequenceSysExEvent> sequenceSysExEvents,
@@ -117,6 +124,7 @@ public final class SmafPlayback implements AutoCloseable {
                          List<SMAFDecoder.SequenceUserEvent> userEvents,
                          boolean hasPcmPayload,
                          int pcmClipCount) {
+        this.cacheKey = cacheKey;
         this.source = source;
         this.sequence = sequence;
         this.midiSequence = midiSequence;
@@ -131,8 +139,11 @@ public final class SmafPlayback implements AutoCloseable {
     }
 
     public static SmafPlayback create(byte[] source) throws Exception {
-        DecodedSmaf decoded = decode(source);
-        return new SmafPlayback(source.clone(),
+        byte[] sourceCopy = source.clone();
+        SmafCacheKey cacheKey = new SmafCacheKey(sourceCopy);
+        DecodedSmaf decoded = decodeCached(cacheKey, sourceCopy);
+        return new SmafPlayback(cacheKey,
+                sourceCopy,
                 decoded.sequence(),
                 decoded.midiSequence(),
                 decoded.sequenceSysExEvents(),
@@ -273,6 +284,11 @@ public final class SmafPlayback implements AutoCloseable {
         if (renderedAudio != null) {
             return renderedAudio;
         }
+        SmafRenderedAudio cachedRenderedAudio = cachedRenderedAudio(cacheKey);
+        if (cachedRenderedAudio != null) {
+            renderedAudio = cachedRenderedAudio;
+            return renderedAudio;
+        }
         if (renderedAudioFailure != null) {
             throw renderedAudioFailure;
         }
@@ -283,6 +299,7 @@ public final class SmafPlayback implements AutoCloseable {
                     startupPackets,
                     pcmClipData,
                     pcmTriggers);
+            cacheRenderedAudio(cacheKey, renderedAudio);
             return renderedAudio;
         } catch (Exception exception) {
             renderedAudioFailure = exception;
@@ -762,6 +779,45 @@ public final class SmafPlayback implements AutoCloseable {
                     hasPcmPayload,
                     pcmClipCount);
         }
+    }
+
+    private static DecodedSmaf decodeCached(SmafCacheKey cacheKey, byte[] source) throws Exception {
+        synchronized (DECODE_CACHE) {
+            DecodedSmaf cached = DECODE_CACHE.get(cacheKey);
+            if (cached != null) {
+                return cached;
+            }
+        }
+        DecodedSmaf decoded = decode(source);
+        synchronized (DECODE_CACHE) {
+            DecodedSmaf cached = DECODE_CACHE.get(cacheKey);
+            if (cached != null) {
+                return cached;
+            }
+            DECODE_CACHE.put(cacheKey, decoded);
+            return decoded;
+        }
+    }
+
+    private static SmafRenderedAudio cachedRenderedAudio(SmafCacheKey cacheKey) {
+        synchronized (RENDER_CACHE) {
+            return RENDER_CACHE.get(cacheKey);
+        }
+    }
+
+    private static void cacheRenderedAudio(SmafCacheKey cacheKey, SmafRenderedAudio audio) {
+        synchronized (RENDER_CACHE) {
+            RENDER_CACHE.put(cacheKey, audio);
+        }
+    }
+
+    private static <K, V> Map<K, V> createLruCache(int limit) {
+        return new LinkedHashMap<>(limit, 0.75f, true) {
+            @Override
+            protected boolean removeEldestEntry(Map.Entry<K, V> eldest) {
+                return size() > limit;
+            }
+        };
     }
 
     private static Sequence cloneSequence(Sequence sourceSequence) throws Exception {
@@ -1630,6 +1686,24 @@ public final class SmafPlayback implements AutoCloseable {
                                     MidiDevice outputDevice,
                                     Receiver receiver,
                                     String description) {
+    }
+
+    private record SmafCacheKey(byte[] source, int hash) {
+        private SmafCacheKey(byte[] source) {
+            this(source, Arrays.hashCode(source));
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            return other instanceof SmafCacheKey cacheKey
+                    && hash == cacheKey.hash
+                    && Arrays.equals(source, cacheKey.source);
+        }
+
+        @Override
+        public int hashCode() {
+            return hash;
+        }
     }
 
     private record DecodedSmaf(Sequence sequence,
