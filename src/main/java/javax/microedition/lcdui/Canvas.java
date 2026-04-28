@@ -2,6 +2,7 @@ package javax.microedition.lcdui;
 
 import java.util.HashSet;
 import java.util.Set;
+import javax.swing.SwingUtilities;
 import remexa.host.runtime.MidletRuntime;
 
 public abstract class Canvas extends Displayable {
@@ -23,6 +24,8 @@ public abstract class Canvas extends Displayable {
     public static final int SOFT2 = -7;
     public static final int SOFT3 = -8;
     private final Set<Integer> pressedKeys = new HashSet<>();
+    private boolean paintInProgress;
+    private boolean repaintQueued;
     private boolean shown;
 
     protected abstract void paint(Graphics graphics);
@@ -89,21 +92,31 @@ public abstract class Canvas extends Displayable {
     }
 
     public void repaint() {
+        if (deferRepaintIfPainting(this::repaint)) {
+            return;
+        }
         MidletRuntime.renderCanvas(this, graphics -> {
+            beginHostPaint();
             try {
                 paint(graphics);
             } finally {
+                endHostPaint();
                 graphics.dispose();
             }
         });
     }
 
     public void repaint(int x, int y, int width, int height) {
+        if (deferRepaintIfPainting(() -> repaint(x, y, width, height))) {
+            return;
+        }
         MidletRuntime.renderCanvas(this, graphics -> {
+            beginHostPaint();
             try {
                 graphics.setClip(x, y, width, height);
                 paint(graphics);
             } finally {
+                endHostPaint();
                 graphics.dispose();
             }
         });
@@ -278,6 +291,37 @@ public abstract class Canvas extends Displayable {
             state |= 0x0001;
         }
         return state;
+    }
+
+    protected final void beginHostPaint() {
+        synchronized (this) {
+            paintInProgress = true;
+        }
+    }
+
+    protected final void endHostPaint() {
+        synchronized (this) {
+            paintInProgress = false;
+        }
+    }
+
+    protected final boolean deferRepaintIfPainting(Runnable repaintAction) {
+        synchronized (this) {
+            if (!paintInProgress) {
+                return false;
+            }
+            if (repaintQueued) {
+                return true;
+            }
+            repaintQueued = true;
+        }
+        SwingUtilities.invokeLater(() -> {
+            synchronized (Canvas.this) {
+                repaintQueued = false;
+            }
+            repaintAction.run();
+        });
+        return true;
     }
 
     public final int phoneKeyStateMask(boolean eightDirectionsEnabled) {

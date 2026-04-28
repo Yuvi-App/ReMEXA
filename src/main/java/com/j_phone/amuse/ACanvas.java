@@ -154,11 +154,19 @@ public abstract class ACanvas extends javax.microedition.lcdui.Canvas implements
 
     @Override
     public void repaint() {
+        if (deferRepaintIfPainting(this::repaint)) {
+            return;
+        }
         if (hostGraphics == null) {
             attachHostGraphics();
             return;
         }
-        paint(hostGraphics);
+        beginHostPaint();
+        try {
+            paint(hostGraphics);
+        } finally {
+            endHostPaint();
+        }
     }
 
     public final void sequenceStart () {
@@ -175,7 +183,12 @@ public abstract class ACanvas extends javax.microedition.lcdui.Canvas implements
         }
         hostGraphics = remexa.host.runtime.MidletRuntime.beginAmuseVirtualGraphics(this);
         if (hostGraphics != null) {
-            paint(hostGraphics);
+            beginHostPaint();
+            try {
+                paint(hostGraphics);
+            } finally {
+                endHostPaint();
+            }
         }
     }
 
