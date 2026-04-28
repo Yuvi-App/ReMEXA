@@ -8,6 +8,7 @@ import remexa.host.jblend.CanvasGraphics3D;
 import remexa.host.profile.DisplayMetrics;
 
 public final class DisplaySurfaceState {
+    private static final int SPRITE_SCRATCH_COLUMNS = 8;
     private static final int SPRITE_SCRATCH_ROWS = 8;
 
     private DisplayMetrics displayMetrics;
@@ -194,7 +195,7 @@ public final class DisplaySurfaceState {
 
     private void ensureVirtualSurface() {
         if (virtualImage == null
-                || virtualImage.getWidth() != displayMetrics.width()
+                || virtualImage.getWidth() != virtualSurfaceWidth()
                 || virtualImage.getHeight() != virtualSurfaceHeight()) {
             virtualImage = createVirtualSurface();
         }
@@ -208,8 +209,8 @@ public final class DisplaySurfaceState {
     private void ensureCanvasGraphics() {
         if (canvasGraphics != null
                 && virtualImage != null
-                && virtualImage.getWidth() == displayMetrics.width()
-                && virtualImage.getHeight() == displayMetrics.height()) {
+                && virtualImage.getWidth() == virtualSurfaceWidth()
+                && virtualImage.getHeight() == virtualSurfaceHeight()) {
             return;
         }
         disposeCanvasGraphics();
@@ -239,7 +240,11 @@ public final class DisplaySurfaceState {
     }
 
     private BufferedImage createVirtualSurface() {
-        return createSurface(displayMetrics.width(), virtualSurfaceHeight());
+        return createSurface(virtualSurfaceWidth(), virtualSurfaceHeight());
+    }
+
+    private int virtualSurfaceWidth() {
+        return displayMetrics.width() + (frameBuffer == null ? 0 : SPRITE_SCRATCH_COLUMNS);
     }
 
     private int virtualSurfaceHeight() {
