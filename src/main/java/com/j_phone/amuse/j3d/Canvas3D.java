@@ -71,7 +71,7 @@ public abstract class Canvas3D extends javax.microedition.lcdui.Canvas implement
                 centerY,
                 screenScaleX / 4096.0f,
                 screenScaleY / 4096.0f,
-                false,
+                true,
                 false,
                 0,
                 0,
