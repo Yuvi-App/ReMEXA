@@ -7,6 +7,7 @@ public final class LaunchConfig {
     public static final String JSKY_PHONE_TYPE_PROPERTY = "remexa.jskyPhoneType";
     public static final String VODAFONE_PHONE_TYPE_PROPERTY = "remexa.vodafonePhoneType";
     public static final String MEXA_PHONE_TYPE_PROPERTY = "remexa.mexaPhoneType";
+    public static final String SMAF_SYNTH_PROPERTY = "remexa.smafSynth";
     public static final String HOST_SCALE_PROPERTY = "remexa.hostScale";
     public static final String BLUETOOTH_BACKEND_PROPERTY = "remexa.bluetoothBackend";
     public static final String BLUETOOTH_ROLE_PROPERTY = "remexa.bluetoothRole";
@@ -240,6 +241,61 @@ public final class LaunchConfig {
     public static void applyMexaPhoneType(MexaPhoneType mexaPhoneType) {
         var resolved = mexaPhoneType == null ? MexaPhoneType.GENERIC : mexaPhoneType;
         System.setProperty(MEXA_PHONE_TYPE_PROPERTY, resolved.id());
+    }
+
+    public enum SmafSynthType {
+        AUTO("auto", "Auto"),
+        MA3("ma3", "MA3"),
+        MA5("ma5", "MA5"),
+        LEGACY("legacy", "Legacy FueTrek"),
+        MIDI("midi", "Host MIDI");
+
+        private final String id;
+        private final String label;
+
+        SmafSynthType(String id, String label) {
+            this.id = id;
+            this.label = label;
+        }
+
+        public String id() {
+            return id;
+        }
+
+        @Override
+        public String toString() {
+            return label;
+        }
+
+        public static SmafSynthType fromId(String candidate) {
+            if (candidate == null) {
+                return null;
+            }
+            var normalized = candidate.trim().toLowerCase(Locale.ROOT);
+            if ("fuetrek".equals(normalized)) {
+                return LEGACY;
+            }
+            for (var type : values()) {
+                if (type.id.equals(normalized) || type.label.toLowerCase(Locale.ROOT).equals(normalized)) {
+                    return type;
+                }
+            }
+            return null;
+        }
+
+        public static SmafSynthType normalize(String candidate) {
+            var type = fromId(candidate);
+            return type == null ? AUTO : type;
+        }
+
+        public static SmafSynthType resolveConfigured() {
+            return normalize(System.getProperty(SMAF_SYNTH_PROPERTY, AUTO.id));
+        }
+    }
+
+    public static void applySmafSynthType(SmafSynthType synthType) {
+        var resolved = synthType == null ? SmafSynthType.AUTO : synthType;
+        System.setProperty(SMAF_SYNTH_PROPERTY, resolved.id());
     }
 
     public static Integer parseHostScale(String candidate) {

@@ -15,6 +15,7 @@ public final class RemexaPreferences {
     public static final String JSKY_PHONE_TYPE_KEY = "jskyPhoneType";
     public static final String VODAFONE_PHONE_TYPE_KEY = "vodafonePhoneType";
     public static final String MEXA_PHONE_TYPE_KEY = "mexaPhoneType";
+    public static final String SMAF_SYNTH_TYPE_KEY = "smafSynthType";
     public static final String HOST_SCALE_KEY = "hostScale";
     public static final String BLUETOOTH_BACKEND_KEY = "bluetoothBackend";
     public static final String BLUETOOTH_ROLE_KEY = "bluetoothRole";

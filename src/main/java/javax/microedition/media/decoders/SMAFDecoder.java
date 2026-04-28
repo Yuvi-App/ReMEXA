@@ -497,17 +497,22 @@ public final class SMAFDecoder
     {
         String MMMG = "" + (char) input[decodePos++] + (char) input[decodePos++] + (char) input[decodePos++] + (char) input[decodePos++]; // "MMMG"
         int MMMGChunkSize = (input[decodePos++] & 0xFF) << 24 | (input[decodePos++] & 0xFF) << 16 | (input[decodePos++] & 0xFF) << 8 | (input[decodePos++] & 0xFF); // Size of remaining data minus the next 2 bytes
-        String data = "" + (char) input[decodePos++] + (char) input[decodePos++]; // TODO: What are these meant to be?
+        int sequenceHeader = input[decodePos++] & 0xFF;
+        int timeBaseHint = input[decodePos++] & 0xFF;
         handyChannelIdx = 0;
 
         smafLog(SMAF_LOG_DEBUG, SMAFDecoder.class.getPackage().getName() + "." + SMAFDecoder.class.getSimpleName() + ": " +"-------------------------- " + MMMG + " HEADER --------------------------");
         smafLog(SMAF_LOG_DEBUG, SMAFDecoder.class.getPackage().getName() + "." + SMAFDecoder.class.getSimpleName() + ": " +"MMMGChunkSize: " + MMMGChunkSize);
-        smafLog(SMAF_LOG_DEBUG, SMAFDecoder.class.getPackage().getName() + "." + SMAFDecoder.class.getSimpleName() + ": " +"MMMGChunkData: " + data);
+        smafLog(SMAF_LOG_DEBUG, SMAFDecoder.class.getPackage().getName() + "." + SMAFDecoder.class.getSimpleName() + ": " +"MMMGSequenceHeader: 0x" + String.format("%02X", sequenceHeader));
+        smafLog(SMAF_LOG_DEBUG, SMAFDecoder.class.getPackage().getName() + "." + SMAFDecoder.class.getSimpleName() + ": " +"MMMGTimeBaseHint: 0x" + String.format("%02X", timeBaseHint));
 
-        // MMMG, EXVO, SEQU are all a big TODO
+        // SoftBank MMMG phrases carry a short 2-byte header ahead of VOIC/SEQU.
+        // The first byte appears to be a version/format marker. The second byte
+        // behaves like a literal time-base value in milliseconds (for Ys files
+        // this is 0x14 == 20 ms), not the normal SMAF encoded time-base index.
         formatType = (byte) 0x04; // SMAF with MMMG chunk uses a different format for notes and events
-        TimeBase_D = (byte) 0x11; // TODO: This should be somewhere in one of the chunks following MMMG,
-        TimeBase_G = (byte) 0x11; // TODO: Same as above.
+        TimeBase_D = encodeLiteralMmmgTimeBase(timeBaseHint);
+        TimeBase_G = TimeBase_D;
 
         // According to some Sharp SMAFs, this should be followed by the VOIC chunk
         // TODO: We don't really have sufficient data to decode the PCM sequences and set up the MIDI sequence, but... let's try anyway
@@ -1453,9 +1458,12 @@ public final class SMAFDecoder
                  * https://github.com/but80/smaf825/blob/v1/smaf/event/event.go
                  */
 
-                // SEQU uses MIDI-style variable-length values for duration and gate time.
+                // MMMG/SEQU phrases use the native Yamaha 1-byte / 2-byte
+                // length encoding rather than a generic MIDI VLQ:
+                // 0xxxxxxx -> 0..127
+                // 1xxxxxxx yyyyyyyy -> (((x & 0x7f) + 1) << 7) + y
                 int[] offsetRef = new int[]{offset};
-                duration = readMidiVariableLength(data, offsetRef);
+                duration = readSmafPhraseVariableLength(data, offsetRef);
                 offset = offsetRef[0];
 
                 totalDuration += (duration * timeBasetoMs(TimeBase_D)); // Update total duration
@@ -1602,11 +1610,10 @@ public final class SMAFDecoder
                     else if (eventType == (byte) 0x34) // Pitch Bend event
                     {
                         int eventValue = data[offset++] & 0xFF;
-                        // SEQU pitch bend uses the full 8-bit lane with 0x80
-                        // as center. Masking it down to 7 bits recenters the
-                        // control around 0x40, so perfectly centered values
-                        // like 0x80 become a large downward bend.
-                        int pitchBend = encodeCentered8PitchBend(eventValue);
+                        // Real-world SoftBank SEQU phrases sound closer to the
+                        // official MA3 emulator when 0x34 is interpreted on
+                        // the centered-7 lane rather than the full 8-bit lane.
+                        int pitchBend = encodeCentered7PitchBend(eventValue & 0x7F);
 
                         byte pitchBendLSB = (byte) (pitchBend & 0x7F);
                         byte pitchBendMSB = (byte) ((pitchBend >> 7) & 0x7F);
@@ -1739,7 +1746,7 @@ public final class SMAFDecoder
                             + (12 * channelData[channel].octaveShift));
 
                     offsetRef[0] = offset;
-                    gateTime = readMidiVariableLength(data, offsetRef);
+                    gateTime = readSmafPhraseVariableLength(data, offsetRef);
                     offset = offsetRef[0];
 
                     // Some real-world SEQU phrases encode zero gate lengths.
@@ -1809,6 +1816,32 @@ public final class SMAFDecoder
         return value;
     }
 
+    private static int readSmafPhraseVariableLength(byte[] data, int[] offsetRef)
+    {
+        int offset = offsetRef[0];
+        if (offset >= data.length)
+        {
+            return 0;
+        }
+
+        int first = data[offset++] & 0xFF;
+        if ((first & 0x80) == 0)
+        {
+            offsetRef[0] = offset;
+            return first;
+        }
+
+        if (offset >= data.length)
+        {
+            offsetRef[0] = offset;
+            return first & 0x7F;
+        }
+
+        int second = data[offset++] & 0xFF;
+        offsetRef[0] = offset;
+        return (((first & 0x7F) + 1) << 7) + second;
+    }
+
     private static int timeBasetoMs(byte timeBase) 
     {
         switch (timeBase) 
@@ -1823,6 +1856,22 @@ public final class SMAFDecoder
             case 0x13: return 50;  // 50 ms
             default: return 4;     // Default to 4 ms
         }
+    }
+
+    private static byte encodeLiteralMmmgTimeBase(int literalTimeBaseMs)
+    {
+        return switch (literalTimeBaseMs)
+        {
+            case 1 -> (byte) 0x00;
+            case 2 -> (byte) 0x01;
+            case 4 -> (byte) 0x02;
+            case 5 -> (byte) 0x03;
+            case 10 -> (byte) 0x10;
+            case 20 -> (byte) 0x11;
+            case 40 -> (byte) 0x12;
+            case 50 -> (byte) 0x13;
+            default -> (byte) 0x11;
+        };
     }
 
     private static void recordExclusiveVoice(byte[] exclusiveVoice)

@@ -36,16 +36,19 @@ import java.util.TreeSet;
 /**
  * Lightweight phrase playback wrapper for MEXA SMAF/SPF data.
  *
- * <p>SMAF phrases prefer a clean-room FueTrek render path so desktop playback
- * can stay closer to handset-era timbre. Host MIDI output remains available as
- * a fallback when the rendered backend cannot be opened.</p>
+ * <p>SMAF phrases prefer a clean Yamaha render path selected by packet family,
+ * while host MIDI output remains available as a fallback when no rendered
+ * backend can be opened.</p>
  */
 public final class SmafPlayback implements AutoCloseable {
     private static final String MIDI_DEVICE_AUTO = "auto";
     private static final String MIDI_DEVICE_GERVILL = "gervill";
     private static final String MIDI_DEVICE_DEFAULT = "default";
     private static final String SMAF_SYNTH_AUTO = "auto";
+    private static final String SMAF_SYNTH_LEGACY = "legacy";
     private static final String SMAF_SYNTH_FUETREK = "fuetrek";
+    private static final String SMAF_SYNTH_MA3 = "ma3";
+    private static final String SMAF_SYNTH_MA5 = "ma5";
     private static final String SMAF_SYNTH_MIDI = "midi";
     private static final int USER_EVENT_META_TYPE = 0x7F;
     private static final byte[] USER_EVENT_META_PREFIX = new byte[]{'R', 'X'};
@@ -53,12 +56,14 @@ public final class SmafPlayback implements AutoCloseable {
     public static final int READY = 2;
     public static final int PLAYING = 3;
     public static final int PAUSED = 5;
-    private static final SmafFueTrekRenderer FUETREK_RENDERER = new SmafFueTrekRenderer();
+    private static final LegacySmafAudioEngine LEGACY_ENGINE = new LegacySmafAudioEngine();
+    private static final Ma3SmafAudioEngine MA3_ENGINE = new Ma3SmafAudioEngine();
+    private static final Ma5PlaceholderSmafAudioEngine MA5_ENGINE = new Ma5PlaceholderSmafAudioEngine(LEGACY_ENGINE);
     private static final int DECODE_CACHE_LIMIT = 32;
     private static final int RENDER_CACHE_LIMIT = 32;
     // Some game Destory and recreate the same short action phrases per input event.
     private static final Map<SmafCacheKey, DecodedSmaf> DECODE_CACHE = createLruCache(DECODE_CACHE_LIMIT);
-    private static final Map<SmafCacheKey, SmafRenderedAudio> RENDER_CACHE = createLruCache(RENDER_CACHE_LIMIT);
+    private static final Map<SmafRenderCacheKey, SmafRenderedAudio> RENDER_CACHE = createLruCache(RENDER_CACHE_LIMIT);
 
     private final SmafCacheKey cacheKey;
     private final byte[] source;
@@ -102,9 +107,11 @@ public final class SmafPlayback implements AutoCloseable {
 
     private Sequencer sequencer;
     private SmafRenderedAudio renderedAudio;
+    private YamahaAudioEngine renderedAudioEngine;
     private SmafRenderedPlayer renderedPlayer;
     private boolean paused;
     private Exception renderedAudioFailure;
+    private String renderedAudioFailureEngineId;
     private int volume = 127;
     private int panpot = 64;
     private PhraseTrackListener listener;
@@ -198,7 +205,9 @@ public final class SmafPlayback implements AutoCloseable {
         try {
             ensureOpen();
             if (renderedPlayer != null) {
-                Mobile.log(Mobile.LOG_INFO, "Playing SMAF phrase through FueTrek rendered backend (loop=" + loopCount + ").");
+                Mobile.log(Mobile.LOG_INFO,
+                        "Playing SMAF phrase through " + renderedBackendLabel()
+                                + " rendered backend (loop=" + loopCount + ").");
                 renderedPlayer.play(loopCount);
                 return;
             }
@@ -281,30 +290,36 @@ public final class SmafPlayback implements AutoCloseable {
         if (SMAF_SYNTH_MIDI.equals(synthPreference)) {
             return null;
         }
-        if (renderedAudio != null) {
+        YamahaAudioEngine engine = resolveAudioEngine(synthPreference);
+        if (renderedAudio != null && renderedAudioEngine != null && renderedAudioEngine.id().equals(engine.id())) {
             return renderedAudio;
         }
-        SmafRenderedAudio cachedRenderedAudio = cachedRenderedAudio(cacheKey);
+        SmafRenderCacheKey renderCacheKey = new SmafRenderCacheKey(cacheKey, engine.id());
+        SmafRenderedAudio cachedRenderedAudio = cachedRenderedAudio(renderCacheKey);
         if (cachedRenderedAudio != null) {
             renderedAudio = cachedRenderedAudio;
+            renderedAudioEngine = engine;
             return renderedAudio;
         }
-        if (renderedAudioFailure != null) {
+        if (renderedAudioFailure != null && engine.id().equals(renderedAudioFailureEngineId)) {
             throw renderedAudioFailure;
         }
         try {
-            renderedAudio = FUETREK_RENDERER.render(
+            renderedAudio = engine.render(new SmafRenderContext(
+                    source,
                     sequence,
                     sequenceSysExEvents,
                     startupPackets,
                     pcmClipData,
-                    pcmTriggers);
-            cacheRenderedAudio(cacheKey, renderedAudio);
+                    pcmTriggers));
+            renderedAudioEngine = engine;
+            cacheRenderedAudio(renderCacheKey, renderedAudio);
             return renderedAudio;
         } catch (Exception exception) {
             renderedAudioFailure = exception;
+            renderedAudioFailureEngineId = engine.id();
             Mobile.log(Mobile.LOG_WARNING,
-                    "FueTrek renderedAudio() failed: " + describeException(exception));
+                    engine.label() + " renderedAudio() failed: " + describeException(exception));
             throw exception;
         }
     }
@@ -338,7 +353,7 @@ public final class SmafPlayback implements AutoCloseable {
                 return;
             } catch (Exception exception) {
                 Mobile.log(Mobile.LOG_WARNING,
-                        "Unable to render SMAF through FueTrek backend: " + describeException(exception)
+                        "Unable to render SMAF through Yamaha backend: " + describeException(exception)
                                 + ". Falling back to host MIDI output.");
             }
         }
@@ -348,14 +363,14 @@ public final class SmafPlayback implements AutoCloseable {
     private void openRenderedBackend() throws Exception {
         SmafRenderedAudio audio = renderedAudio();
         if (audio == null) {
-            throw new IOException("FueTrek SMAF rendering is disabled for MIDI-only playback");
+            throw new IOException("SMAF rendering is disabled for MIDI-only playback");
         }
         renderedPlayer = new SmafRenderedPlayer(audio, userEvents);
         renderedPlayer.setListener(listener);
         renderedPlayer.setVolume(volume);
         renderedPlayer.setPanpot(panpot);
         Mobile.log(Mobile.LOG_INFO,
-                "SMAF rendered with FueTrek backend at " + audio.sampleRate() + " Hz"
+                "SMAF rendered with " + renderedBackendLabel() + " backend at " + audio.sampleRate() + " Hz"
                         + (hasPcmPayload ? " with " + pcmClipCount + " PCM clip(s)." : "."));
     }
 
@@ -557,9 +572,36 @@ public final class SmafPlayback implements AutoCloseable {
         }
         String normalized = candidate.trim().toLowerCase(java.util.Locale.ROOT);
         return switch (normalized) {
-            case SMAF_SYNTH_AUTO, SMAF_SYNTH_FUETREK, SMAF_SYNTH_MIDI -> normalized;
+            case SMAF_SYNTH_AUTO, SMAF_SYNTH_LEGACY, SMAF_SYNTH_FUETREK, SMAF_SYNTH_MA3, SMAF_SYNTH_MA5, SMAF_SYNTH_MIDI -> normalized;
             default -> SMAF_SYNTH_AUTO;
         };
+    }
+
+    private YamahaAudioEngine resolveAudioEngine(String synthPreference) {
+        return switch (synthPreference) {
+            case SMAF_SYNTH_MA3 -> MA3_ENGINE;
+            case SMAF_SYNTH_MA5 -> MA5_ENGINE;
+            case SMAF_SYNTH_LEGACY, SMAF_SYNTH_FUETREK -> LEGACY_ENGINE;
+            case SMAF_SYNTH_AUTO -> resolveAutomaticAudioEngine();
+            default -> LEGACY_ENGINE;
+        };
+    }
+
+    private YamahaAudioEngine resolveAutomaticAudioEngine() {
+        SmafAudioFamily family = SmafAudioDetector.detect(source, startupPackets, sequenceSysExEvents);
+        YamahaAudioEngine engine = switch (family) {
+            case MA3 -> MA3_ENGINE;
+            case MA5 -> MA5_ENGINE;
+            case UNKNOWN -> LEGACY_ENGINE;
+        };
+        if (SmafDebug.isEnabled("smaf", SmafDebug.Level.INFO)) {
+            SmafDebug.info("smaf", "SMAF auto audio family=" + family + " backend=" + engine.label());
+        }
+        return engine;
+    }
+
+    private String renderedBackendLabel() {
+        return renderedAudioEngine == null ? "Yamaha" : renderedAudioEngine.label();
     }
 
     private static void sendShortMessage(Receiver receiver,
@@ -799,13 +841,13 @@ public final class SmafPlayback implements AutoCloseable {
         }
     }
 
-    private static SmafRenderedAudio cachedRenderedAudio(SmafCacheKey cacheKey) {
+    private static SmafRenderedAudio cachedRenderedAudio(SmafRenderCacheKey cacheKey) {
         synchronized (RENDER_CACHE) {
             return RENDER_CACHE.get(cacheKey);
         }
     }
 
-    private static void cacheRenderedAudio(SmafCacheKey cacheKey, SmafRenderedAudio audio) {
+    private static void cacheRenderedAudio(SmafRenderCacheKey cacheKey, SmafRenderedAudio audio) {
         synchronized (RENDER_CACHE) {
             RENDER_CACHE.put(cacheKey, audio);
         }
@@ -1704,6 +1746,9 @@ public final class SmafPlayback implements AutoCloseable {
         public int hashCode() {
             return hash;
         }
+    }
+
+    private record SmafRenderCacheKey(SmafCacheKey sourceKey, String engineId) {
     }
 
     private record DecodedSmaf(Sequence sequence,

@@ -67,6 +67,20 @@ public final class HostUiSettings {
         RemexaPreferences.ui().put(RemexaPreferences.MEXA_PHONE_TYPE_KEY, resolved.id());
     }
 
+    public static LaunchConfig.SmafSynthType smafSynthType() {
+        return LaunchConfig.SmafSynthType.normalize(
+                RemexaPreferences.ui().get(
+                        RemexaPreferences.SMAF_SYNTH_TYPE_KEY,
+                        LaunchConfig.SmafSynthType.AUTO.id()
+                )
+        );
+    }
+
+    public static void setSmafSynthType(LaunchConfig.SmafSynthType synthType) {
+        var resolved = synthType == null ? LaunchConfig.SmafSynthType.AUTO : synthType;
+        RemexaPreferences.ui().put(RemexaPreferences.SMAF_SYNTH_TYPE_KEY, resolved.id());
+    }
+
     public static int hostScale() {
         return LaunchConfig.normalizeHostScale(
                 RemexaPreferences.ui().get(RemexaPreferences.HOST_SCALE_KEY, "3")

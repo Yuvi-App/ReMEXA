@@ -5,6 +5,14 @@ import java.util.Objects;
 
 public record SmafRenderedAudio(int sampleRate, int channelCount, int frameCount, byte[] pcm16Le) {
     public static SmafRenderedAudio mix(List<Layer> layers) {
+        return mix(layers, false);
+    }
+
+    public static SmafRenderedAudio mixLoopingLayers(List<Layer> layers) {
+        return mix(layers, true);
+    }
+
+    private static SmafRenderedAudio mix(List<Layer> layers, boolean loopShorterLayers) {
         Objects.requireNonNull(layers, "layers");
         if (layers.isEmpty()) {
             throw new IllegalArgumentException("At least one rendered SMAF layer is required");
@@ -37,9 +45,11 @@ public record SmafRenderedAudio(int sampleRate, int channelCount, int frameCount
             }
             float[] channelGains = channelGains(layer.gain(), layer.panpot(), channels);
             byte[] pcm = layer.audio().pcm16Le();
-            int inputOffset = 0;
-            for (int frame = 0; frame < layer.audio().frameCount(); frame++) {
+            int layerFrames = layer.audio().frameCount();
+            int framesToMix = loopShorterLayers ? maxFrames : layerFrames;
+            for (int frame = 0; frame < framesToMix; frame++) {
                 int outputOffset = frame * channels;
+                int inputOffset = (loopShorterLayers ? frame % layerFrames : frame) * channels * 2;
                 for (int channel = 0; channel < channels; channel++) {
                     mix[outputOffset + channel] += (readSample(pcm, inputOffset) / 32768.0f) * channelGains[channel];
                     inputOffset += 2;

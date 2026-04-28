@@ -32,6 +32,7 @@ public final class ReMEXA {
         LaunchConfig.applyJskyPhoneType(launchRequest.jskyPhoneType() == null ? HostUiSettings.jskyPhoneType() : launchRequest.jskyPhoneType());
         LaunchConfig.applyVodafonePhoneType(launchRequest.vodafonePhoneType() == null ? HostUiSettings.vodafonePhoneType() : launchRequest.vodafonePhoneType());
         LaunchConfig.applyMexaPhoneType(launchRequest.mexaPhoneType() == null ? HostUiSettings.mexaPhoneType() : launchRequest.mexaPhoneType());
+        LaunchConfig.applySmafSynthType(HostUiSettings.smafSynthType());
         LaunchConfig.applyHostScale(launchRequest.hostScale() == null ? HostUiSettings.hostScale() : launchRequest.hostScale());
         LaunchConfig.applyBluetoothBackend(launchRequest.bluetoothBackend() == null ? HostUiSettings.bluetoothBackend() : launchRequest.bluetoothBackend());
         LaunchConfig.applyBluetoothRole(launchRequest.bluetoothRole() == null ? HostUiSettings.bluetoothRole() : launchRequest.bluetoothRole());
