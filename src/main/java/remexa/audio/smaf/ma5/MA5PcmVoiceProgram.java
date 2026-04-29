@@ -11,6 +11,7 @@ import java.util.Arrays;
  */
 public record MA5PcmVoiceProgram(int bankLsb,
                                  int program,
+                                 boolean drumVoice,
                                  int frequencySetting,
                                  int panpot,
                                  boolean panpotEnable,
@@ -51,8 +52,10 @@ public record MA5PcmVoiceProgram(int bankLsb,
             return null;
         }
 
-        int bankLsb = body[3] & 0x7f;
+        int bankByte = body[3] & 0xff;
+        int bankLsb = bankByte & 0x7f;
         int program = body[4] & 0x7f;
+        boolean drumVoice = (bankByte & 0x80) != 0;
         byte[] payload = Arrays.copyOfRange(body, VM5_PCM_HEADER_BYTES, body.length);
         int b2 = payload[2] & 0xff;
         int b3 = payload[3] & 0xff;
@@ -66,6 +69,7 @@ public record MA5PcmVoiceProgram(int bankLsb,
         return new MA5PcmVoiceProgram(
                 bankLsb,
                 program,
+                drumVoice,
                 u16(payload, 0),
                 (b2 >> 3) & 0x1f,
                 (b2 & 0x01) != 0,
@@ -92,6 +96,7 @@ public record MA5PcmVoiceProgram(int bankLsb,
     public String summary() {
         return "pcmVoice bankLsb=" + bankLsb
                 + " program=" + program
+                + " drumVoice=" + drumVoice
                 + " fs=" + frequencySetting
                 + " waveId=" + waveId
                 + " loop=" + loopPoint

@@ -61,8 +61,10 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
         private static final int INTERNAL_LEGACY_YAMAHA_PHRASE_VOLUME = 0x0a;
         private static final int INTERNAL_LEGACY_YAMAHA_PROGRAM = 0x0b;
         private static final int INTERNAL_LEGACY_YAMAHA_BANK = 0x0c;
+        private static final int MIDI_PERCUSSION_CHANNEL = 9;
         private static final float DEFAULT_PITCH_BEND_RANGE_SEMITONES = 2.0f;
         private static final float SEMITONES_PER_OCTAVE = 12.0f;
+        private static final int MA5_DRUM_KEY_MIDI_BASE = 36;
         private static final int[] AICA_STEPS = {230, 230, 230, 230, 307, 409, 512, 614};
         private static final int[] YM2608_STEPS = {57, 57, 57, 57, 77, 102, 128, 153};
         private static final boolean PCM_OVERLAY_ENABLED =
@@ -92,9 +94,11 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
         private final float[] pitchBendRanges = new float[CHANNEL_COUNT];
         private final int[] channelBanks = new int[CHANNEL_COUNT];
         private final int[] channelPrograms = new int[CHANNEL_COUNT];
+        private final boolean[] channelDrumBanks = new boolean[CHANNEL_COUNT];
         private final float[] channelVolumes = new float[CHANNEL_COUNT];
         private final float[] channelPans = new float[CHANNEL_COUNT];
         private final Map<Integer, MA5PcmVoiceProgram> pcmPrograms = new HashMap<>();
+        private final Map<Integer, MA5PcmVoiceProgram> pcmDrumPrograms = new HashMap<>();
         private final Map<Integer, int[]> pcmWaves = new HashMap<>();
         private final List<PcmNote> pcmNotes = new ArrayList<>();
 
@@ -109,10 +113,12 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
             sampler.reset();
             softbankBridge.reset();
             pcmPrograms.clear();
+            pcmDrumPrograms.clear();
             pcmWaves.clear();
             pcmNotes.clear();
             Arrays.fill(channelBanks, 0);
             Arrays.fill(channelPrograms, 0);
+            Arrays.fill(channelDrumBanks, false);
             Arrays.fill(channelVolumes, 1.0f);
             Arrays.fill(channelPans, 0.0f);
             for (int channel = 0; channel < CHANNEL_COUNT; channel++) {
@@ -151,7 +157,7 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
 
         @Override
         public void keyOn(int channel, int key, float velocity) {
-            MA5PcmVoiceProgram pcmVoice = pcmProgram(channel);
+            MA5PcmVoiceProgram pcmVoice = pcmProgram(channel, key);
             int[] pcmWave = pcmWave(pcmVoice);
             if (PCM_OVERLAY_ENABLED && pcmVoice != null && pcmWave != null && pcmWave.length > 0) {
                 pcmNotes.add(new PcmNote(channel, key, velocity, pcmVoice, pcmWave, sampleRate));
@@ -243,17 +249,39 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
             int rawValue = message[3] & 0xff;
             int value = rawValue & 0x7f;
             switch (command) {
-                case INTERNAL_LEGACY_YAMAHA_SELECTOR, INTERNAL_LEGACY_YAMAHA_PROGRAM ->
-                        programChange(logicalChannel, value);
+                case INTERNAL_LEGACY_YAMAHA_SELECTOR, INTERNAL_LEGACY_YAMAHA_PROGRAM -> {
+                    programChange(logicalChannel, value);
+                    if (logicalChannel >= 0 && logicalChannel < CHANNEL_COUNT && channelDrumBanks[logicalChannel]) {
+                        programChange(MIDI_PERCUSSION_CHANNEL, value);
+                    }
+                }
                 case INTERNAL_LEGACY_YAMAHA_BANK -> {
                     boolean drumBank = (rawValue & 0x80) != 0;
+                    if (logicalChannel >= 0 && logicalChannel < CHANNEL_COUNT) {
+                        channelDrumBanks[logicalChannel] = drumBank;
+                    }
                     sampler.drumEnable(logicalChannel, drumBank);
                     bankChange(logicalChannel, value);
+                    if (logicalChannel != MIDI_PERCUSSION_CHANNEL && drumBank) {
+                        channelDrumBanks[MIDI_PERCUSSION_CHANNEL] = true;
+                        sampler.drumEnable(MIDI_PERCUSSION_CHANNEL, true);
+                        bankChange(MIDI_PERCUSSION_CHANNEL, value);
+                    }
                 }
-                case INTERNAL_LEGACY_YAMAHA_VOLUME, INTERNAL_LEGACY_YAMAHA_PHRASE_VOLUME ->
-                        volume(logicalChannel, value / 127.0f);
-                case INTERNAL_LEGACY_YAMAHA_PAN ->
-                        panpot(logicalChannel, midiPanToFloat(value));
+                case INTERNAL_LEGACY_YAMAHA_VOLUME, INTERNAL_LEGACY_YAMAHA_PHRASE_VOLUME -> {
+                    float normalized = value / 127.0f;
+                    volume(logicalChannel, normalized);
+                    if (logicalChannel >= 0 && logicalChannel < CHANNEL_COUNT && channelDrumBanks[logicalChannel]) {
+                        volume(MIDI_PERCUSSION_CHANNEL, normalized);
+                    }
+                }
+                case INTERNAL_LEGACY_YAMAHA_PAN -> {
+                    float normalized = midiPanToFloat(value);
+                    panpot(logicalChannel, normalized);
+                    if (logicalChannel >= 0 && logicalChannel < CHANNEL_COUNT && channelDrumBanks[logicalChannel]) {
+                        panpot(MIDI_PERCUSSION_CHANNEL, normalized);
+                    }
+                }
                 default -> {
                     return true;
                 }
@@ -269,16 +297,24 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
 
         @Override
         public void onPcmVoice(MA5PcmVoiceProgram voice) {
-            pcmPrograms.put(programKey(voice.bankLsb(), voice.program()), voice);
+            if (voice.drumVoice()) {
+                pcmDrumPrograms.put(programKey(voice.bankLsb(), voice.program()), voice);
+            } else {
+                pcmPrograms.put(programKey(voice.bankLsb(), voice.program()), voice);
+            }
         }
 
-        private boolean isPcmChannel(int channel) {
-            return pcmProgram(channel) != null;
-        }
-
-        private MA5PcmVoiceProgram pcmProgram(int channel) {
+        private MA5PcmVoiceProgram pcmProgram(int channel, int key) {
             if (!PCM_OVERLAY_ENABLED || channel < 0 || channel >= CHANNEL_COUNT) {
                 return null;
+            }
+            if (channelDrumBanks[channel] || channel == MIDI_PERCUSSION_CHANNEL) {
+                int midiNote = key + 69;
+                int drumKey = midiNote - MA5_DRUM_KEY_MIDI_BASE;
+                MA5PcmVoiceProgram drumVoice = pcmDrumPrograms.get(programKey(channelBanks[channel], drumKey));
+                if (drumVoice != null) {
+                    return drumVoice;
+                }
             }
             return pcmPrograms.get(programKey(channelBanks[channel], channelPrograms[channel]));
         }
