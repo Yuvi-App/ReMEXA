@@ -1,6 +1,5 @@
 package remexa.audio.smaf;
 
-import remexa.audio.smaf.fuetrek.FueTrekSamplerProvider;
 import org.recompile.mobile.Mobile;
 
 import javax.microedition.media.decoders.SMAFDecoder;
@@ -26,15 +25,8 @@ final class SmafSequencedRenderer {
     private static final int OUTPUT_CHANNELS = 2;
     private static final int FRAMES_PER_TICK = OUTPUT_SAMPLE_RATE / 1_000;
     private static final int TAIL_RENDER_LIMIT_FRAMES = OUTPUT_SAMPLE_RATE * 10;
-    private static final FueTrekSamplerProvider FUETREK = new FueTrekSamplerProvider();
     private final String rendererName;
     private final SmafSynthProvider synthProvider;
-
-    static SmafSequencedRenderer legacyFueTrek() {
-        return new SmafSequencedRenderer(
-                "Legacy FueTrek",
-                sampleRate -> new FueTrekAdapter(FUETREK.instance(sampleRate)));
-    }
 
     SmafSequencedRenderer(String rendererName, SmafSynthProvider synthProvider) {
         this.rendererName = rendererName;
@@ -563,80 +555,4 @@ final class SmafSequencedRenderer {
         }
     }
 
-    private record FueTrekAdapter(remexa.audio.smaf.fuetrek.Sampler sampler) implements SmafSynthAdapter {
-        @Override
-        public void reset() {
-            sampler.reset();
-        }
-
-        @Override
-        public void drumEnable(int channel, boolean enable) {
-            sampler.drumEnable(channel, enable);
-        }
-
-        @Override
-        public boolean isFinished() {
-            return sampler.isFinished();
-        }
-
-        @Override
-        public void keyOff(int channel, int key) {
-            sampler.keyOff(channel, key);
-        }
-
-        @Override
-        public void keyOn(int channel, int key, float velocity) {
-            sampler.keyOn(channel, key, velocity);
-        }
-
-        @Override
-        public void bankChange(int channel, int bank) {
-            sampler.bankChange(channel, bank);
-        }
-
-        @Override
-        public void programChange(int channel, int program) {
-            sampler.programChange(channel, program);
-        }
-
-        @Override
-        public void pitchBend(int channel, float semitones) {
-            sampler.pitchBend(channel, semitones);
-        }
-
-        @Override
-        public void pitchBendRange(int channel, float range) {
-            sampler.pitchBendRange(channel, range);
-        }
-
-        @Override
-        public void volume(int channel, float volume) {
-            sampler.volume(channel, volume);
-        }
-
-        @Override
-        public void panpot(int channel, float panpot) {
-            sampler.panpot(channel, panpot);
-        }
-
-        @Override
-        public void modulation(int channel, int value) {
-            sampler.modulation(channel, value);
-        }
-
-        @Override
-        public void render(float[] samples, int offset, int frames, float left, float right, boolean erase, boolean clamp) {
-            sampler.render(samples, offset, frames, left, right, erase, clamp);
-        }
-
-        @Override
-        public void sysEx(byte[] message) {
-            sampler.sysEx(message);
-        }
-
-        @Override
-        public void sysEx(int sourceBank, byte[] message) {
-            sampler.sysEx(sourceBank, message);
-        }
-    }
 }

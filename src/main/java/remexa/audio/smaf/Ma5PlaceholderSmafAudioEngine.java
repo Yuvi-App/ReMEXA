@@ -1,12 +1,11 @@
 package remexa.audio.smaf;
 
+import java.io.IOException;
+
 import org.recompile.mobile.Mobile;
 
 final class Ma5PlaceholderSmafAudioEngine implements YamahaAudioEngine {
-    private final LegacySmafAudioEngine legacy;
-
-    Ma5PlaceholderSmafAudioEngine(LegacySmafAudioEngine legacy) {
-        this.legacy = legacy;
+    Ma5PlaceholderSmafAudioEngine() {
     }
 
     @Override
@@ -22,7 +21,7 @@ final class Ma5PlaceholderSmafAudioEngine implements YamahaAudioEngine {
     @Override
     public SmafRenderedAudio render(SmafRenderContext context) throws Exception {
         Mobile.log(Mobile.LOG_WARNING,
-                "MA5 backend is not rebuilt yet; using legacy FueTrek transition renderer for A/B comparison.");
-        return legacy.render(context);
+                "MA5 backend is not rebuilt yet; rendered MA5 playback is unavailable.");
+        throw new IOException("MA5 backend is not rebuilt yet.");
     }
 }

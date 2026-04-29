@@ -45,8 +45,6 @@ public final class SmafPlayback implements AutoCloseable {
     private static final String MIDI_DEVICE_GERVILL = "gervill";
     private static final String MIDI_DEVICE_DEFAULT = "default";
     private static final String SMAF_SYNTH_AUTO = "auto";
-    private static final String SMAF_SYNTH_LEGACY = "legacy";
-    private static final String SMAF_SYNTH_FUETREK = "fuetrek";
     private static final String SMAF_SYNTH_MA3 = "ma3";
     private static final String SMAF_SYNTH_MA5 = "ma5";
     private static final String SMAF_SYNTH_MIDI = "midi";
@@ -56,9 +54,8 @@ public final class SmafPlayback implements AutoCloseable {
     public static final int READY = 2;
     public static final int PLAYING = 3;
     public static final int PAUSED = 5;
-    private static final LegacySmafAudioEngine LEGACY_ENGINE = new LegacySmafAudioEngine();
     private static final Ma3SmafAudioEngine MA3_ENGINE = new Ma3SmafAudioEngine();
-    private static final Ma5PlaceholderSmafAudioEngine MA5_ENGINE = new Ma5PlaceholderSmafAudioEngine(LEGACY_ENGINE);
+    private static final Ma5PlaceholderSmafAudioEngine MA5_ENGINE = new Ma5PlaceholderSmafAudioEngine();
     private static final int DECODE_CACHE_LIMIT = 32;
     private static final int RENDER_CACHE_LIMIT = 32;
     // Some game Destory and recreate the same short action phrases per input event.
@@ -572,7 +569,7 @@ public final class SmafPlayback implements AutoCloseable {
         }
         String normalized = candidate.trim().toLowerCase(java.util.Locale.ROOT);
         return switch (normalized) {
-            case SMAF_SYNTH_AUTO, SMAF_SYNTH_LEGACY, SMAF_SYNTH_FUETREK, SMAF_SYNTH_MA3, SMAF_SYNTH_MA5, SMAF_SYNTH_MIDI -> normalized;
+            case SMAF_SYNTH_AUTO, SMAF_SYNTH_MA3, SMAF_SYNTH_MA5, SMAF_SYNTH_MIDI -> normalized;
             default -> SMAF_SYNTH_AUTO;
         };
     }
@@ -581,9 +578,8 @@ public final class SmafPlayback implements AutoCloseable {
         return switch (synthPreference) {
             case SMAF_SYNTH_MA3 -> MA3_ENGINE;
             case SMAF_SYNTH_MA5 -> MA5_ENGINE;
-            case SMAF_SYNTH_LEGACY, SMAF_SYNTH_FUETREK -> LEGACY_ENGINE;
             case SMAF_SYNTH_AUTO -> resolveAutomaticAudioEngine();
-            default -> LEGACY_ENGINE;
+            default -> MA3_ENGINE;
         };
     }
 
@@ -592,7 +588,7 @@ public final class SmafPlayback implements AutoCloseable {
         YamahaAudioEngine engine = switch (family) {
             case MA3 -> MA3_ENGINE;
             case MA5 -> MA5_ENGINE;
-            case UNKNOWN -> LEGACY_ENGINE;
+            case UNKNOWN -> MA3_ENGINE;
         };
         if (SmafDebug.isEnabled("smaf", SmafDebug.Level.INFO)) {
             SmafDebug.info("smaf", "SMAF auto audio family=" + family + " backend=" + engine.label());

@@ -973,7 +973,7 @@ public final class SMAFDecoder
 
         // Handy Phone uses the loud 0x7f default in vavi-sound. MMMG/SoftBank
         // SEQU notes do not carry velocity, and forcing them to 0x7f makes the
-        // FueTrek ROM path sound harsh compared with authored volume/expression.
+        // synthesized path sound harsh compared with authored volume/expression.
         if(formatType == (byte) 0x00)
         {
             for(int i = 0; i < channelData.length; i++) { channelData[i].velocity = 127; }

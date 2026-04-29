@@ -247,7 +247,6 @@ public final class LaunchConfig {
         AUTO("auto", "Auto"),
         MA3("ma3", "MA3"),
         MA5("ma5", "MA5"),
-        LEGACY("legacy", "Legacy FueTrek"),
         MIDI("midi", "Host MIDI");
 
         private final String id;
@@ -272,9 +271,6 @@ public final class LaunchConfig {
                 return null;
             }
             var normalized = candidate.trim().toLowerCase(Locale.ROOT);
-            if ("fuetrek".equals(normalized)) {
-                return LEGACY;
-            }
             for (var type : values()) {
                 if (type.id.equals(normalized) || type.label.toLowerCase(Locale.ROOT).equals(normalized)) {
                     return type;
