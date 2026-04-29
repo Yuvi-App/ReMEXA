@@ -48,7 +48,6 @@ final class SmafSequencedRenderer {
                              List<SMAFDecoder.PcmSequenceTrigger> pcmTriggers) throws Exception {
         SmafSynthAdapter sampler = synthProvider.instance(OUTPUT_SAMPLE_RATE);
         sampler.reset();
-        sampler.drumEnable(9, true);
 
         List<RenderEvent> events = collectEvents(sequence, sysExEvents, startupPackets);
         MidiChannelState[] channelStates = createChannelStates();

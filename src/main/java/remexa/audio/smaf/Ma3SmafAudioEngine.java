@@ -51,7 +51,6 @@ final class Ma3SmafAudioEngine implements YamahaAudioEngine {
         private final MA3SoftbankBridge softbankBridge;
         private final float[] pitchBendSemitones = new float[CHANNEL_COUNT];
         private final float[] pitchBendRanges = new float[CHANNEL_COUNT];
-        private final boolean[] internalDrumBankChannels = new boolean[CHANNEL_COUNT];
 
         private Ma3Adapter(Sampler sampler, MA3SoftbankBridge softbankBridge) {
             this.sampler = sampler;
@@ -65,7 +64,7 @@ final class Ma3SmafAudioEngine implements YamahaAudioEngine {
             for (int channel = 0; channel < CHANNEL_COUNT; channel++) {
                 pitchBendSemitones[channel] = 0.0f;
                 pitchBendRanges[channel] = DEFAULT_PITCH_BEND_RANGE_SEMITONES;
-                internalDrumBankChannels[channel] = false;
+                sampler.drumEnable(channel, false);
                 sampler.pitchBendRange(channel, normalizePitchBendRange(DEFAULT_PITCH_BEND_RANGE_SEMITONES));
                 sampler.pitchBend(channel, 0.0f);
             }
@@ -162,30 +161,21 @@ final class Ma3SmafAudioEngine implements YamahaAudioEngine {
             int value = rawValue & 0x7f;
             switch (command) {
                 case INTERNAL_LEGACY_YAMAHA_SELECTOR, INTERNAL_LEGACY_YAMAHA_PROGRAM ->
-                        sampler.programChange(resolveInternalControlChannel(logicalChannel), value);
+                        sampler.programChange(logicalChannel, value);
                 case INTERNAL_LEGACY_YAMAHA_BANK -> {
                     boolean drumBank = (rawValue & 0x80) != 0;
-                    internalDrumBankChannels[logicalChannel] = drumBank;
-                    int targetChannel = resolveInternalControlChannel(logicalChannel);
-                    sampler.drumEnable(targetChannel, drumBank || targetChannel == 9);
-                    sampler.bankChange(targetChannel, value);
+                    sampler.drumEnable(logicalChannel, drumBank);
+                    sampler.bankChange(logicalChannel, value);
                 }
                 case INTERNAL_LEGACY_YAMAHA_VOLUME, INTERNAL_LEGACY_YAMAHA_PHRASE_VOLUME ->
-                        sampler.volume(resolveInternalControlChannel(logicalChannel), value / 127.0f);
+                        sampler.volume(logicalChannel, value / 127.0f);
                 case INTERNAL_LEGACY_YAMAHA_PAN ->
-                        sampler.panpot(resolveInternalControlChannel(logicalChannel), midiPanToFloat(value));
+                        sampler.panpot(logicalChannel, midiPanToFloat(value));
                 default -> {
                     return true;
                 }
             }
             return true;
-        }
-
-        private int resolveInternalControlChannel(int logicalChannel) {
-            if (logicalChannel < 0 || logicalChannel >= CHANNEL_COUNT) {
-                return logicalChannel;
-            }
-            return internalDrumBankChannels[logicalChannel] ? 9 : logicalChannel;
         }
 
         private static float midiPanToFloat(int value) {
