@@ -505,6 +505,14 @@ public final class SMAFDecoder
         smafLog(SMAF_LOG_DEBUG, SMAFDecoder.class.getPackage().getName() + "." + SMAFDecoder.class.getSimpleName() + ": " +"MMMGChunkSize: " + MMMGChunkSize);
         smafLog(SMAF_LOG_DEBUG, SMAFDecoder.class.getPackage().getName() + "." + SMAFDecoder.class.getSimpleName() + ": " +"MMMGSequenceHeader: 0x" + String.format("%02X", sequenceHeader));
         smafLog(SMAF_LOG_DEBUG, SMAFDecoder.class.getPackage().getName() + "." + SMAFDecoder.class.getSimpleName() + ": " +"MMMGTimeBaseHint: 0x" + String.format("%02X", timeBaseHint));
+        if ((sequenceHeader & 0x01) == 0)
+        {
+            smafLog(SMAF_LOG_WARNING,
+                    SMAFDecoder.class.getPackage().getName() + "." + SMAFDecoder.class.getSimpleName()
+                            + ": " + "Unexpected MMMG sequence header 0x"
+                            + String.format("%02X", sequenceHeader)
+                            + " (bit 0 should be set for valid Phrase Class 2 data).");
+        }
 
         // SoftBank MMMG phrases carry a short 2-byte header ahead of VOIC/SEQU.
         // The first byte appears to be a version/format marker. The second byte

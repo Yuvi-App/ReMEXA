@@ -106,7 +106,7 @@ public class MA3Sampler
 
     public MA3Sampler(MA3SamplerProvider __ma3, float sampleRate)
     {
-        this.channels = new MA3Channel[10];
+        this.channels = new MA3Channel[16];
         this.fm2ops = new HashMap<>();
         this.fm4ops = new HashMap<>();
         this.sampleRate = sampleRate;

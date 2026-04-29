@@ -9,7 +9,7 @@ final class Ma3SmafAudioEngine implements YamahaAudioEngine {
 
     Ma3SmafAudioEngine() {
         MA3SamplerProvider provider = new MA3SamplerProvider();
-        renderer = new SmafSequencedRenderer("OpenDoJa MA3", sampleRate -> {
+        renderer = new SmafSequencedRenderer("MA3", sampleRate -> {
             Sampler sampler = provider.instance(sampleRate);
             return new Ma3Adapter(sampler, new MA3SoftbankBridge(sampler));
         });
@@ -22,7 +22,7 @@ final class Ma3SmafAudioEngine implements YamahaAudioEngine {
 
     @Override
     public String label() {
-        return "OpenDoJa MA3";
+        return "MA3";
     }
 
     @Override
