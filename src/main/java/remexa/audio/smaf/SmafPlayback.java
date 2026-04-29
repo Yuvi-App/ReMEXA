@@ -47,6 +47,7 @@ public final class SmafPlayback implements AutoCloseable {
     private static final String SMAF_SYNTH_AUTO = "auto";
     private static final String SMAF_SYNTH_MA3 = "ma3";
     private static final String SMAF_SYNTH_MA5 = "ma5";
+    private static final String SMAF_SYNTH_MA7 = "ma7";
     private static final String SMAF_SYNTH_MIDI = "midi";
     private static final int USER_EVENT_META_TYPE = 0x7F;
     private static final byte[] USER_EVENT_META_PREFIX = new byte[]{'R', 'X'};
@@ -56,6 +57,7 @@ public final class SmafPlayback implements AutoCloseable {
     public static final int PAUSED = 5;
     private static final Ma3SmafAudioEngine MA3_ENGINE = new Ma3SmafAudioEngine();
     private static final Ma5SmafAudioEngine MA5_ENGINE = new Ma5SmafAudioEngine();
+    private static final Ma7PlaceholderAudioEngine MA7_ENGINE = new Ma7PlaceholderAudioEngine();
     private static final int DECODE_CACHE_LIMIT = 32;
     private static final int RENDER_CACHE_LIMIT = 32;
     // Some game Destory and recreate the same short action phrases per input event.
@@ -570,7 +572,7 @@ public final class SmafPlayback implements AutoCloseable {
         }
         String normalized = candidate.trim().toLowerCase(java.util.Locale.ROOT);
         return switch (normalized) {
-            case SMAF_SYNTH_AUTO, SMAF_SYNTH_MA3, SMAF_SYNTH_MA5, SMAF_SYNTH_MIDI -> normalized;
+            case SMAF_SYNTH_AUTO, SMAF_SYNTH_MA3, SMAF_SYNTH_MA5, SMAF_SYNTH_MA7, SMAF_SYNTH_MIDI -> normalized;
             default -> SMAF_SYNTH_AUTO;
         };
     }
@@ -579,6 +581,7 @@ public final class SmafPlayback implements AutoCloseable {
         return switch (synthPreference) {
             case SMAF_SYNTH_MA3 -> MA3_ENGINE;
             case SMAF_SYNTH_MA5 -> MA5_ENGINE;
+            case SMAF_SYNTH_MA7 -> MA7_ENGINE;
             case SMAF_SYNTH_AUTO -> resolveAutomaticAudioEngine();
             default -> MA3_ENGINE;
         };
@@ -589,6 +592,7 @@ public final class SmafPlayback implements AutoCloseable {
         YamahaAudioEngine engine = switch (family) {
             case MA3 -> MA3_ENGINE;
             case MA5 -> MA5_ENGINE;
+            case MA7 -> MA7_ENGINE;
             case UNKNOWN -> MA3_ENGINE;
         };
         if (SmafDebug.isEnabled("smaf", SmafDebug.Level.INFO)) {

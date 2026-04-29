@@ -12,14 +12,21 @@ import java.util.Set;
 public final class MA5SoftbankBridge {
     private static final int MANUFACTURER_YAMAHA = 0x43;
     private static final int FAMILY_VM5 = 0x05;
+    private static final int VM5_WAVE_DATA = 0x00;
     private static final int VM5_FM_PROGRAM = 0x01;
     private static final int VM5_PCM_PROGRAM = 0x02;
 
     private final Sampler sampler;
+    private final PcmVoiceSink pcmVoiceSink;
     private final Set<String> loggedPackets = new HashSet<>();
 
     public MA5SoftbankBridge(Sampler sampler) {
+        this(sampler, PcmVoiceSink.NOOP);
+    }
+
+    public MA5SoftbankBridge(Sampler sampler, PcmVoiceSink pcmVoiceSink) {
         this.sampler = sampler;
+        this.pcmVoiceSink = pcmVoiceSink == null ? PcmVoiceSink.NOOP : pcmVoiceSink;
     }
 
     public void reset() {
@@ -36,6 +43,16 @@ public final class MA5SoftbankBridge {
         if (family != FAMILY_VM5) {
             return false;
         }
+        if (type == VM5_WAVE_DATA) {
+            MA5WaveDataPacket waveData = MA5WaveDataPacket.decode(message);
+            if (waveData == null) {
+                debugOnce("vm5-wave-invalid", message);
+                return true;
+            }
+            pcmVoiceSink.onWaveData(waveData);
+            debugOnce("vm5-wave-pending " + waveData.summary(), message);
+            return true;
+        }
         if (type == VM5_FM_PROGRAM) {
             MA5VoiceProgram voice = MA5VoiceProgram.decode(message);
             if (voice == null) {
@@ -49,7 +66,13 @@ public final class MA5SoftbankBridge {
             return true;
         }
         if (type == VM5_PCM_PROGRAM) {
-            debugOnce("vm5-pcm-pending", message);
+            MA5PcmVoiceProgram pcmVoice = MA5PcmVoiceProgram.decode(message);
+            if (pcmVoice == null) {
+                debugOnce("vm5-pcm-invalid", message);
+                return true;
+            }
+            pcmVoiceSink.onPcmVoice(pcmVoice);
+            debugOnce("vm5-pcm-pending " + pcmVoice.summary(), message);
             return true;
         }
         debugOnce("vm5-unsupported", message);
@@ -75,6 +98,10 @@ public final class MA5SoftbankBridge {
         if (packet.length >= 4 && (packet[0] & 0xff) == 0xff && (packet[1] & 0xff) == 0xf0) {
             start = 3;
             end = trimF7(packet, Math.min(packet.length, start + (packet[2] & 0xff)));
+        } else if (packet.length >= 4 && (packet[0] & 0xff) == 0xff && (packet[1] & 0xff) == 0xf1) {
+            start = 4;
+            int bodyLength = (packet[2] & 0xff) | ((packet[3] & 0xff) << 8);
+            end = trimF7(packet, Math.min(packet.length, start + bodyLength));
         } else if ((packet[0] & 0xff) == 0xf0) {
             start = 1;
             end = trimF7(packet, packet.length);
@@ -111,5 +138,21 @@ public final class MA5SoftbankBridge {
             builder.append(" ...");
         }
         return builder.toString();
+    }
+
+    public interface PcmVoiceSink {
+        PcmVoiceSink NOOP = new PcmVoiceSink() {
+            @Override
+            public void onWaveData(MA5WaveDataPacket waveData) {
+            }
+
+            @Override
+            public void onPcmVoice(MA5PcmVoiceProgram voice) {
+            }
+        };
+
+        void onWaveData(MA5WaveDataPacket waveData);
+
+        void onPcmVoice(MA5PcmVoiceProgram voice);
     }
 }

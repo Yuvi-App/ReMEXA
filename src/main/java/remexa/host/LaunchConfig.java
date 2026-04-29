@@ -247,6 +247,7 @@ public final class LaunchConfig {
         AUTO("auto", "Auto"),
         MA3("ma3", "MA3"),
         MA5("ma5", "MA5"),
+        MA7("ma7", "MA7"),
         MIDI("midi", "Host MIDI");
 
         private final String id;

@@ -3,7 +3,16 @@ package remexa.audio.smaf;
 import remexa.audio.smaf.ma3.MA3SamplerProvider;
 import remexa.audio.smaf.ma3.Sampler;
 import remexa.audio.smaf.ma5.MA5PacketInventory;
+import remexa.audio.smaf.ma5.MA5PcmVoiceProgram;
 import remexa.audio.smaf.ma5.MA5SoftbankBridge;
+import remexa.audio.smaf.ma5.MA5WaveDataPacket;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
 
 final class Ma5SmafAudioEngine implements YamahaAudioEngine {
     private static final int MA5_OUTPUT_SAMPLE_RATE = 48_000;
@@ -13,7 +22,7 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
         MA3SamplerProvider provider = new MA3SamplerProvider();
         renderer = new SmafSequencedRenderer("MA5", sampleRate -> {
             Sampler sampler = provider.instance(sampleRate);
-            return new Ma5Adapter(sampler, new MA5SoftbankBridge(sampler));
+            return new Ma5Adapter(sampler, sampleRate);
         }, MA5_OUTPUT_SAMPLE_RATE);
     }
 
@@ -43,7 +52,7 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
                 context.pcmTriggers());
     }
 
-    private static final class Ma5Adapter implements SmafSynthAdapter {
+    private static final class Ma5Adapter implements SmafSynthAdapter, MA5SoftbankBridge.PcmVoiceSink {
         private static final int CHANNEL_COUNT = 16;
         private static final int INTERNAL_LEGACY_YAMAHA_MESSAGE = 0x72;
         private static final int INTERNAL_LEGACY_YAMAHA_SELECTOR = 0x06;
@@ -54,21 +63,58 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
         private static final int INTERNAL_LEGACY_YAMAHA_BANK = 0x0c;
         private static final float DEFAULT_PITCH_BEND_RANGE_SEMITONES = 2.0f;
         private static final float SEMITONES_PER_OCTAVE = 12.0f;
+        private static final int[] AICA_STEPS = {230, 230, 230, 230, 307, 409, 512, 614};
+        private static final int[] YM2608_STEPS = {57, 57, 57, 57, 77, 102, 128, 153};
+        private static final boolean PCM_OVERLAY_ENABLED =
+                Boolean.parseBoolean(System.getProperty("remexa.ma5PcmOverlay", "true"));
+        private static final String PCM_DECODER =
+                System.getProperty("remexa.ma5PcmDecoder", "yamaha").trim().toLowerCase();
+        private static final boolean PCM_HIGH_NIBBLE_FIRST =
+                Boolean.parseBoolean(System.getProperty("remexa.ma5PcmHighNibbleFirst", "false"));
+        private static final boolean PCM_ENVELOPE_ENABLED =
+                Boolean.parseBoolean(System.getProperty("remexa.ma5PcmEnvelope", "true"));
+        private static final float PCM_GAIN =
+                Float.parseFloat(System.getProperty("remexa.ma5PcmGain", "0.35"));
+        private static final float PCM_PHASE_REFERENCE_RATE = 48_000.0f;
+        private static final float PCM_PHASE_FRACTION_SCALE = 65_536.0f;
+        private static final int[] PCM_SEMITONE_Q15 = {
+                0x8000, 0x78D7, 0x7215, 0x6BB3, 0x65AD, 0x5FFD,
+                0x5A9E, 0x558C, 0x50C3, 0x4C3F, 0x47FB, 0x43F4, 0x4027
+        };
+        private static final double PCM_EPSILON = 1.0 / 32768.0;
+        private static final double PCM_DECAY_DB_PER_SEC_AT_4 = 17.9342 / 2.0;
+        private static final double PCM_ATTACK_TIME_SEC_AT_1 = 3.07068;
 
         private final Sampler sampler;
+        private final float sampleRate;
         private final MA5SoftbankBridge softbankBridge;
         private final float[] pitchBendSemitones = new float[CHANNEL_COUNT];
         private final float[] pitchBendRanges = new float[CHANNEL_COUNT];
+        private final int[] channelBanks = new int[CHANNEL_COUNT];
+        private final int[] channelPrograms = new int[CHANNEL_COUNT];
+        private final float[] channelVolumes = new float[CHANNEL_COUNT];
+        private final float[] channelPans = new float[CHANNEL_COUNT];
+        private final Map<Integer, MA5PcmVoiceProgram> pcmPrograms = new HashMap<>();
+        private final Map<Integer, int[]> pcmWaves = new HashMap<>();
+        private final List<PcmNote> pcmNotes = new ArrayList<>();
 
-        private Ma5Adapter(Sampler sampler, MA5SoftbankBridge softbankBridge) {
+        private Ma5Adapter(Sampler sampler, float sampleRate) {
             this.sampler = sampler;
-            this.softbankBridge = softbankBridge;
+            this.sampleRate = sampleRate;
+            this.softbankBridge = new MA5SoftbankBridge(sampler, this);
         }
 
         @Override
         public void reset() {
             sampler.reset();
             softbankBridge.reset();
+            pcmPrograms.clear();
+            pcmWaves.clear();
+            pcmNotes.clear();
+            Arrays.fill(channelBanks, 0);
+            Arrays.fill(channelPrograms, 0);
+            Arrays.fill(channelVolumes, 1.0f);
+            Arrays.fill(channelPans, 0.0f);
             for (int channel = 0; channel < CHANNEL_COUNT; channel++) {
                 pitchBendSemitones[channel] = 0.0f;
                 pitchBendRanges[channel] = DEFAULT_PITCH_BEND_RANGE_SEMITONES;
@@ -85,26 +131,48 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
 
         @Override
         public boolean isFinished() {
-            return sampler.isFinished();
+            return sampler.isFinished() && pcmNotes.isEmpty();
         }
 
         @Override
         public void keyOff(int channel, int key) {
+            boolean releasedPcmNote = false;
+            for (PcmNote note : pcmNotes) {
+                if (note.channel == channel && note.key == key) {
+                    note.releasing = true;
+                    releasedPcmNote = true;
+                }
+            }
+            if (releasedPcmNote) {
+                return;
+            }
             sampler.keyOff(channel, key);
         }
 
         @Override
         public void keyOn(int channel, int key, float velocity) {
+            MA5PcmVoiceProgram pcmVoice = pcmProgram(channel);
+            int[] pcmWave = pcmWave(pcmVoice);
+            if (PCM_OVERLAY_ENABLED && pcmVoice != null && pcmWave != null && pcmWave.length > 0) {
+                pcmNotes.add(new PcmNote(channel, key, velocity, pcmVoice, pcmWave, sampleRate));
+                return;
+            }
             sampler.keyOn(channel, key, velocity);
         }
 
         @Override
         public void bankChange(int channel, int bank) {
+            if (channel >= 0 && channel < CHANNEL_COUNT) {
+                channelBanks[channel] = bank & 0x7f;
+            }
             sampler.bankChange(channel, bank);
         }
 
         @Override
         public void programChange(int channel, int program) {
+            if (channel >= 0 && channel < CHANNEL_COUNT) {
+                channelPrograms[channel] = program & 0x7f;
+            }
             sampler.programChange(channel, program);
         }
 
@@ -130,17 +198,24 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
 
         @Override
         public void volume(int channel, float volume) {
+            if (channel >= 0 && channel < CHANNEL_COUNT) {
+                channelVolumes[channel] = Math.max(0.0f, volume);
+            }
             sampler.volume(channel, volume);
         }
 
         @Override
         public void panpot(int channel, float panpot) {
+            if (channel >= 0 && channel < CHANNEL_COUNT) {
+                channelPans[channel] = Math.max(-1.0f, Math.min(1.0f, panpot));
+            }
             sampler.panpot(channel, panpot);
         }
 
         @Override
         public void render(float[] samples, int offset, int frames, float left, float right, boolean erase, boolean clamp) {
             sampler.render(samples, offset, frames, left, right, erase, clamp);
+            renderPcmOverlay(samples, offset, frames, left, right, clamp);
         }
 
         @Override
@@ -169,21 +244,229 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
             int value = rawValue & 0x7f;
             switch (command) {
                 case INTERNAL_LEGACY_YAMAHA_SELECTOR, INTERNAL_LEGACY_YAMAHA_PROGRAM ->
-                        sampler.programChange(logicalChannel, value);
+                        programChange(logicalChannel, value);
                 case INTERNAL_LEGACY_YAMAHA_BANK -> {
                     boolean drumBank = (rawValue & 0x80) != 0;
                     sampler.drumEnable(logicalChannel, drumBank);
-                    sampler.bankChange(logicalChannel, value);
+                    bankChange(logicalChannel, value);
                 }
                 case INTERNAL_LEGACY_YAMAHA_VOLUME, INTERNAL_LEGACY_YAMAHA_PHRASE_VOLUME ->
-                        sampler.volume(logicalChannel, value / 127.0f);
+                        volume(logicalChannel, value / 127.0f);
                 case INTERNAL_LEGACY_YAMAHA_PAN ->
-                        sampler.panpot(logicalChannel, midiPanToFloat(value));
+                        panpot(logicalChannel, midiPanToFloat(value));
                 default -> {
                     return true;
                 }
             }
             return true;
+        }
+
+        @Override
+        public void onWaveData(MA5WaveDataPacket waveData) {
+            pcmWaves.put(waveData.waveId(),
+                    decodePcmWave(waveData.encodedData(), 0, waveData.encodedData().length));
+        }
+
+        @Override
+        public void onPcmVoice(MA5PcmVoiceProgram voice) {
+            pcmPrograms.put(programKey(voice.bankLsb(), voice.program()), voice);
+        }
+
+        private boolean isPcmChannel(int channel) {
+            return pcmProgram(channel) != null;
+        }
+
+        private MA5PcmVoiceProgram pcmProgram(int channel) {
+            if (!PCM_OVERLAY_ENABLED || channel < 0 || channel >= CHANNEL_COUNT) {
+                return null;
+            }
+            return pcmPrograms.get(programKey(channelBanks[channel], channelPrograms[channel]));
+        }
+
+        private int[] pcmWave(MA5PcmVoiceProgram voice) {
+            if (!PCM_OVERLAY_ENABLED || voice == null) {
+                return null;
+            }
+            return pcmWaves.get(voice.waveId());
+        }
+
+        private void renderPcmOverlay(float[] samples,
+                                      int offset,
+                                      int frames,
+                                      float left,
+                                      float right,
+                                      boolean clamp) {
+            if (!PCM_OVERLAY_ENABLED || pcmNotes.isEmpty()) {
+                return;
+            }
+            Iterator<PcmNote> iterator = pcmNotes.iterator();
+            while (iterator.hasNext()) {
+                PcmNote note = iterator.next();
+                int[] wave = note.wave;
+                int end = Math.min(note.voice.endPoint() + 1, wave.length);
+                int loop = Math.max(0, Math.min(note.voice.loopPoint(), end));
+                if (end <= 0 || note.position >= end) {
+                    iterator.remove();
+                    continue;
+                }
+
+                float pan = note.pan(channelPans[note.channel]);
+                float[] panGain = equalPowerPan(pan);
+                float noteLeft = left * panGain[0];
+                float noteRight = right * panGain[1];
+                float gain = channelVolumes[note.channel] * note.velocity * PCM_GAIN;
+
+                for (int frame = 0; frame < frames; frame++) {
+                    if (note.position >= end) {
+                        if (loop < end) {
+                            note.position = loop + (note.position - loop) % (end - loop);
+                        } else {
+                            note.position = Math.max(0, end - 1);
+                            note.holding = true;
+                        }
+                    }
+
+                    float sample = interpolatedWaveSample(wave, note.position)
+                            * gain
+                            * note.envelope()
+                            * note.releaseGain;
+                    int output = offset + frame * 2;
+                    samples[output] += sample * noteLeft;
+                    samples[output + 1] += sample * noteRight;
+                    if (!note.holding) {
+                        note.position += note.advance(pitchBendSemitones[note.channel]);
+                    }
+
+                    if (note.releasing) {
+                        note.release();
+                        if (note.finished) {
+                            note.finished = true;
+                            break;
+                        }
+                    }
+                }
+                if (note.finished) {
+                    iterator.remove();
+                }
+            }
+            if (clamp) {
+                int end = offset + frames * 2;
+                for (int i = offset; i < end; i++) {
+                    samples[i] = Math.max(-1.0f, Math.min(1.0f, samples[i]));
+                }
+            }
+        }
+
+        private static int programKey(int bank, int program) {
+            return (bank & 0x7f) << 8 | (program & 0x7f);
+        }
+
+        private static float[] equalPowerPan(float pan) {
+            float clamped = Math.max(-1.0f, Math.min(1.0f, pan));
+            double angle = (clamped + 1.0) * Math.PI * 0.25;
+            return new float[] {(float) Math.cos(angle), (float) Math.sin(angle)};
+        }
+
+        private static int[] decodePcmWave(byte[] adpcm, int offset, int length) {
+            return switch (PCM_DECODER) {
+                case "aica" -> decodeAica(adpcm, offset, length);
+                case "yamaha" -> decodeYamaha(adpcm, offset, length);
+                default -> decodeYm2608(adpcm, offset, length);
+            };
+        }
+
+        private static float interpolatedWaveSample(int[] wave, float position) {
+            int source = Math.max(0, Math.min((int) position, wave.length - 1));
+            int next = Math.min(source + 1, wave.length - 1);
+            float fraction = position - source;
+            float sample = wave[source] + (wave[next] - wave[source]) * fraction;
+            return sample / 32768.0f;
+        }
+
+        private static int[] decodeAica(byte[] adpcm, int offset, int length) {
+            int[] decoded = new int[length * 2];
+            int step = 127;
+            int predictor = 0;
+            for (int src = offset, dest = 0; src < offset + length; src++) {
+                for (int nibble = 0; nibble < 2; nibble++, dest++) {
+                    int code = nibble(adpcm[src], nibble);
+                    int magnitude = Math.min(Math.max((((code & 7) << 1) | 1) * step >> 3, 0), 32767);
+                    int sign = 1 - ((code & 8) >> 2);
+                    predictor = Math.min(Math.max(sign * magnitude + predictor * 254 / 255, -32768), 32767);
+                    decoded[dest] = predictor;
+                    step = Math.min(Math.max(AICA_STEPS[code & 7] * step >> 8, 127), 24576);
+                }
+            }
+            return decoded;
+        }
+
+        private static int[] decodeYm2608(byte[] adpcm, int offset, int length) {
+            int[] decoded = new int[length * 2];
+            long step = 127;
+            long predictor = 0;
+            int count = 0;
+            for (int src = offset, dest = 0; src < offset + length; src++) {
+                for (int index = 0; index < 2; index++, dest++, count++) {
+                    int code = nibble(adpcm[src], index);
+                    long delta = ((code & 7) * 2L + 1L) * step / 8L;
+                    predictor += (code & 8) != 0 ? -delta : delta;
+                    predictor = Math.max(-32768, Math.min(32767, predictor));
+                    decoded[dest] = (int) predictor;
+                    step = step * YM2608_STEPS[code & 7] / 64L;
+                    step = Math.max(127, Math.min(24576, step));
+                    if ((count + 1) % 1024 == 0) {
+                        step = 127;
+                        predictor = 0;
+                    }
+                }
+            }
+            return decoded;
+        }
+
+        private static int[] decodeYamaha(byte[] adpcm, int offset, int length) {
+            int[] decoded = new int[length * 2];
+            int step = 127;
+            int predictor = 0;
+            for (int src = offset, dest = 0; src < offset + length; src++) {
+                for (int index = 0; index < 2; index++, dest++) {
+                    int code = nibble(adpcm[src], index);
+                    int diff = step / 8;
+                    if ((code & 0x01) != 0) {
+                        diff += step / 4;
+                    }
+                    if ((code & 0x02) != 0) {
+                        diff += step / 2;
+                    }
+                    if ((code & 0x04) != 0) {
+                        diff += step;
+                    }
+                    predictor += (code & 0x08) != 0 ? -diff : diff;
+                    predictor = Math.max(-32768, Math.min(32767, predictor));
+                    decoded[dest] = predictor;
+                    step = adjustYamahaStep(code, step);
+                }
+            }
+            return decoded;
+        }
+
+        private static int adjustYamahaStep(int code, int step) {
+            // Matches the MA-5 hardware ADPCM path in M5_EmuHw sub_10013350.
+            step = switch (code & 0x07) {
+                case 0, 1, 2, 3 -> step * 115 / 128;
+                case 4 -> step * 307 / 256;
+                case 5 -> step * 409 / 256;
+                case 6 -> step * 2;
+                default -> step * 307 / 128;
+            };
+            return Math.max(127, Math.min(24576, step));
+        }
+
+        private static int nibble(byte value, int index) {
+            int bits = value & 0xff;
+            if (PCM_HIGH_NIBBLE_FIRST) {
+                return index == 0 ? (bits >> 4) & 0x0f : bits & 0x0f;
+            }
+            return index == 0 ? bits & 0x0f : (bits >> 4) & 0x0f;
         }
 
         private static float midiPanToFloat(int value) {
@@ -199,6 +482,181 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
 
         private static float normalizePitchBendRange(float rangeSemitones) {
             return rangeSemitones / SEMITONES_PER_OCTAVE;
+        }
+
+        private static final class PcmNote {
+            private final int channel;
+            private final int key;
+            private final float velocity;
+            private final MA5PcmVoiceProgram voice;
+            private final int[] wave;
+            private final float baseAdvance;
+            private final float totalLevelGain;
+            private final float attackDelta;
+            private final float decayCoef;
+            private final float sustainCoef;
+            private final float releaseCoef;
+            private final float sustainLevel;
+            private float position;
+            private float releaseGain = 1.0f;
+            private boolean releasing;
+            private boolean holding;
+            private boolean finished;
+            private EnvelopeStage envelopeStage = EnvelopeStage.ATTACK;
+            private float envelopeLevel = 0.0f;
+
+            private PcmNote(int channel, int key, float velocity, MA5PcmVoiceProgram voice, int[] wave, float outputSampleRate) {
+                this.channel = channel;
+                this.key = key;
+                this.velocity = Math.max(0.0f, velocity);
+                this.voice = voice;
+                this.wave = wave;
+                // MA-5 PCM uses a 16.16-style phase step derived from a 48 kHz master rate.
+                this.baseAdvance = Math.max(0.001f,
+                        voice.frequencySetting() * PCM_PHASE_REFERENCE_RATE
+                                / (outputSampleRate * PCM_PHASE_FRACTION_SCALE));
+                this.totalLevelGain = PCM_ENVELOPE_ENABLED ? totalLevelGain(voice.totalLevel()) : 1.0f;
+                this.attackDelta = attackDelta(voice.attackRate(), outputSampleRate);
+                this.decayCoef = decayCoef(voice.decayRate(), outputSampleRate);
+                this.sustainCoef = decayCoef(voice.sustainRate(), outputSampleRate);
+                this.releaseCoef = decayCoef(voice.releaseRate(), outputSampleRate);
+                this.sustainLevel = sustainLevel(voice.sustainLevel());
+                if (!PCM_ENVELOPE_ENABLED || voice.attackRate() <= 0) {
+                    this.envelopeLevel = 1.0f;
+                    this.envelopeStage = EnvelopeStage.DECAY;
+                }
+            }
+
+            private float pan(float channelPan) {
+                if (!voice.panpotEnable()) {
+                    return channelPan;
+                }
+                return Math.max(-1.0f, Math.min(1.0f, (voice.panpot() - 15.0f) / 15.0f));
+            }
+
+            private float advance(float bendSemitones) {
+                return baseAdvance * hardwarePitchRatio(key + bendSemitones);
+            }
+
+            private static float hardwarePitchRatio(float semitones) {
+                int lower = (int) Math.floor(semitones);
+                int upper = lower + 1;
+                float fraction = semitones - lower;
+                float lowerRatio = hardwarePitchRatioWhole(lower);
+                float upperRatio = hardwarePitchRatioWhole(upper);
+                return lowerRatio + (upperRatio - lowerRatio) * fraction;
+            }
+
+            private static float hardwarePitchRatioWhole(int semitones) {
+                if (semitones == 0) {
+                    return 1.0f;
+                }
+                int magnitude = Math.abs(semitones);
+                int octaves = magnitude / 12;
+                int withinOctave = magnitude % 12;
+                float downwardRatio = PCM_SEMITONE_Q15[withinOctave] / 32768.0f;
+                if (withinOctave == 0) {
+                    downwardRatio = 1.0f;
+                }
+                float octaveRatio = (float) Math.scalb(1.0f, octaves);
+                if (semitones > 0) {
+                    return octaveRatio / downwardRatio;
+                }
+                return downwardRatio / octaveRatio;
+            }
+
+            private float envelope() {
+                if (!PCM_ENVELOPE_ENABLED) {
+                    return 1.0f;
+                }
+                switch (envelopeStage) {
+                    case ATTACK -> {
+                        envelopeLevel += attackDelta;
+                        if (envelopeLevel >= 1.0f) {
+                            envelopeLevel = 1.0f;
+                            envelopeStage = EnvelopeStage.DECAY;
+                        }
+                    }
+                    case DECAY -> {
+                        if (envelopeLevel > sustainLevel) {
+                            envelopeLevel *= decayCoef;
+                        } else {
+                            envelopeStage = EnvelopeStage.SUSTAIN;
+                        }
+                    }
+                    case SUSTAIN -> {
+                        if (envelopeLevel > PCM_EPSILON) {
+                            envelopeLevel *= sustainCoef;
+                        } else {
+                            envelopeLevel = 0.0f;
+                            envelopeStage = EnvelopeStage.OFF;
+                            finished = true;
+                        }
+                    }
+                    case RELEASE -> release();
+                    case OFF -> finished = true;
+                }
+                return envelopeLevel * totalLevelGain;
+            }
+
+            private void release() {
+                if (!PCM_ENVELOPE_ENABLED) {
+                    releaseGain *= 0.985f;
+                    if (releaseGain < 0.001f) {
+                        finished = true;
+                    }
+                    return;
+                }
+                if (voice.ignoreKeyOff() && !finished) {
+                    return;
+                }
+                envelopeStage = EnvelopeStage.RELEASE;
+                if (envelopeLevel > PCM_EPSILON) {
+                    envelopeLevel *= releaseCoef;
+                } else {
+                    envelopeLevel = 0.0f;
+                    envelopeStage = EnvelopeStage.OFF;
+                    finished = true;
+                }
+            }
+
+            private static float attackDelta(int attackRate, float outputSampleRate) {
+                if (attackRate <= 0) {
+                    return 1.0f;
+                }
+                double seconds = PCM_ATTACK_TIME_SEC_AT_1 / (1 << Math.min(attackRate - 1, 30));
+                return (float) (1.0 / Math.max(1.0, seconds * outputSampleRate));
+            }
+
+            private static float decayCoef(int rate, float outputSampleRate) {
+                if (rate <= 0) {
+                    return 1.0f;
+                }
+                double dbPerSample = PCM_DECAY_DB_PER_SEC_AT_4 * (1 << Math.min(rate, 30)) / 16.0 / outputSampleRate;
+                return (float) Math.pow(10.0, -dbPerSample / 10.0);
+            }
+
+            private static float sustainLevel(int sustainLevel) {
+                if (sustainLevel >= 0x0f) {
+                    return 0.0f;
+                }
+                return (float) Math.pow(10.0, -3.0 * sustainLevel / 20.0);
+            }
+
+            private static float totalLevelGain(int totalLevel) {
+                if (totalLevel >= 63) {
+                    return 0.0f;
+                }
+                return (float) Math.pow(10.0, -0.75 * totalLevel / 20.0);
+            }
+        }
+
+        private enum EnvelopeStage {
+            ATTACK,
+            DECAY,
+            SUSTAIN,
+            RELEASE,
+            OFF
         }
     }
 }

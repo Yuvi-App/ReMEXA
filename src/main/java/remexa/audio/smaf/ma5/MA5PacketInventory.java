@@ -93,6 +93,7 @@ public final class MA5PacketInventory {
                 + " uniquePackets=" + packets.size()
                 + " vm5FmVoices=" + count(PacketKind.VM5_FM_VOICE)
                 + " vm35Voices=" + count(PacketKind.VM35_VOICE)
+                + " vm5WaveData=" + count(PacketKind.VM5_WAVE_DATA)
                 + " ma5AltVoices=" + count(PacketKind.MA5_ALT_VOICE)
                 + " vm5Markers=" + count(PacketKind.VM5_MARKER)
                 + " vmaVoices=" + count(PacketKind.VMA_VOICE)
@@ -164,13 +165,37 @@ public final class MA5PacketInventory {
             case FAMILY_LEGACY_MA -> type == 0x00 ? PacketKind.VMA_VOICE : PacketKind.OTHER_YAMAHA;
             default -> PacketKind.OTHER_YAMAHA;
         };
-        int voiceBank = normalized.body.length > 3 ? normalized.body[3] & 0x7f : -1;
-        int voiceProgram = normalized.body.length > 4 ? normalized.body[4] & 0x7f : -1;
+        int voiceBank = (kind == PacketKind.VM5_FM_VOICE || kind == PacketKind.VM35_VOICE)
+                && normalized.body.length > 3
+                ? normalized.body[3] & 0x7f
+                : -1;
+        int voiceProgram = (kind == PacketKind.VM5_FM_VOICE || kind == PacketKind.VM35_VOICE)
+                && normalized.body.length > 4
+                ? normalized.body[4] & 0x7f
+                : -1;
         MA5VoiceProgram voiceProgramData = MA5VoiceProgram.decode(messageForPreview(packet, normalized.body));
+        MA5PcmVoiceProgram pcmVoiceProgramData = MA5PcmVoiceProgram.decode(messageForPreview(packet, normalized.body));
+        MA5WaveDataPacket waveDataPacket = MA5WaveDataPacket.decode(messageForPreview(packet, normalized.body));
 
         return new PacketRecord(origin, index, tick, sourceBank, kind, family, type,
                 normalized.enveloped, normalized.declaredLength, normalized.body.length,
-                voiceBank, voiceProgram, voiceProgramData == null ? "" : voiceProgramData.summary(), hex(packet, 32));
+                voiceBank, voiceProgram,
+                decodedVoiceSummary(voiceProgramData, pcmVoiceProgramData, waveDataPacket), hex(packet, 32));
+    }
+
+    private static String decodedVoiceSummary(MA5VoiceProgram voiceProgramData,
+                                              MA5PcmVoiceProgram pcmVoiceProgramData,
+                                              MA5WaveDataPacket waveDataPacket) {
+        if (voiceProgramData != null) {
+            return voiceProgramData.summary();
+        }
+        if (pcmVoiceProgramData != null) {
+            return pcmVoiceProgramData.summary();
+        }
+        if (waveDataPacket != null) {
+            return waveDataPacket.summary();
+        }
+        return "";
     }
 
     private static byte[] messageForPreview(byte[] original, byte[] normalizedBody) {
@@ -182,6 +207,7 @@ public final class MA5PacketInventory {
             return PacketKind.OTHER_YAMAHA;
         }
         return switch (body[2] & 0xff) {
+            case 0x00 -> body.length > 4 ? PacketKind.VM5_WAVE_DATA : PacketKind.VM5_MARKER;
             case 0x01 -> body.length > 3 ? PacketKind.VM5_FM_VOICE : PacketKind.VM5_MARKER;
             case 0x02 -> PacketKind.VM35_VOICE;
             default -> PacketKind.OTHER_YAMAHA;
@@ -202,6 +228,12 @@ public final class MA5PacketInventory {
             enveloped = true;
             declaredLength = packet[2] & 0xff;
             start = 3;
+            int declaredEnd = Math.min(packet.length, start + declaredLength);
+            end = trimF7(packet, declaredEnd);
+        } else if (packet.length >= 4 && (packet[0] & 0xff) == 0xff && (packet[1] & 0xff) == 0xf1) {
+            enveloped = true;
+            declaredLength = (packet[2] & 0xff) | ((packet[3] & 0xff) << 8);
+            start = 4;
             int declaredEnd = Math.min(packet.length, start + declaredLength);
             end = trimF7(packet, declaredEnd);
         } else if (packet.length >= 2 && (packet[0] & 0xff) == 0xf0) {
@@ -279,6 +311,7 @@ public final class MA5PacketInventory {
 
     public enum PacketKind {
         VM5_MARKER,
+        VM5_WAVE_DATA,
         VM5_FM_VOICE,
         VM35_VOICE,
         MA5_ALT_VOICE,

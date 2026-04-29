@@ -115,6 +115,10 @@ public record MA5VoiceProgram(int bankLsb,
         if (packet.length >= 4 && (packet[0] & 0xff) == 0xff && (packet[1] & 0xff) == 0xf0) {
             start = 3;
             end = trimF7(packet, Math.min(packet.length, start + (packet[2] & 0xff)));
+        } else if (packet.length >= 4 && (packet[0] & 0xff) == 0xff && (packet[1] & 0xff) == 0xf1) {
+            start = 4;
+            int bodyLength = (packet[2] & 0xff) | ((packet[3] & 0xff) << 8);
+            end = trimF7(packet, Math.min(packet.length, start + bodyLength));
         } else if ((packet[0] & 0xff) == 0xf0) {
             start = 1;
             end = trimF7(packet, packet.length);

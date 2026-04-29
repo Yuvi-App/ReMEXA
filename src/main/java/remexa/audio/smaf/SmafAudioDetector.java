@@ -10,6 +10,11 @@ final class SmafAudioDetector {
     static SmafAudioFamily detect(byte[] source,
                                   List<byte[]> startupPackets,
                                   List<SMAFDecoder.SequenceSysExEvent> sequenceSysExEvents) {
+        if (containsYamahaFamily(source, 0x07)
+                || containsYamahaFamily(startupPackets, 0x07)
+                || containsYamahaFamilyEvents(sequenceSysExEvents, 0x07)) {
+            return SmafAudioFamily.MA7;
+        }
         if (containsYamahaFamily(source, 0x05)
                 || containsYamahaFamily(startupPackets, 0x05)
                 || containsYamahaFamilyEvents(sequenceSysExEvents, 0x05)) {
