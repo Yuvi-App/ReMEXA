@@ -18,7 +18,9 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 final class SmafSequencedRenderer {
     private static final int OUTPUT_SAMPLE_RATE = 32_000;
@@ -131,7 +133,69 @@ final class SmafSequencedRenderer {
                 .comparingLong(RenderEvent::tick)
                 .thenComparingInt(RenderEvent::priority)
                 .thenComparingInt(RenderEvent::order));
-        return events;
+        return suppressLegacyYamahaCarrierNotes(events);
+    }
+
+    private static List<RenderEvent> suppressLegacyYamahaCarrierNotes(List<RenderEvent> events) {
+        Set<Long> extendedNoteTicks = new HashSet<>();
+        for (RenderEvent event : events) {
+            int channel = legacyYamahaExtendedNoteChannel(event);
+            if (channel >= 0) {
+                extendedNoteTicks.add(tickChannelKey(event.tick, channel));
+            }
+        }
+        if (extendedNoteTicks.isEmpty()) {
+            return events;
+        }
+
+        List<RenderEvent> filtered = new ArrayList<>(events.size());
+        Set<Integer> suppressedNotes = new HashSet<>();
+        int suppressed = 0;
+        for (RenderEvent event : events) {
+            if (event.sysEx == null && event.command == ShortMessage.NOTE_ON && event.data2 > 0
+                    && extendedNoteTicks.contains(tickChannelKey(event.tick, event.channel))) {
+                suppressedNotes.add(channelNoteKey(event.channel, event.data1));
+                suppressed++;
+                continue;
+            }
+            if (event.sysEx == null
+                    && (event.command == ShortMessage.NOTE_OFF
+                    || (event.command == ShortMessage.NOTE_ON && event.data2 == 0))
+                    && suppressedNotes.remove(channelNoteKey(event.channel, event.data1))) {
+                suppressed++;
+                continue;
+            }
+            filtered.add(event);
+        }
+
+        if (suppressed > 0 && SmafDebug.isEnabled("render", SmafDebug.Level.DEBUG)) {
+            SmafDebug.debug("render",
+                    "Suppressed " + suppressed + " Yamaha 43 03 90 carrier note event(s)");
+        }
+        return filtered;
+    }
+
+    private static int legacyYamahaExtendedNoteChannel(RenderEvent event) {
+        if (event.sysEx == null || event.sysEx.length < 5
+                || (event.sysEx[0] & 0xff) != 0x43
+                || (event.sysEx[1] & 0xff) != 0x03
+                || (event.sysEx[2] & 0xff) != 0x90) {
+            return -1;
+        }
+        int selector = event.sysEx[3] & 0xf0;
+        if (selector != 0xb0 && selector != 0xc0) {
+            return -1;
+        }
+        int sourceBank = Math.max(0, event.sysExSourceBank);
+        return (sourceBank << 2) + (event.sysEx[3] & 0x03);
+    }
+
+    private static long tickChannelKey(long tick, int channel) {
+        return (tick << 5) | (channel & 0x1fL);
+    }
+
+    private static int channelNoteKey(int channel, int note) {
+        return ((channel & 0x1f) << 8) | (note & 0xff);
     }
 
     private static void applyEvent(SmafSynthAdapter sampler, MidiChannelState[] channelStates, RenderEvent event) {

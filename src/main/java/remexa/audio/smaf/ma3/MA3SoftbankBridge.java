@@ -74,18 +74,10 @@ public final class MA3SoftbankBridge {
         int slot = implicitLegacyProgramSlot++ & 0x3f;
         registerFmAlgorithm(voice, 0, slot);
 
-        int selectorBank = legacySelectorBank(message);
-        int selectorProgram = legacySelectorProgram(message);
-        if (selectorBank >= 0 && selectorProgram >= 0) {
-            registerFmAlgorithm(voice, selectorBank, selectorProgram);
-        }
-
         if (SmafDebug.isEnabled("smaf", SmafDebug.Level.DEBUG)) {
             SmafDebug.debug("smaf", String.format(
-                    "[MA3SoftBank] legacy voice slot=%d selectorBank=%d selectorProgram=%d alg=%d ops=%d",
+                    "[MA3SoftBank] legacy voice slot=%d alg=%d ops=%d",
                     slot,
-                    selectorBank,
-                    selectorProgram,
                     voice.algorithm,
                     voice.operatorCount()));
         }
@@ -107,14 +99,6 @@ public final class MA3SoftbankBridge {
             debugRawPacket("unsupported", message);
         }
         return true;
-    }
-
-    private static int legacySelectorBank(byte[] message) {
-        return message.length > 6 ? message[6] & 0x7f : -1;
-    }
-
-    private static int legacySelectorProgram(byte[] message) {
-        return message.length > 7 ? message[7] & 0x7f : -1;
     }
 
     private static byte[] unwrapRawVendorEnvelope(byte[] message) {
