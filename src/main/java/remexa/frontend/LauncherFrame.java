@@ -240,6 +240,26 @@ public final class LauncherFrame extends JFrame {
         }
         settingsMenu.add(mexaPhoneMenu);
         settingsMenu.addSeparator();
+        var audioMenu = new JMenu("Audio Type");
+        styleMenu(audioMenu);
+        var audioGroup = new ButtonGroup();
+        for (var synthType : LaunchConfig.SmafSynthType.values()) {
+            var audioItem = new JRadioButtonMenuItem(synthType.toString(), HostUiSettings.smafSynthType() == synthType);
+            styleMenuItem(audioItem);
+            audioGroup.add(audioItem);
+            audioItem.addActionListener(event -> {
+                HostUiSettings.setSmafSynthType(synthType);
+                LaunchConfig.applySmafSynthType(synthType);
+                DebugLog.log(
+                        LogCategory.FRONTEND,
+                        LauncherFrame.class.getName(),
+                        "SMAF audio type set to " + synthType.id()
+                );
+            });
+            audioMenu.add(audioItem);
+        }
+        settingsMenu.add(audioMenu);
+        settingsMenu.addSeparator();
         var hostScaleMenu = new JMenu("Host Scale");
         styleMenu(hostScaleMenu);
         var hostScaleGroup = new ButtonGroup();

@@ -368,7 +368,10 @@ public final class PhraseTrack {
 
         try {
             closeLinkedRenderedPlayback();
-            linkedRenderedPlayer = new SmafRenderedPlayer(SmafRenderedAudio.mix(layers), playback.userEvents());
+            SmafRenderedAudio linkedAudio = loop == 1
+                    ? SmafRenderedAudio.mix(layers)
+                    : SmafRenderedAudio.mixLoopingLayers(layers);
+            linkedRenderedPlayer = new SmafRenderedPlayer(linkedAudio, playback.userEvents());
             linkedRenderedPlayer.setListener(listener);
             linkedRenderedPlayer.setVolume(masterVolume);
             linkedRenderedPlayer.setPanpot(64);

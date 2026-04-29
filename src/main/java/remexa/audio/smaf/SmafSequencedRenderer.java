@@ -1,7 +1,6 @@
 package remexa.audio.smaf;
 
 import remexa.audio.smaf.fuetrek.FueTrekSamplerProvider;
-import remexa.audio.smaf.fuetrek.Sampler;
 import org.recompile.mobile.Mobile;
 
 import javax.microedition.media.decoders.SMAFDecoder;
@@ -22,21 +21,33 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
-final class SmafFueTrekRenderer {
+final class SmafSequencedRenderer {
     private static final int OUTPUT_SAMPLE_RATE = 32_000;
     private static final int OUTPUT_CHANNELS = 2;
     private static final int FRAMES_PER_TICK = OUTPUT_SAMPLE_RATE / 1_000;
     private static final int TAIL_RENDER_LIMIT_FRAMES = OUTPUT_SAMPLE_RATE * 10;
     private static final FueTrekSamplerProvider FUETREK = new FueTrekSamplerProvider();
+    private final String rendererName;
+    private final SmafSynthProvider synthProvider;
+
+    static SmafSequencedRenderer legacyFueTrek() {
+        return new SmafSequencedRenderer(
+                "Legacy FueTrek",
+                sampleRate -> new FueTrekAdapter(FUETREK.instance(sampleRate)));
+    }
+
+    SmafSequencedRenderer(String rendererName, SmafSynthProvider synthProvider) {
+        this.rendererName = rendererName;
+        this.synthProvider = synthProvider;
+    }
 
     SmafRenderedAudio render(Sequence sequence,
                              List<SMAFDecoder.SequenceSysExEvent> sysExEvents,
                              List<byte[]> startupPackets,
                              List<byte[]> pcmClipData,
                              List<SMAFDecoder.PcmSequenceTrigger> pcmTriggers) throws Exception {
-        Sampler sampler = FUETREK.instance(OUTPUT_SAMPLE_RATE);
+        SmafSynthAdapter sampler = synthProvider.instance(OUTPUT_SAMPLE_RATE);
         sampler.reset();
-        sampler.drumEnable(9, true);
 
         List<RenderEvent> events = collectEvents(sequence, sysExEvents, startupPackets);
         MidiChannelState[] channelStates = createChannelStates();
@@ -72,7 +83,7 @@ final class SmafFueTrekRenderer {
         List<PcmClip> pcmClips = decodePcmClips(pcmClipData);
         if (SmafDebug.isEnabled("render", SmafDebug.Level.INFO)) {
             SmafDebug.info("render",
-                    "FueTrek render events=" + events.size()
+                    rendererName + " render events=" + events.size()
                             + " startupPackets=" + startupPackets.size()
                             + " sequenceSysEx=" + sysExEvents.size()
                             + " pcmClips=" + countNonNullClips(pcmClips)
@@ -131,7 +142,7 @@ final class SmafFueTrekRenderer {
         return events;
     }
 
-    private static void applyEvent(Sampler sampler, MidiChannelState[] channelStates, RenderEvent event) {
+    private static void applyEvent(SmafSynthAdapter sampler, MidiChannelState[] channelStates, RenderEvent event) {
         if (event.sysEx != null) {
             sampler.sysEx(event.sysExSourceBank, event.sysEx);
             return;
@@ -159,7 +170,7 @@ final class SmafFueTrekRenderer {
         }
     }
 
-    private static void applyControlChange(Sampler sampler,
+    private static void applyControlChange(SmafSynthAdapter sampler,
                                            MidiChannelState channelState,
                                            int channel,
                                            int controller,
@@ -549,6 +560,83 @@ final class SmafFueTrekRenderer {
                 case ShortMessage.NOTE_ON -> velocity == 0 ? 2 : 3;
                 default -> 4;
             };
+        }
+    }
+
+    private record FueTrekAdapter(remexa.audio.smaf.fuetrek.Sampler sampler) implements SmafSynthAdapter {
+        @Override
+        public void reset() {
+            sampler.reset();
+        }
+
+        @Override
+        public void drumEnable(int channel, boolean enable) {
+            sampler.drumEnable(channel, enable);
+        }
+
+        @Override
+        public boolean isFinished() {
+            return sampler.isFinished();
+        }
+
+        @Override
+        public void keyOff(int channel, int key) {
+            sampler.keyOff(channel, key);
+        }
+
+        @Override
+        public void keyOn(int channel, int key, float velocity) {
+            sampler.keyOn(channel, key, velocity);
+        }
+
+        @Override
+        public void bankChange(int channel, int bank) {
+            sampler.bankChange(channel, bank);
+        }
+
+        @Override
+        public void programChange(int channel, int program) {
+            sampler.programChange(channel, program);
+        }
+
+        @Override
+        public void pitchBend(int channel, float semitones) {
+            sampler.pitchBend(channel, semitones);
+        }
+
+        @Override
+        public void pitchBendRange(int channel, float range) {
+            sampler.pitchBendRange(channel, range);
+        }
+
+        @Override
+        public void volume(int channel, float volume) {
+            sampler.volume(channel, volume);
+        }
+
+        @Override
+        public void panpot(int channel, float panpot) {
+            sampler.panpot(channel, panpot);
+        }
+
+        @Override
+        public void modulation(int channel, int value) {
+            sampler.modulation(channel, value);
+        }
+
+        @Override
+        public void render(float[] samples, int offset, int frames, float left, float right, boolean erase, boolean clamp) {
+            sampler.render(samples, offset, frames, left, right, erase, clamp);
+        }
+
+        @Override
+        public void sysEx(byte[] message) {
+            sampler.sysEx(message);
+        }
+
+        @Override
+        public void sysEx(int sourceBank, byte[] message) {
+            sampler.sysEx(sourceBank, message);
         }
     }
 }
