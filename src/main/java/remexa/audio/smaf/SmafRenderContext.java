@@ -9,6 +9,7 @@ record SmafRenderContext(
         Sequence sequence,
         List<SMAFDecoder.SequenceSysExEvent> sequenceSysExEvents,
         List<byte[]> startupPackets,
+        List<byte[]> exclusiveVoices,
         List<byte[]> pcmClipData,
         List<SMAFDecoder.PcmSequenceTrigger> pcmTriggers) {
 }

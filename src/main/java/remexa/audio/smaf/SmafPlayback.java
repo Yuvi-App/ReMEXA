@@ -55,7 +55,7 @@ public final class SmafPlayback implements AutoCloseable {
     public static final int PLAYING = 3;
     public static final int PAUSED = 5;
     private static final Ma3SmafAudioEngine MA3_ENGINE = new Ma3SmafAudioEngine();
-    private static final Ma5PlaceholderSmafAudioEngine MA5_ENGINE = new Ma5PlaceholderSmafAudioEngine();
+    private static final Ma5SmafAudioEngine MA5_ENGINE = new Ma5SmafAudioEngine();
     private static final int DECODE_CACHE_LIMIT = 32;
     private static final int RENDER_CACHE_LIMIT = 32;
     // Some game Destory and recreate the same short action phrases per input event.
@@ -307,6 +307,7 @@ public final class SmafPlayback implements AutoCloseable {
                     sequence,
                     sequenceSysExEvents,
                     startupPackets,
+                    exclusiveVoices,
                     pcmClipData,
                     pcmTriggers));
             renderedAudioEngine = engine;

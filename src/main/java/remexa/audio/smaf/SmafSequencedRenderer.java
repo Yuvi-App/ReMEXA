@@ -23,16 +23,24 @@ import java.util.List;
 import java.util.Set;
 
 final class SmafSequencedRenderer {
-    private static final int OUTPUT_SAMPLE_RATE = 32_000;
+    private static final int DEFAULT_OUTPUT_SAMPLE_RATE = 32_000;
     private static final int OUTPUT_CHANNELS = 2;
-    private static final int FRAMES_PER_TICK = OUTPUT_SAMPLE_RATE / 1_000;
-    private static final int TAIL_RENDER_LIMIT_FRAMES = OUTPUT_SAMPLE_RATE * 10;
     private final String rendererName;
     private final SmafSynthProvider synthProvider;
+    private final int outputSampleRate;
+    private final int framesPerTick;
+    private final int tailRenderLimitFrames;
 
     SmafSequencedRenderer(String rendererName, SmafSynthProvider synthProvider) {
+        this(rendererName, synthProvider, DEFAULT_OUTPUT_SAMPLE_RATE);
+    }
+
+    SmafSequencedRenderer(String rendererName, SmafSynthProvider synthProvider, int outputSampleRate) {
         this.rendererName = rendererName;
         this.synthProvider = synthProvider;
+        this.outputSampleRate = outputSampleRate;
+        this.framesPerTick = outputSampleRate / 1_000;
+        this.tailRenderLimitFrames = outputSampleRate * 10;
     }
 
     SmafRenderedAudio render(Sequence sequence,
@@ -40,13 +48,13 @@ final class SmafSequencedRenderer {
                              List<byte[]> startupPackets,
                              List<byte[]> pcmClipData,
                              List<SMAFDecoder.PcmSequenceTrigger> pcmTriggers) throws Exception {
-        SmafSynthAdapter sampler = synthProvider.instance(OUTPUT_SAMPLE_RATE);
+        SmafSynthAdapter sampler = synthProvider.instance(outputSampleRate);
         sampler.reset();
 
         List<RenderEvent> events = collectEvents(sequence, sysExEvents, startupPackets);
         MidiChannelState[] channelStates = createChannelStates();
 
-        float[] mix = new float[Math.max(OUTPUT_SAMPLE_RATE * OUTPUT_CHANNELS, 1)];
+        float[] mix = new float[Math.max(outputSampleRate * OUTPUT_CHANNELS, 1)];
         long currentTick = 0L;
         int framePosition = 0;
         int eventIndex = 0;
@@ -66,7 +74,7 @@ final class SmafSequencedRenderer {
         }
 
         int tailFrames = 0;
-        while (!sampler.isFinished() && tailFrames < TAIL_RENDER_LIMIT_FRAMES) {
+        while (!sampler.isFinished() && tailFrames < tailRenderLimitFrames) {
             int chunkFrames = 512;
             mix = ensureFrameCapacity(mix, framePosition + chunkFrames);
             sampler.render(mix, framePosition * OUTPUT_CHANNELS, chunkFrames, 1.0f, 1.0f, true, false);
@@ -87,7 +95,7 @@ final class SmafSequencedRenderer {
         mix = ensureFrameCapacity(mix, mixedFrameCount);
         mixPcmClips(mix, pcmClips, pcmTriggers);
         int finalFrameCount = trimTrailingSilence(mix, mixedFrameCount);
-        return new SmafRenderedAudio(OUTPUT_SAMPLE_RATE, OUTPUT_CHANNELS, finalFrameCount,
+        return new SmafRenderedAudio(outputSampleRate, OUTPUT_CHANNELS, finalFrameCount,
                 encodePcm16Le(mix, finalFrameCount));
     }
 
@@ -288,9 +296,9 @@ final class SmafSequencedRenderer {
         return Math.max(-1.0f, Math.min(1.0f, (value - 64.0f) / 63.0f));
     }
 
-    private static int requiredPcmFrameCount(int framePosition,
-                                             List<PcmClip> pcmClips,
-                                             List<SMAFDecoder.PcmSequenceTrigger> pcmTriggers) {
+    private int requiredPcmFrameCount(int framePosition,
+                                      List<PcmClip> pcmClips,
+                                      List<SMAFDecoder.PcmSequenceTrigger> pcmTriggers) {
         int mixedFrameCount = framePosition;
         for (SMAFDecoder.PcmSequenceTrigger trigger : pcmTriggers) {
             ResolvedPcmClip resolved = resolvePcmClip(trigger, pcmClips);
@@ -303,9 +311,9 @@ final class SmafSequencedRenderer {
         return mixedFrameCount;
     }
 
-    private static void mixPcmClips(float[] mix,
-                                    List<PcmClip> pcmClips,
-                                    List<SMAFDecoder.PcmSequenceTrigger> pcmTriggers) {
+    private void mixPcmClips(float[] mix,
+                             List<PcmClip> pcmClips,
+                             List<SMAFDecoder.PcmSequenceTrigger> pcmTriggers) {
         int loggedTriggers = 0;
         for (SMAFDecoder.PcmSequenceTrigger trigger : pcmTriggers) {
             ResolvedPcmClip resolved = resolvePcmClip(trigger, pcmClips);
@@ -341,7 +349,7 @@ final class SmafSequencedRenderer {
         }
     }
 
-    private static List<PcmClip> decodePcmClips(List<byte[]> pcmClipData) throws Exception {
+    private List<PcmClip> decodePcmClips(List<byte[]> pcmClipData) throws Exception {
         List<PcmClip> clips = new ArrayList<>(pcmClipData.size());
         for (byte[] pcmClip : pcmClipData) {
             clips.add(decodePcmClip(pcmClip));
@@ -349,7 +357,7 @@ final class SmafSequencedRenderer {
         return clips;
     }
 
-    private static PcmClip decodePcmClip(byte[] clipData) throws Exception {
+    private PcmClip decodePcmClip(byte[] clipData) throws Exception {
         if (clipData == null || clipData.length == 0) {
             return null;
         }
@@ -449,7 +457,7 @@ final class SmafSequencedRenderer {
         return peak;
     }
 
-    private static float[] resampleToOutput(byte[] pcmBytes, AudioFormat pcmFormat) {
+    private float[] resampleToOutput(byte[] pcmBytes, AudioFormat pcmFormat) {
         int inputChannels = Math.max(1, pcmFormat.getChannels());
         int inputFrames = pcmBytes.length / (inputChannels * 2);
         if (inputFrames <= 0) {
@@ -464,13 +472,13 @@ final class SmafSequencedRenderer {
             input[i] = sample / 32768.0f;
             offset += 2;
         }
-        if (Math.round(pcmFormat.getSampleRate()) == OUTPUT_SAMPLE_RATE && inputChannels == OUTPUT_CHANNELS) {
+        if (Math.round(pcmFormat.getSampleRate()) == outputSampleRate && inputChannels == OUTPUT_CHANNELS) {
             return input;
         }
-        int outputFrames = Math.max(1, Math.round(inputFrames * (OUTPUT_SAMPLE_RATE / pcmFormat.getSampleRate())));
+        int outputFrames = Math.max(1, Math.round(inputFrames * (outputSampleRate / pcmFormat.getSampleRate())));
         float[] output = new float[outputFrames * OUTPUT_CHANNELS];
         for (int frame = 0; frame < outputFrames; frame++) {
-            float sourcePosition = frame * pcmFormat.getSampleRate() / OUTPUT_SAMPLE_RATE;
+            float sourcePosition = frame * pcmFormat.getSampleRate() / outputSampleRate;
             int leftIndex = Math.min(inputFrames - 1, (int) Math.floor(sourcePosition));
             int rightIndex = Math.min(inputFrames - 1, leftIndex + 1);
             float blend = sourcePosition - leftIndex;
@@ -541,8 +549,8 @@ final class SmafSequencedRenderer {
         return copy;
     }
 
-    private static int tickToFrames(long tick) {
-        return (int) Math.max(0L, tick * FRAMES_PER_TICK);
+    private int tickToFrames(long tick) {
+        return (int) Math.max(0L, tick * framesPerTick);
     }
 
     private static final class MidiChannelState {

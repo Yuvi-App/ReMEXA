@@ -1,0 +1,204 @@
+package remexa.audio.smaf;
+
+import remexa.audio.smaf.ma3.MA3SamplerProvider;
+import remexa.audio.smaf.ma3.Sampler;
+import remexa.audio.smaf.ma5.MA5PacketInventory;
+import remexa.audio.smaf.ma5.MA5SoftbankBridge;
+
+final class Ma5SmafAudioEngine implements YamahaAudioEngine {
+    private static final int MA5_OUTPUT_SAMPLE_RATE = 48_000;
+    private final SmafSequencedRenderer renderer;
+
+    Ma5SmafAudioEngine() {
+        MA3SamplerProvider provider = new MA3SamplerProvider();
+        renderer = new SmafSequencedRenderer("MA5", sampleRate -> {
+            Sampler sampler = provider.instance(sampleRate);
+            return new Ma5Adapter(sampler, new MA5SoftbankBridge(sampler));
+        }, MA5_OUTPUT_SAMPLE_RATE);
+    }
+
+    @Override
+    public String id() {
+        return "ma5";
+    }
+
+    @Override
+    public String label() {
+        return "MA5 experimental";
+    }
+
+    @Override
+    public SmafRenderedAudio render(SmafRenderContext context) throws Exception {
+        MA5PacketInventory inventory = MA5PacketInventory.analyze(
+                context.source(),
+                context.startupPackets(),
+                context.exclusiveVoices(),
+                context.sequenceSysExEvents());
+        inventory.log("ma5");
+        return renderer.render(
+                context.sequence(),
+                context.sequenceSysExEvents(),
+                context.startupPackets(),
+                context.pcmClipData(),
+                context.pcmTriggers());
+    }
+
+    private static final class Ma5Adapter implements SmafSynthAdapter {
+        private static final int CHANNEL_COUNT = 16;
+        private static final int INTERNAL_LEGACY_YAMAHA_MESSAGE = 0x72;
+        private static final int INTERNAL_LEGACY_YAMAHA_SELECTOR = 0x06;
+        private static final int INTERNAL_LEGACY_YAMAHA_VOLUME = 0x08;
+        private static final int INTERNAL_LEGACY_YAMAHA_PAN = 0x09;
+        private static final int INTERNAL_LEGACY_YAMAHA_PHRASE_VOLUME = 0x0a;
+        private static final int INTERNAL_LEGACY_YAMAHA_PROGRAM = 0x0b;
+        private static final int INTERNAL_LEGACY_YAMAHA_BANK = 0x0c;
+        private static final float DEFAULT_PITCH_BEND_RANGE_SEMITONES = 2.0f;
+        private static final float SEMITONES_PER_OCTAVE = 12.0f;
+
+        private final Sampler sampler;
+        private final MA5SoftbankBridge softbankBridge;
+        private final float[] pitchBendSemitones = new float[CHANNEL_COUNT];
+        private final float[] pitchBendRanges = new float[CHANNEL_COUNT];
+
+        private Ma5Adapter(Sampler sampler, MA5SoftbankBridge softbankBridge) {
+            this.sampler = sampler;
+            this.softbankBridge = softbankBridge;
+        }
+
+        @Override
+        public void reset() {
+            sampler.reset();
+            softbankBridge.reset();
+            for (int channel = 0; channel < CHANNEL_COUNT; channel++) {
+                pitchBendSemitones[channel] = 0.0f;
+                pitchBendRanges[channel] = DEFAULT_PITCH_BEND_RANGE_SEMITONES;
+                sampler.drumEnable(channel, false);
+                sampler.pitchBendRange(channel, normalizePitchBendRange(DEFAULT_PITCH_BEND_RANGE_SEMITONES));
+                sampler.pitchBend(channel, 0.0f);
+            }
+        }
+
+        @Override
+        public void drumEnable(int channel, boolean enable) {
+            sampler.drumEnable(channel, enable);
+        }
+
+        @Override
+        public boolean isFinished() {
+            return sampler.isFinished();
+        }
+
+        @Override
+        public void keyOff(int channel, int key) {
+            sampler.keyOff(channel, key);
+        }
+
+        @Override
+        public void keyOn(int channel, int key, float velocity) {
+            sampler.keyOn(channel, key, velocity);
+        }
+
+        @Override
+        public void bankChange(int channel, int bank) {
+            sampler.bankChange(channel, bank);
+        }
+
+        @Override
+        public void programChange(int channel, int program) {
+            sampler.programChange(channel, program);
+        }
+
+        @Override
+        public void pitchBend(int channel, float semitones) {
+            if (channel < 0 || channel >= CHANNEL_COUNT) {
+                return;
+            }
+            pitchBendSemitones[channel] = semitones;
+            sampler.pitchBend(channel, normalizePitchBend(semitones, pitchBendRanges[channel]));
+        }
+
+        @Override
+        public void pitchBendRange(int channel, float range) {
+            if (channel < 0 || channel >= CHANNEL_COUNT) {
+                return;
+            }
+            float clampedRange = Math.max(0.0f, range);
+            pitchBendRanges[channel] = clampedRange;
+            sampler.pitchBendRange(channel, normalizePitchBendRange(clampedRange));
+            sampler.pitchBend(channel, normalizePitchBend(pitchBendSemitones[channel], clampedRange));
+        }
+
+        @Override
+        public void volume(int channel, float volume) {
+            sampler.volume(channel, volume);
+        }
+
+        @Override
+        public void panpot(int channel, float panpot) {
+            sampler.panpot(channel, panpot);
+        }
+
+        @Override
+        public void render(float[] samples, int offset, int frames, float left, float right, boolean erase, boolean clamp) {
+            sampler.render(samples, offset, frames, left, right, erase, clamp);
+        }
+
+        @Override
+        public void sysEx(byte[] message) {
+            sysEx(-1, message);
+        }
+
+        @Override
+        public void sysEx(int sourceBank, byte[] message) {
+            if (applyInternalSoftbankControl(message)) {
+                return;
+            }
+            if (!softbankBridge.sysEx(message)) {
+                sampler.sysEx(message);
+            }
+        }
+
+        private boolean applyInternalSoftbankControl(byte[] message) {
+            if (message == null || message.length < 4
+                    || (message[0] & 0xff) != INTERNAL_LEGACY_YAMAHA_MESSAGE) {
+                return false;
+            }
+            int command = message[1] & 0xff;
+            int logicalChannel = message[2] & 0x0f;
+            int rawValue = message[3] & 0xff;
+            int value = rawValue & 0x7f;
+            switch (command) {
+                case INTERNAL_LEGACY_YAMAHA_SELECTOR, INTERNAL_LEGACY_YAMAHA_PROGRAM ->
+                        sampler.programChange(logicalChannel, value);
+                case INTERNAL_LEGACY_YAMAHA_BANK -> {
+                    boolean drumBank = (rawValue & 0x80) != 0;
+                    sampler.drumEnable(logicalChannel, drumBank);
+                    sampler.bankChange(logicalChannel, value);
+                }
+                case INTERNAL_LEGACY_YAMAHA_VOLUME, INTERNAL_LEGACY_YAMAHA_PHRASE_VOLUME ->
+                        sampler.volume(logicalChannel, value / 127.0f);
+                case INTERNAL_LEGACY_YAMAHA_PAN ->
+                        sampler.panpot(logicalChannel, midiPanToFloat(value));
+                default -> {
+                    return true;
+                }
+            }
+            return true;
+        }
+
+        private static float midiPanToFloat(int value) {
+            return Math.max(-1.0f, Math.min(1.0f, (value - 64.0f) / 63.0f));
+        }
+
+        private static float normalizePitchBend(float semitones, float rangeSemitones) {
+            if (rangeSemitones <= 0.0f) {
+                return 0.0f;
+            }
+            return semitones / rangeSemitones;
+        }
+
+        private static float normalizePitchBendRange(float rangeSemitones) {
+            return rangeSemitones / SEMITONES_PER_OCTAVE;
+        }
+    }
+}
