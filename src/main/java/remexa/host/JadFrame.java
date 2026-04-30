@@ -20,7 +20,6 @@ import java.awt.RenderingHints;
 import java.io.IOException;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -103,7 +102,6 @@ public final class JadFrame extends JFrame {
             KeyEvent.VK_F2
     };
 
-    private final JTextArea detailsArea = new JTextArea();
     private final JTextArea logArea = new JTextArea();
     private final JLabel statusLabel = new JLabel("Idle");
     private final JLabel renderInfoLabel = new JLabel();
@@ -135,7 +133,7 @@ public final class JadFrame extends JFrame {
         renderSurface.setBorder(BorderFactory.createLineBorder(new Color(68, 74, 83)));
 
         if (showHostDetails) {
-            buildDetailedLayout(descriptor, launchProfile);
+            buildDetailedLayout();
         } else {
             buildGameOnlyLayout();
         }
@@ -305,36 +303,67 @@ public final class JadFrame extends JFrame {
         }));
     }
 
-    private void buildDetailedLayout(JadDescriptor descriptor, LaunchProfile launchProfile) {
-        detailsArea.setEditable(false);
-        detailsArea.setFont(Font.decode(Font.MONOSPACED));
-        detailsArea.setText(String.join(System.lineSeparator(), summaryLines(descriptor, launchProfile)));
-
+    private void buildDetailedLayout() {
         logArea.setEditable(false);
         logArea.setFont(Font.decode(Font.MONOSPACED));
+        logArea.setForeground(RemexaTheme.TEXT_PRIMARY);
+        logArea.setBackground(RemexaTheme.EDITOR_BACKGROUND);
+        logArea.setCaretColor(RemexaTheme.MENU_HOVER_FOREGROUND);
+        logArea.setBorder(new EmptyBorder(10, 10, 10, 10));
 
-        var renderPanel = new JPanel(new BorderLayout());
-        renderPanel.add(new JLabel("Legacy display host groundwork is active. SDK calls and display transitions will appear in the log."), BorderLayout.NORTH);
+        var root = new JPanel(new BorderLayout(0, 10));
+        root.setBackground(RemexaTheme.APP_BACKGROUND);
+        root.setBorder(new EmptyBorder(10, 10, 10, 10));
 
-        var displayHostPanel = new JPanel(new BorderLayout(0, 8));
+        var renderPanel = new JPanel(new BorderLayout(0, 8));
+        renderPanel.setBackground(RemexaTheme.CARD_BACKGROUND);
+        renderPanel.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(RemexaTheme.CARD_BORDER, 1),
+                new EmptyBorder(10, 10, 10, 10)
+        ));
+
         var displayHeader = new JPanel(new BorderLayout(8, 0));
         displayHeader.setOpaque(false);
+        var displayTitle = new JLabel("Display Host");
+        displayTitle.setForeground(RemexaTheme.TEXT_PRIMARY);
+        displayTitle.setFont(new Font(Font.DIALOG, Font.BOLD, 14));
         configureLogToggleButton();
-        displayHeader.add(renderInfoLabel, BorderLayout.CENTER);
+        var headerText = new JPanel(new BorderLayout(0, 4));
+        headerText.setOpaque(false);
+        renderInfoLabel.setForeground(RemexaTheme.TEXT_SECONDARY);
+        renderInfoLabel.setFont(new Font(Font.DIALOG, Font.PLAIN, 12));
+        headerText.add(displayTitle, BorderLayout.NORTH);
+        headerText.add(renderInfoLabel, BorderLayout.CENTER);
+        displayHeader.add(headerText, BorderLayout.CENTER);
         displayHeader.add(logToggleButton, BorderLayout.EAST);
-        displayHostPanel.add(displayHeader, BorderLayout.NORTH);
-        displayHostPanel.add(renderSurface, BorderLayout.CENTER);
+        renderPanel.add(displayHeader, BorderLayout.NORTH);
+        renderPanel.add(renderSurface, BorderLayout.CENTER);
 
-        var detailsPanel = new JPanel(new BorderLayout(0, 8));
-        detailsPanel.add(displayHostPanel, BorderLayout.NORTH);
-        detailsPanel.add(new JScrollPane(detailsArea), BorderLayout.CENTER);
-        renderPanel.add(detailsPanel, BorderLayout.CENTER);
+        var logPanel = new JPanel(new BorderLayout(0, 8));
+        logPanel.setBackground(RemexaTheme.CARD_BACKGROUND);
+        logPanel.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(RemexaTheme.CARD_BORDER, 1),
+                new EmptyBorder(10, 10, 10, 10)
+        ));
+        var logTitle = new JLabel("Debug Log");
+        logTitle.setForeground(RemexaTheme.TEXT_PRIMARY);
+        logTitle.setFont(new Font(Font.DIALOG, Font.BOLD, 14));
+        logPanel.add(logTitle, BorderLayout.NORTH);
+        var logScrollPane = new JScrollPane(logArea);
+        logScrollPane.setBorder(BorderFactory.createLineBorder(RemexaTheme.CARD_BORDER, 1));
+        logScrollPane.getViewport().setBackground(RemexaTheme.EDITOR_BACKGROUND);
+        logPanel.add(logScrollPane, BorderLayout.CENTER);
 
-        var splitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, renderPanel, new JScrollPane(logArea));
+        var splitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, renderPanel, logPanel);
         splitPane.setResizeWeight(0.75);
+        splitPane.setBorder(BorderFactory.createEmptyBorder());
+        splitPane.setOpaque(false);
+        splitPane.setBackground(RemexaTheme.APP_BACKGROUND);
 
-        add(splitPane, BorderLayout.CENTER);
+        root.add(splitPane, BorderLayout.CENTER);
+        add(root, BorderLayout.CENTER);
         var footerPanel = new JPanel(new BorderLayout());
+        footerPanel.setBackground(RemexaTheme.APP_BACKGROUND);
         footerPanel.add(createSoftKeyBar(), BorderLayout.CENTER);
         footerPanel.add(statusLabel, BorderLayout.SOUTH);
         add(footerPanel, BorderLayout.SOUTH);
@@ -1062,13 +1091,6 @@ public final class JadFrame extends JFrame {
     private String currentTitleText() {
         var title = getTitle();
         return title == null || title.isBlank() ? "Video Playback" : title;
-    }
-
-    private static java.util.List<String> summaryLines(JadDescriptor descriptor, LaunchProfile launchProfile) {
-        var lines = new ArrayList<>(descriptor.summaryLines());
-        lines.add("Profile: " + launchProfile.profile().displayName());
-        lines.add("Display: " + launchProfile.initialDisplay().dimensions() + " (" + launchProfile.initialDisplay().source() + ")");
-        return lines;
     }
 
     private int scaledWidth(DisplayMetrics displayMetrics) {
