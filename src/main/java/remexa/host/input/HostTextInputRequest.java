@@ -17,4 +17,13 @@ public record HostTextInputRequest(
     public interface Handler {
         String requestTextInput(HostTextInputRequest request);
     }
+
+    public record Result(
+            String text,
+            boolean accepted
+    ) {
+        public Result {
+            text = text == null ? "" : text;
+        }
+    }
 }

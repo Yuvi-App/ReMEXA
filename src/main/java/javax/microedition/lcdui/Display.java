@@ -126,6 +126,9 @@ public final class Display {
         MidletRuntime.bindDisplayable(midlet, next);
         MidletRuntime.setCurrentDisplayable(midlet, next);
         deactivateDisplayable(previous, next);
+        if (next instanceof TextBox textBox) {
+            textBox.attachDisplay(this, previous);
+        }
         initializeDisplayable(next);
     }
 
@@ -163,6 +166,9 @@ public final class Display {
         }
         DisplayableHostAccess.fireSizeChanged(displayable);
         displayable.fireShown();
+        if (displayable instanceof TextBox textBox) {
+            textBox.onShown();
+        }
         if (displayable instanceof com.j_phone.amuse.ACanvas aCanvas) {
             aCanvas.attachHostGraphics();
             ((Canvas) aCanvas).fireShowNotify();
@@ -180,6 +186,9 @@ public final class Display {
         }
         if (previous != null) {
             previous.fireHidden();
+        }
+        if (previous instanceof TextBox textBox) {
+            textBox.detachDisplay();
         }
         if (previous instanceof Canvas canvas) {
             canvas.fireHideNotify();

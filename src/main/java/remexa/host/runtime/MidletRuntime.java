@@ -170,6 +170,17 @@ public final class MidletRuntime {
         return handler == null ? resolvedRequest.initialText() : handler.requestTextInput(resolvedRequest);
     }
 
+    public static HostTextInputRequest.Result requestTextInputResult(HostTextInputRequest request) {
+        var resolvedRequest = request == null
+                ? new HostTextInputRequest("Input", "", 0, 0, false)
+                : request;
+        var hostFrame = currentHostFrame();
+        if (hostFrame != null) {
+            return hostFrame.requestTextInputResult(resolvedRequest);
+        }
+        return new HostTextInputRequest.Result(requestTextInput(resolvedRequest), true);
+    }
+
     public static void bindDisplayable(MIDlet midlet, Displayable displayable) {
         var context = CONTEXTS.get(midlet);
         if (context != null && displayable != null) {

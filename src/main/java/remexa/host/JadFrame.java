@@ -168,14 +168,22 @@ public final class JadFrame extends JFrame {
     }
 
     public String requestTextInput(HostTextInputRequest request) {
+        var result = requestTextInputResult(request);
+        var resolvedRequest = request == null
+                ? new HostTextInputRequest("Input", "", 0, 0, false)
+                : request;
+        return result.accepted() ? result.text() : resolvedRequest.initialText();
+    }
+
+    public HostTextInputRequest.Result requestTextInputResult(HostTextInputRequest request) {
         var resolvedRequest = request == null
                 ? new HostTextInputRequest("Input", "", 0, 0, false)
                 : request;
         if (disposed.get()) {
-            return resolvedRequest.initialText();
+            return new HostTextInputRequest.Result(resolvedRequest.initialText(), false);
         }
 
-        var future = new CompletableFuture<String>();
+        var future = new CompletableFuture<HostTextInputRequest.Result>();
         Runnable showTask = () -> presentTextInputOverlay(resolvedRequest, future);
         if (SwingUtilities.isEventDispatchThread()) {
             showTask.run();
@@ -186,9 +194,9 @@ public final class JadFrame extends JFrame {
             return future.get();
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
-            return resolvedRequest.initialText();
+            return new HostTextInputRequest.Result(resolvedRequest.initialText(), false);
         } catch (java.util.concurrent.ExecutionException exception) {
-            return resolvedRequest.initialText();
+            return new HostTextInputRequest.Result(resolvedRequest.initialText(), false);
         }
     }
 
@@ -246,7 +254,10 @@ public final class JadFrame extends JFrame {
         refreshTimer.stop();
         var pendingInput = activeTextInput;
         if (pendingInput != null) {
-            pendingInput.result().complete(pendingInput.request().initialText());
+            pendingInput.result().complete(new HostTextInputRequest.Result(
+                    pendingInput.request().initialText(),
+                    false
+            ));
             activeTextInput = null;
         }
         dismissHostedVideoOnDispose();
@@ -727,13 +738,13 @@ public final class JadFrame extends JFrame {
         return new RenderViewport(drawX, drawY, drawWidth, drawHeight, sourceWidth, sourceHeight);
     }
 
-    private void presentTextInputOverlay(HostTextInputRequest request, CompletableFuture<String> result) {
+    private void presentTextInputOverlay(HostTextInputRequest request, CompletableFuture<HostTextInputRequest.Result> result) {
         if (disposed.get() || result.isDone()) {
-            result.complete(request.initialText());
+            result.complete(new HostTextInputRequest.Result(request.initialText(), false));
             return;
         }
         if (activeTextInput != null) {
-            result.complete(request.initialText());
+            result.complete(new HostTextInputRequest.Result(request.initialText(), false));
             return;
         }
 
@@ -813,7 +824,10 @@ public final class JadFrame extends JFrame {
             glassPane.setVisible(false);
         }
         getRootPane().requestFocusInWindow();
-        session.result().complete(accept ? normalizeInputText(session.request(), text) : session.request().initialText());
+        session.result().complete(new HostTextInputRequest.Result(
+                accept ? normalizeInputText(session.request(), text) : session.request().initialText(),
+                accept
+        ));
     }
 
     private void presentHostedVideo(java.nio.file.Path mediaPath, CompletableFuture<Void> completion) {
@@ -1143,7 +1157,7 @@ public final class JadFrame extends JFrame {
 
     private record ActiveTextInput(
             HostTextInputRequest request,
-            CompletableFuture<String> result
+            CompletableFuture<HostTextInputRequest.Result> result
     ) {
     }
 
