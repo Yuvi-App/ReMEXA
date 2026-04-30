@@ -58,10 +58,13 @@ public final class LaunchProfileResolver {
     }
 
     private static AppProfile resolveProfile(JadDescriptor descriptor) {
+        var platform = resolveDeclaredPlatform(descriptor).orElse("");
         var ocl = resolveDeclaredApi(descriptor).orElse("");
+        var normalizedOcl = primaryOclToken(ocl);
+        if (hasMidxletProperties(descriptor)) {
+            return applyDescriptorCapabilityOverrides(descriptor, AppProfile.mexa(normalizedOcl, resolveMexaPhoneType(platform)));
+        }
         if (isJskyFamily(ocl)) {
-            var normalizedOcl = primaryOclToken(ocl);
-            var platform = resolveDeclaredPlatform(descriptor).orElse("");
             AppProfile profile;
             if (looksLikeMexaPlatform(platform) || looksLikeMexaVendor(descriptor) || looksLikeMexaOcl(normalizedOcl)) {
                 profile = AppProfile.mexa(normalizedOcl, resolveMexaPhoneType(platform));
@@ -75,6 +78,15 @@ public final class LaunchProfileResolver {
             return applyDescriptorCapabilityOverrides(descriptor, profile);
         }
         return AppProfile.generic();
+    }
+
+    private static boolean hasMidxletProperties(JadDescriptor descriptor) {
+        for (var key : descriptor.properties().keySet()) {
+            if (key != null && key.regionMatches(true, 0, "MIDxlet", 0, "MIDxlet".length())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static boolean isJskyFamily(String ocl) {
@@ -283,6 +295,9 @@ public final class LaunchProfileResolver {
         }
         var width = Integer.parseInt(matcher.group(1));
         var height = Integer.parseInt(matcher.group(2));
+        if (width <= 0 || height <= 0) {
+            return Optional.empty();
+        }
         return Optional.of(new DisplayMetrics(width, height, "JAD " + key));
     }
 
