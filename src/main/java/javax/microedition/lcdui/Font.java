@@ -135,9 +135,11 @@ public final class Font {
         }
         return value
                 .replace("\r", "")
+                .replace('\t', ' ')
+                .replace('\ue24e', '\u00a9')
                 .replace('\ue232', '\u25b2')
                 .replace('\ue233', '\u25bc')
-                .replace('\ue23a', '\u25b6')
-                .replace('\ue23b', '\u25c0');
+                .replace('\ue23a', '\u2192')
+                .replace('\ue23b', '\u2190');
     }
 }
