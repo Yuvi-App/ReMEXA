@@ -150,18 +150,8 @@ public final class LauncherFrame extends JFrame {
 
         var settingsMenu = new JMenu("Settings");
         styleMenu(settingsMenu);
-        var hostDetailsItem = new JCheckBoxMenuItem("Show Host Details", HostUiSettings.showHostDetails());
-        styleMenuItem(hostDetailsItem);
-        hostDetailsItem.addActionListener(event -> {
-            HostUiSettings.setShowHostDetails(hostDetailsItem.isSelected());
-            DebugLog.log(
-                    LogCategory.FRONTEND,
-                    LauncherFrame.class.getName(),
-                    "Show host details set to " + hostDetailsItem.isSelected()
-            );
-        });
-        settingsMenu.add(hostDetailsItem);
-        settingsMenu.addSeparator();
+        var displayMenu = new JMenu("Display");
+        styleMenu(displayMenu);
         var fontMenu = new JMenu("Font");
         styleMenu(fontMenu);
         var fontGroup = new ButtonGroup();
@@ -180,86 +170,7 @@ public final class LauncherFrame extends JFrame {
             });
             fontMenu.add(fontItem);
         }
-        settingsMenu.add(fontMenu);
-        settingsMenu.addSeparator();
-        var jskyPhoneMenu = new JMenu("JSKY Phone Type");
-        styleMenu(jskyPhoneMenu);
-        var jskyPhoneGroup = new ButtonGroup();
-        for (var phoneType : LaunchConfig.JskyPhoneType.values()) {
-            var phoneItem = new JRadioButtonMenuItem(phoneType.toString(), HostUiSettings.jskyPhoneType() == phoneType);
-            styleMenuItem(phoneItem);
-            jskyPhoneGroup.add(phoneItem);
-            phoneItem.addActionListener(event -> {
-                HostUiSettings.setJskyPhoneType(phoneType);
-                LaunchConfig.applyJskyPhoneType(phoneType);
-                DebugLog.log(
-                        LogCategory.FRONTEND,
-                        LauncherFrame.class.getName(),
-                        "JSKY phone type set to " + phoneType.platformName()
-                );
-            });
-            jskyPhoneMenu.add(phoneItem);
-        }
-        settingsMenu.add(jskyPhoneMenu);
-        var vodafonePhoneMenu = new JMenu("Vodafone Phone Type");
-        styleMenu(vodafonePhoneMenu);
-        var vodafonePhoneGroup = new ButtonGroup();
-        for (var phoneType : LaunchConfig.VodafonePhoneType.values()) {
-            var phoneItem = new JRadioButtonMenuItem(phoneType.toString(), HostUiSettings.vodafonePhoneType() == phoneType);
-            styleMenuItem(phoneItem);
-            vodafonePhoneGroup.add(phoneItem);
-            phoneItem.addActionListener(event -> {
-                HostUiSettings.setVodafonePhoneType(phoneType);
-                LaunchConfig.applyVodafonePhoneType(phoneType);
-                DebugLog.log(
-                        LogCategory.FRONTEND,
-                        LauncherFrame.class.getName(),
-                        "Vodafone phone type set to " + phoneType.platformName()
-                );
-            });
-            vodafonePhoneMenu.add(phoneItem);
-        }
-        settingsMenu.add(vodafonePhoneMenu);
-        var mexaPhoneMenu = new JMenu("MEXA Phone Type");
-        styleMenu(mexaPhoneMenu);
-        var mexaPhoneGroup = new ButtonGroup();
-        for (var phoneType : LaunchConfig.MexaPhoneType.values()) {
-            var phoneItem = new JRadioButtonMenuItem(phoneType.toString(), HostUiSettings.mexaPhoneType() == phoneType);
-            styleMenuItem(phoneItem);
-            mexaPhoneGroup.add(phoneItem);
-            phoneItem.addActionListener(event -> {
-                HostUiSettings.setMexaPhoneType(phoneType);
-                LaunchConfig.applyMexaPhoneType(phoneType);
-                DebugLog.log(
-                        LogCategory.FRONTEND,
-                        LauncherFrame.class.getName(),
-                        "MEXA phone type set to " + phoneType.platformName()
-                );
-            });
-            mexaPhoneMenu.add(phoneItem);
-        }
-        settingsMenu.add(mexaPhoneMenu);
-        settingsMenu.addSeparator();
-        var audioMenu = new JMenu("Audio Type");
-        styleMenu(audioMenu);
-        var audioGroup = new ButtonGroup();
-        for (var synthType : LaunchConfig.SmafSynthType.values()) {
-            var audioItem = new JRadioButtonMenuItem(synthType.toString(), HostUiSettings.smafSynthType() == synthType);
-            styleMenuItem(audioItem);
-            audioGroup.add(audioItem);
-            audioItem.addActionListener(event -> {
-                HostUiSettings.setSmafSynthType(synthType);
-                LaunchConfig.applySmafSynthType(synthType);
-                DebugLog.log(
-                        LogCategory.FRONTEND,
-                        LauncherFrame.class.getName(),
-                        "SMAF audio type set to " + synthType.id()
-                );
-            });
-            audioMenu.add(audioItem);
-        }
-        settingsMenu.add(audioMenu);
-        settingsMenu.addSeparator();
+        displayMenu.add(fontMenu);
         var hostScaleMenu = new JMenu("Host Scale");
         styleMenu(hostScaleMenu);
         var hostScaleGroup = new ButtonGroup();
@@ -279,8 +190,70 @@ public final class LauncherFrame extends JFrame {
             });
             hostScaleMenu.add(scaleItem);
         }
-        settingsMenu.add(hostScaleMenu);
-        settingsMenu.addSeparator();
+        displayMenu.add(hostScaleMenu);
+        settingsMenu.add(displayMenu);
+
+        var deviceMenu = new JMenu("Device");
+        styleMenu(deviceMenu);
+        var jskyPhoneMenu = new JMenu("JSKY Phone Type");
+        styleMenu(jskyPhoneMenu);
+        var jskyPhoneGroup = new ButtonGroup();
+        for (var phoneType : LaunchConfig.JskyPhoneType.values()) {
+            var phoneItem = new JRadioButtonMenuItem(phoneType.toString(), HostUiSettings.jskyPhoneType() == phoneType);
+            styleMenuItem(phoneItem);
+            jskyPhoneGroup.add(phoneItem);
+            phoneItem.addActionListener(event -> {
+                HostUiSettings.setJskyPhoneType(phoneType);
+                LaunchConfig.applyJskyPhoneType(phoneType);
+                DebugLog.log(
+                        LogCategory.FRONTEND,
+                        LauncherFrame.class.getName(),
+                        "JSKY phone type set to " + phoneType.platformName()
+                );
+            });
+            jskyPhoneMenu.add(phoneItem);
+        }
+        deviceMenu.add(jskyPhoneMenu);
+        var vodafonePhoneMenu = new JMenu("Vodafone Phone Type");
+        styleMenu(vodafonePhoneMenu);
+        var vodafonePhoneGroup = new ButtonGroup();
+        for (var phoneType : LaunchConfig.VodafonePhoneType.values()) {
+            var phoneItem = new JRadioButtonMenuItem(phoneType.toString(), HostUiSettings.vodafonePhoneType() == phoneType);
+            styleMenuItem(phoneItem);
+            vodafonePhoneGroup.add(phoneItem);
+            phoneItem.addActionListener(event -> {
+                HostUiSettings.setVodafonePhoneType(phoneType);
+                LaunchConfig.applyVodafonePhoneType(phoneType);
+                DebugLog.log(
+                        LogCategory.FRONTEND,
+                        LauncherFrame.class.getName(),
+                        "Vodafone phone type set to " + phoneType.platformName()
+                );
+            });
+            vodafonePhoneMenu.add(phoneItem);
+        }
+        deviceMenu.add(vodafonePhoneMenu);
+        var mexaPhoneMenu = new JMenu("MEXA Phone Type");
+        styleMenu(mexaPhoneMenu);
+        var mexaPhoneGroup = new ButtonGroup();
+        for (var phoneType : LaunchConfig.MexaPhoneType.values()) {
+            var phoneItem = new JRadioButtonMenuItem(phoneType.toString(), HostUiSettings.mexaPhoneType() == phoneType);
+            styleMenuItem(phoneItem);
+            mexaPhoneGroup.add(phoneItem);
+            phoneItem.addActionListener(event -> {
+                HostUiSettings.setMexaPhoneType(phoneType);
+                LaunchConfig.applyMexaPhoneType(phoneType);
+                DebugLog.log(
+                        LogCategory.FRONTEND,
+                        LauncherFrame.class.getName(),
+                        "MEXA phone type set to " + phoneType.platformName()
+                );
+            });
+            mexaPhoneMenu.add(phoneItem);
+        }
+        deviceMenu.add(mexaPhoneMenu);
+        settingsMenu.add(deviceMenu);
+
         var controlsMenu = new JMenu("Controls");
         styleMenu(controlsMenu);
         var touchControlsItem = new JCheckBoxMenuItem("Enable Touch Controls", HostUiSettings.touchControlsEnabled());
@@ -296,19 +269,60 @@ public final class LauncherFrame extends JFrame {
         });
         controlsMenu.add(touchControlsItem);
         settingsMenu.add(controlsMenu);
-        settingsMenu.addSeparator();
+
+        var audioMenu = new JMenu("Audio");
+        styleMenu(audioMenu);
+        var audioTypeMenu = new JMenu("Audio Type");
+        styleMenu(audioTypeMenu);
+        var audioGroup = new ButtonGroup();
+        for (var synthType : LaunchConfig.SmafSynthType.values()) {
+            var audioItem = new JRadioButtonMenuItem(synthType.toString(), HostUiSettings.smafSynthType() == synthType);
+            styleMenuItem(audioItem);
+            audioGroup.add(audioItem);
+            audioItem.addActionListener(event -> {
+                HostUiSettings.setSmafSynthType(synthType);
+                LaunchConfig.applySmafSynthType(synthType);
+                DebugLog.log(
+                        LogCategory.FRONTEND,
+                        LauncherFrame.class.getName(),
+                        "SMAF audio type set to " + synthType.id()
+                );
+            });
+            audioTypeMenu.add(audioItem);
+        }
+        audioMenu.add(audioTypeMenu);
+        settingsMenu.add(audioMenu);
+
+        var connectivityMenu = new JMenu("Connectivity");
+        styleMenu(connectivityMenu);
         var bluetoothSettingsItem = new JMenuItem("Bluetooth...");
         styleMenuItem(bluetoothSettingsItem);
         bluetoothSettingsItem.addActionListener(event -> showBluetoothSettingsDialog());
-        settingsMenu.add(bluetoothSettingsItem);
-        settingsMenu.addSeparator();
+        connectivityMenu.add(bluetoothSettingsItem);
+        settingsMenu.add(connectivityMenu);
+
+        var storageMenu = new JMenu("Storage");
+        styleMenu(storageMenu);
         var openStorageFolderItem = new JMenuItem("Open Storage Folder");
         styleMenuItem(openStorageFolderItem);
         openStorageFolderItem.addActionListener(event -> openStorageFolder());
-        settingsMenu.add(openStorageFolderItem);
-        settingsMenu.addSeparator();
+        storageMenu.add(openStorageFolderItem);
+        settingsMenu.add(storageMenu);
+
         var debuggingMenu = new JMenu("Debugging");
         styleMenu(debuggingMenu);
+        var hostDetailsItem = new JCheckBoxMenuItem("Show Host Details", HostUiSettings.showHostDetails());
+        styleMenuItem(hostDetailsItem);
+        hostDetailsItem.addActionListener(event -> {
+            HostUiSettings.setShowHostDetails(hostDetailsItem.isSelected());
+            DebugLog.log(
+                    LogCategory.FRONTEND,
+                    LauncherFrame.class.getName(),
+                    "Show host details set to " + hostDetailsItem.isSelected()
+            );
+        });
+        debuggingMenu.add(hostDetailsItem);
+        debuggingMenu.addSeparator();
         var dumpRmsItem = new JCheckBoxMenuItem("Dump RMS", HostUiSettings.dumpRms());
         styleMenuItem(dumpRmsItem);
         dumpRmsItem.addActionListener(event -> {
