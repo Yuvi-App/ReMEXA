@@ -70,11 +70,11 @@ public abstract class Canvas extends Displayable {
     }
 
     public boolean hasPointerEvents() {
-        return false;
+        return MidletRuntime.queryPointerEventsAvailable(this);
     }
 
     public boolean hasPointerMotionEvents() {
-        return false;
+        return MidletRuntime.queryPointerMotionEventsAvailable(this);
     }
 
     public boolean hasRepeatEvents() {
@@ -191,6 +191,18 @@ public abstract class Canvas extends Displayable {
         pressedKeys.add(keyCode);
         keyStateChanged(keyCode, true);
         keyRepeated(keyCode);
+    }
+
+    public final void firePointerPressed(int x, int y) {
+        pointerPressed(x, y);
+    }
+
+    public final void firePointerReleased(int x, int y) {
+        pointerReleased(x, y);
+    }
+
+    public final void firePointerDragged(int x, int y) {
+        pointerDragged(x, y);
     }
 
     public final int deviceKeyStateMask() {

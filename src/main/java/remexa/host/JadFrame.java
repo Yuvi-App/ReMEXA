@@ -13,6 +13,8 @@ import java.awt.Insets;
 import java.awt.Image;
 import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.awt.GridLayout;
 import java.awt.RenderingHints;
 import java.io.IOException;
@@ -28,6 +30,7 @@ import javax.swing.JButton;
 import javax.swing.JComponent;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
+import javax.swing.JDialog;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
@@ -137,6 +140,7 @@ public final class JadFrame extends JFrame {
             buildGameOnlyLayout();
         }
         installInputBindings();
+        installPointerBindings();
         updateDisplayMetrics(launchProfile.initialDisplay());
         setMinimumSize(minimumWindowSize(launchProfile.initialDisplay(), showHostDetails));
 
@@ -459,6 +463,27 @@ public final class JadFrame extends JFrame {
         }
     }
 
+    private void installPointerBindings() {
+        var mouseHandler = new MouseAdapter() {
+            @Override
+            public void mousePressed(MouseEvent event) {
+                runHostAction("pointer press", () -> dispatchHostPointer(event, PointerAction.PRESS));
+            }
+
+            @Override
+            public void mouseReleased(MouseEvent event) {
+                runHostAction("pointer release", () -> dispatchHostPointer(event, PointerAction.RELEASE));
+            }
+
+            @Override
+            public void mouseDragged(MouseEvent event) {
+                runHostAction("pointer drag", () -> dispatchHostPointer(event, PointerAction.DRAG));
+            }
+        };
+        renderSurface.addMouseListener(mouseHandler);
+        renderSurface.addMouseMotionListener(mouseHandler);
+    }
+
     private void bindKey(
             javax.swing.InputMap inputMap,
             javax.swing.ActionMap actionMap,
@@ -594,6 +619,83 @@ public final class JadFrame extends JFrame {
         } else {
             MidletRuntime.dispatchKeyPressed(phoneKeyCode);
         }
+    }
+
+    public void showTouchControlsDisabledWarning() {
+        Runnable showTask = () -> {
+            if (disposed.get()) {
+                return;
+            }
+            showThemedInfoDialog(
+                    "Touch Controls Required",
+                    "This application uses touch controls. Enable Touch Controls in Settings and restart the app."
+            );
+        };
+        if (SwingUtilities.isEventDispatchThread()) {
+            showTask.run();
+        } else {
+            SwingUtilities.invokeLater(showTask);
+        }
+    }
+
+    private void dispatchHostPointer(MouseEvent event, PointerAction action) {
+        if (disposed.get() || activeTextInput != null || activeHostedVideo != null) {
+            return;
+        }
+        if (action != PointerAction.DRAG && !SwingUtilities.isLeftMouseButton(event)) {
+            return;
+        }
+        if (action == PointerAction.DRAG && (event.getModifiersEx() & MouseEvent.BUTTON1_DOWN_MASK) == 0) {
+            return;
+        }
+
+        var viewport = currentRenderViewport();
+        if (viewport == null) {
+            return;
+        }
+        var mappedPoint = viewport.map(event.getX(), event.getY());
+        if (mappedPoint == null) {
+            return;
+        }
+
+        switch (action) {
+            case PRESS -> MidletRuntime.dispatchPointerPressed(mappedPoint.x(), mappedPoint.y());
+            case RELEASE -> MidletRuntime.dispatchPointerReleased(mappedPoint.x(), mappedPoint.y());
+            case DRAG -> MidletRuntime.dispatchPointerDragged(mappedPoint.x(), mappedPoint.y());
+        }
+    }
+
+    private RenderViewport currentRenderViewport() {
+        int surfaceWidth = Math.max(0, renderSurface.getWidth());
+        int surfaceHeight = Math.max(0, renderSurface.getHeight());
+        if (surfaceWidth <= 0 || surfaceHeight <= 0) {
+            return null;
+        }
+
+        var frame = MidletRuntime.currentFrameSnapshot();
+        int sourceWidth = frame == null ? 0 : frame.getWidth();
+        int sourceHeight = frame == null ? 0 : frame.getHeight();
+        if (sourceWidth <= 0 || sourceHeight <= 0) {
+            var displayable = MidletRuntime.currentDisplayable();
+            if (displayable == null) {
+                return null;
+            }
+            sourceWidth = displayable.getWidth();
+            sourceHeight = displayable.getHeight();
+        }
+        if (sourceWidth <= 0 || sourceHeight <= 0) {
+            return null;
+        }
+
+        double scale = Math.min(
+                (double) surfaceWidth / sourceWidth,
+                (double) surfaceHeight / sourceHeight
+        );
+        int drawWidth = Math.max(1, (int) Math.round(sourceWidth * scale));
+        int drawHeight = Math.max(1, (int) Math.round(sourceHeight * scale));
+        int drawX = (surfaceWidth - drawWidth) / 2;
+        int drawY = (surfaceHeight - drawHeight) / 2;
+        return new RenderViewport(drawX, drawY, drawWidth, drawHeight, sourceWidth, sourceHeight);
     }
 
     private void presentTextInputOverlay(HostTextInputRequest request, CompletableFuture<String> result) {
@@ -787,6 +889,44 @@ public final class JadFrame extends JFrame {
         button.setFont(new Font(Font.DIALOG, Font.BOLD, 12));
     }
 
+    private void showThemedInfoDialog(String title, String message) {
+        var dialog = new JDialog(this, title, true);
+        dialog.setDefaultCloseOperation(DISPOSE_ON_CLOSE);
+
+        var content = new JPanel(new BorderLayout(0, 14));
+        content.setBackground(RemexaTheme.CARD_BACKGROUND);
+        content.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(RemexaTheme.CARD_BORDER, 1),
+                new EmptyBorder(16, 16, 16, 16)
+        ));
+
+        var titleLabel = new JLabel(title);
+        titleLabel.setForeground(RemexaTheme.TEXT_PRIMARY);
+        titleLabel.setFont(new Font(Font.DIALOG, Font.BOLD, 16));
+        content.add(titleLabel, BorderLayout.NORTH);
+
+        var messageLabel = new JLabel("<html><div style='width:320px;'>" + message + "</div></html>");
+        messageLabel.setForeground(RemexaTheme.TEXT_SECONDARY);
+        messageLabel.setFont(new Font(Font.DIALOG, Font.PLAIN, 13));
+        content.add(messageLabel, BorderLayout.CENTER);
+
+        var footer = new JPanel(new BorderLayout());
+        footer.setOpaque(false);
+        var okButton = new JButton("OK");
+        okButton.setFocusable(false);
+        styleOverlayButton(okButton, true);
+        okButton.addActionListener(event -> dialog.dispose());
+        footer.add(okButton, BorderLayout.EAST);
+        content.add(footer, BorderLayout.SOUTH);
+
+        dialog.setContentPane(content);
+        dialog.pack();
+        dialog.setResizable(false);
+        dialog.setLocationRelativeTo(this);
+        SwingUtilities.invokeLater(okButton::requestFocusInWindow);
+        dialog.setVisible(true);
+    }
+
     private JTextComponent createSingleLineEditor(HostTextInputRequest request) {
         var field = new JTextField();
         field.setDocument(limitedDocument(request.maxSize()));
@@ -965,22 +1105,11 @@ public final class JadFrame extends JFrame {
                 try {
                     g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
                     g2.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_SPEED);
-                    var frameWidth = frame.getWidth();
-                    var frameHeight = frame.getHeight();
-                    if (frameWidth <= 0 || frameHeight <= 0) {
+                    var viewport = currentRenderViewport();
+                    if (viewport == null) {
                         return;
                     }
-
-                    var scale = Math.min(
-                            (double) getWidth() / frameWidth,
-                            (double) getHeight() / frameHeight
-                    );
-                    var drawWidth = Math.max(1, (int) Math.round(frameWidth * scale));
-                    var drawHeight = Math.max(1, (int) Math.round(frameHeight * scale));
-                    var drawX = (getWidth() - drawWidth) / 2;
-                    var drawY = (getHeight() - drawHeight) / 2;
-
-                    g2.drawImage(frame, drawX, drawY, drawWidth, drawHeight, null);
+                    g2.drawImage(frame, viewport.drawX(), viewport.drawY(), viewport.drawWidth(), viewport.drawHeight(), null);
                 } finally {
                     g2.dispose();
                 }
@@ -1000,5 +1129,34 @@ public final class JadFrame extends JFrame {
             CompletableFuture<Void> completion,
             VlcVideoWindow videoWindow
     ) {
+    }
+
+    private enum PointerAction {
+        PRESS,
+        RELEASE,
+        DRAG
+    }
+
+    private record RenderViewport(
+            int drawX,
+            int drawY,
+            int drawWidth,
+            int drawHeight,
+            int sourceWidth,
+            int sourceHeight
+    ) {
+        private MappedPoint map(int hostX, int hostY) {
+            if (hostX < drawX || hostY < drawY || hostX >= drawX + drawWidth || hostY >= drawY + drawHeight) {
+                return null;
+            }
+            int sourceX = (int) ((long) (hostX - drawX) * sourceWidth / drawWidth);
+            int sourceY = (int) ((long) (hostY - drawY) * sourceHeight / drawHeight);
+            sourceX = Math.max(0, Math.min(sourceWidth - 1, sourceX));
+            sourceY = Math.max(0, Math.min(sourceHeight - 1, sourceY));
+            return new MappedPoint(sourceX, sourceY);
+        }
+    }
+
+    private record MappedPoint(int x, int y) {
     }
 }

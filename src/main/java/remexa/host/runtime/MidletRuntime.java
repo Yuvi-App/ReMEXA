@@ -18,6 +18,7 @@ import javax.microedition.lcdui.Displayable;
 import javax.microedition.lcdui.DisplayableHostAccess;
 import javax.microedition.midlet.MIDlet;
 import remexa.host.JadFrame;
+import remexa.host.LaunchConfig;
 import remexa.host.input.HostTextInputRequest;
 import remexa.host.jad.JadDescriptor;
 import remexa.host.profile.DisplayMetrics;
@@ -487,6 +488,58 @@ public final class MidletRuntime {
         }
     }
 
+    public static void dispatchPointerPressed(int x, int y) {
+        var displayable = currentDisplayable();
+        if (!(displayable instanceof Canvas canvas)) {
+            return;
+        }
+        if (!LaunchConfig.resolveConfiguredTouchControlsEnabled()) {
+            noteTouchApiUsage(canvas, "host pointer press");
+            return;
+        }
+        canvas.firePointerPressed(x, y);
+    }
+
+    public static void dispatchPointerReleased(int x, int y) {
+        var displayable = currentDisplayable();
+        if (!(displayable instanceof Canvas canvas)) {
+            return;
+        }
+        if (!LaunchConfig.resolveConfiguredTouchControlsEnabled()) {
+            noteTouchApiUsage(canvas, "host pointer release");
+            return;
+        }
+        canvas.firePointerReleased(x, y);
+    }
+
+    public static void dispatchPointerDragged(int x, int y) {
+        var displayable = currentDisplayable();
+        if (!(displayable instanceof Canvas canvas)) {
+            return;
+        }
+        if (!LaunchConfig.resolveConfiguredTouchControlsEnabled()) {
+            noteTouchApiUsage(canvas, "host pointer drag");
+            return;
+        }
+        canvas.firePointerDragged(x, y);
+    }
+
+    public static boolean queryPointerEventsAvailable(Canvas canvas) {
+        if (!LaunchConfig.resolveConfiguredTouchControlsEnabled()) {
+            noteTouchApiUsage(canvas, "Canvas.hasPointerEvents()");
+            return false;
+        }
+        return true;
+    }
+
+    public static boolean queryPointerMotionEventsAvailable(Canvas canvas) {
+        if (!LaunchConfig.resolveConfiguredTouchControlsEnabled()) {
+            noteTouchApiUsage(canvas, "Canvas.hasPointerMotionEvents()");
+            return false;
+        }
+        return true;
+    }
+
     public static void dispatchSoftKey(int index) {
         var displayable = currentDisplayable();
         if (displayable != null) {
@@ -515,6 +568,22 @@ public final class MidletRuntime {
 
     public static boolean isExpectedShutdownThrowable(Throwable throwable) {
         return throwable instanceof AppShutdownError;
+    }
+
+    private static void noteTouchApiUsage(Displayable displayable, String apiName) {
+        var context = contextFor(displayable).orElse(null);
+        if (context == null || context.markTouchControlsWarningShown()) {
+            return;
+        }
+        DebugLog.log(
+                LogCategory.UI,
+                MidletRuntime.class.getName(),
+                "Touch API requested while touch controls are disabled: " + apiName
+        );
+        var hostFrame = HOST_FRAMES.get(context.classLoader());
+        if (hostFrame != null) {
+            hostFrame.showTouchControlsDisabledWarning();
+        }
     }
 
     private static Optional<LaunchContext> contextFor(Displayable displayable) {
@@ -571,6 +640,7 @@ public final class MidletRuntime {
         private final Map<Displayable, DisplaySurfaceState> surfaces = Collections.synchronizedMap(new WeakHashMap<>());
         private volatile DisplayMetrics displayMetrics;
         private volatile Displayable currentDisplayable;
+        private volatile boolean touchControlsWarningShown;
 
         private LaunchContext(
                 JadDescriptor descriptor,
@@ -646,6 +716,14 @@ public final class MidletRuntime {
                 DISPLAYABLES.remove(currentDisplayable);
                 currentDisplayable = null;
             }
+        }
+
+        private boolean markTouchControlsWarningShown() {
+            if (touchControlsWarningShown) {
+                return true;
+            }
+            touchControlsWarningShown = true;
+            return false;
         }
 
     }

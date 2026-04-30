@@ -9,6 +9,7 @@ public final class LaunchConfig {
     public static final String MEXA_PHONE_TYPE_PROPERTY = "remexa.mexaPhoneType";
     public static final String SMAF_SYNTH_PROPERTY = "remexa.smafSynth";
     public static final String HOST_SCALE_PROPERTY = "remexa.hostScale";
+    public static final String TOUCH_CONTROLS_PROPERTY = "remexa.touchControls";
     public static final String BLUETOOTH_BACKEND_PROPERTY = "remexa.bluetoothBackend";
     public static final String BLUETOOTH_ROLE_PROPERTY = "remexa.bluetoothRole";
     public static final String BLUETOOTH_LOCAL_NAME_PROPERTY = "remexa.bluetoothLocalName";
@@ -326,6 +327,14 @@ public final class LaunchConfig {
     public static void applyHostScale(Integer hostScale) {
         var resolved = hostScale == null ? 3 : clampHostScale(hostScale);
         System.setProperty(HOST_SCALE_PROPERTY, Integer.toString(resolved));
+    }
+
+    public static boolean resolveConfiguredTouchControlsEnabled() {
+        return Boolean.parseBoolean(System.getProperty(TOUCH_CONTROLS_PROPERTY, Boolean.FALSE.toString()));
+    }
+
+    public static void applyTouchControlsEnabled(Boolean enabled) {
+        System.setProperty(TOUCH_CONTROLS_PROPERTY, Boolean.toString(enabled != null && enabled));
     }
 
     public static int clampHostScale(int hostScale) {

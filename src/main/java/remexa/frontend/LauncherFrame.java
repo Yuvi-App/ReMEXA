@@ -281,6 +281,22 @@ public final class LauncherFrame extends JFrame {
         }
         settingsMenu.add(hostScaleMenu);
         settingsMenu.addSeparator();
+        var controlsMenu = new JMenu("Controls");
+        styleMenu(controlsMenu);
+        var touchControlsItem = new JCheckBoxMenuItem("Enable Touch Controls", HostUiSettings.touchControlsEnabled());
+        styleMenuItem(touchControlsItem);
+        touchControlsItem.addActionListener(event -> {
+            HostUiSettings.setTouchControlsEnabled(touchControlsItem.isSelected());
+            LaunchConfig.applyTouchControlsEnabled(touchControlsItem.isSelected());
+            DebugLog.log(
+                    LogCategory.FRONTEND,
+                    LauncherFrame.class.getName(),
+                    "Touch controls set to " + touchControlsItem.isSelected()
+            );
+        });
+        controlsMenu.add(touchControlsItem);
+        settingsMenu.add(controlsMenu);
+        settingsMenu.addSeparator();
         var bluetoothSettingsItem = new JMenuItem("Bluetooth...");
         styleMenuItem(bluetoothSettingsItem);
         bluetoothSettingsItem.addActionListener(event -> showBluetoothSettingsDialog());

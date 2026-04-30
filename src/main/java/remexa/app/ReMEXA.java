@@ -34,6 +34,7 @@ public final class ReMEXA {
         LaunchConfig.applyMexaPhoneType(launchRequest.mexaPhoneType() == null ? HostUiSettings.mexaPhoneType() : launchRequest.mexaPhoneType());
         LaunchConfig.applySmafSynthType(HostUiSettings.smafSynthType());
         LaunchConfig.applyHostScale(launchRequest.hostScale() == null ? HostUiSettings.hostScale() : launchRequest.hostScale());
+        LaunchConfig.applyTouchControlsEnabled(HostUiSettings.touchControlsEnabled());
         LaunchConfig.applyBluetoothBackend(launchRequest.bluetoothBackend() == null ? HostUiSettings.bluetoothBackend() : launchRequest.bluetoothBackend());
         LaunchConfig.applyBluetoothRole(launchRequest.bluetoothRole() == null ? HostUiSettings.bluetoothRole() : launchRequest.bluetoothRole());
         LaunchConfig.applyBluetoothLocalName(launchRequest.bluetoothLocalName() == null ? HostUiSettings.bluetoothLocalName() : launchRequest.bluetoothLocalName());

@@ -94,6 +94,14 @@ public final class HostUiSettings {
         );
     }
 
+    public static boolean touchControlsEnabled() {
+        return RemexaPreferences.ui().getBoolean(RemexaPreferences.TOUCH_CONTROLS_ENABLED_KEY, false);
+    }
+
+    public static void setTouchControlsEnabled(boolean enabled) {
+        RemexaPreferences.ui().putBoolean(RemexaPreferences.TOUCH_CONTROLS_ENABLED_KEY, enabled);
+    }
+
     public static LaunchConfig.BluetoothBackend bluetoothBackend() {
         return LaunchConfig.BluetoothBackend.normalize(
                 RemexaPreferences.ui().get(
