@@ -659,14 +659,16 @@ public final class LauncherFrame extends JFrame {
 
         @Override
         public boolean canImport(TransferSupport support) {
-            boolean canImport = false;
-            if (support.isDataFlavorSupported(DataFlavor.javaFileListFlavor)) {
+            boolean canImport = support.isDataFlavorSupported(DataFlavor.javaFileListFlavor);
+            if (canImport) {
                 try {
                     @SuppressWarnings("unchecked")
                     List<File> files = (List<File>) support.getTransferable().getTransferData(DataFlavor.javaFileListFlavor);
                     canImport = files != null && !files.isEmpty() && isJadPath(files.getFirst().toPath());
                 } catch (Exception ignored) {
-                    canImport = false;
+                    // Some drag sources expose the file list lazily during hover.
+                    // Keep the drop eligible here and enforce the .jad check in importData().
+                    canImport = true;
                 }
             }
             panel.setDragActive(canImport);

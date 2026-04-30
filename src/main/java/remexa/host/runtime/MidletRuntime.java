@@ -494,7 +494,7 @@ public final class MidletRuntime {
             return;
         }
         if (!LaunchConfig.resolveConfiguredTouchControlsEnabled()) {
-            noteTouchApiUsage(canvas, "host pointer press");
+            noteTouchApiUsage(canvas, "pointerPressed");
             return;
         }
         canvas.firePointerPressed(x, y);
@@ -506,7 +506,7 @@ public final class MidletRuntime {
             return;
         }
         if (!LaunchConfig.resolveConfiguredTouchControlsEnabled()) {
-            noteTouchApiUsage(canvas, "host pointer release");
+            noteTouchApiUsage(canvas, "pointerReleased");
             return;
         }
         canvas.firePointerReleased(x, y);
@@ -518,26 +518,18 @@ public final class MidletRuntime {
             return;
         }
         if (!LaunchConfig.resolveConfiguredTouchControlsEnabled()) {
-            noteTouchApiUsage(canvas, "host pointer drag");
+            noteTouchApiUsage(canvas, "pointerDragged");
             return;
         }
         canvas.firePointerDragged(x, y);
     }
 
     public static boolean queryPointerEventsAvailable(Canvas canvas) {
-        if (!LaunchConfig.resolveConfiguredTouchControlsEnabled()) {
-            noteTouchApiUsage(canvas, "Canvas.hasPointerEvents()");
-            return false;
-        }
-        return true;
+        return LaunchConfig.resolveConfiguredTouchControlsEnabled();
     }
 
     public static boolean queryPointerMotionEventsAvailable(Canvas canvas) {
-        if (!LaunchConfig.resolveConfiguredTouchControlsEnabled()) {
-            noteTouchApiUsage(canvas, "Canvas.hasPointerMotionEvents()");
-            return false;
-        }
-        return true;
+        return LaunchConfig.resolveConfiguredTouchControlsEnabled();
     }
 
     public static void dispatchSoftKey(int index) {
@@ -571,6 +563,9 @@ public final class MidletRuntime {
     }
 
     private static void noteTouchApiUsage(Displayable displayable, String apiName) {
+        if (displayable instanceof Canvas canvas && !overridesPointerMethod(canvas, apiName)) {
+            return;
+        }
         var context = contextFor(displayable).orElse(null);
         if (context == null || context.markTouchControlsWarningShown()) {
             return;
@@ -584,6 +579,22 @@ public final class MidletRuntime {
         if (hostFrame != null) {
             hostFrame.showTouchControlsDisabledWarning();
         }
+    }
+
+    private static boolean overridesPointerMethod(Canvas canvas, String methodName) {
+        Class<?> current = canvas.getClass();
+        while (current != null && Canvas.class.isAssignableFrom(current)) {
+            if (current == Canvas.class) {
+                return false;
+            }
+            try {
+                current.getDeclaredMethod(methodName, int.class, int.class);
+                return true;
+            } catch (NoSuchMethodException ignored) {
+                current = current.getSuperclass();
+            }
+        }
+        return false;
     }
 
     private static Optional<LaunchContext> contextFor(Displayable displayable) {
