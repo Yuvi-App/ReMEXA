@@ -269,7 +269,7 @@ public final class JadFrame extends JFrame {
     }
 
     public void exitOnFatalException(String activity, Throwable throwable) {
-        handleFatalFailure(activity, throwable);
+        handleAppFailure(activity, throwable);
     }
 
     private void appendLog(LogEvent event) {
@@ -500,6 +500,22 @@ public final class JadFrame extends JFrame {
         SwingUtilities.invokeLater(() -> {
             updateStatus("Host failure");
             dispose();
+        });
+    }
+
+    private void handleAppFailure(String activity, Throwable throwable) {
+        if (throwable == null || MidletRuntime.isExpectedShutdownThrowable(throwable)) {
+            return;
+        }
+        if (!fatalFailure.compareAndSet(false, true)) {
+            return;
+        }
+        System.err.println("ReMEXA app exception during " + activity + ": " + throwable);
+        throwable.printStackTrace(System.err);
+        SwingUtilities.invokeLater(() -> {
+            updateStatus("App exception - check log");
+            toFront();
+            repaint();
         });
     }
 

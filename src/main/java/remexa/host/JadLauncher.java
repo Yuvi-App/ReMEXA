@@ -1,5 +1,7 @@
 package remexa.host;
 
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -60,7 +62,7 @@ public final class JadLauncher {
             recentJads.remember(descriptor);
             openFrame(descriptor);
         } catch (Exception exception) {
-            DebugLog.log(LogCategory.HOST, JadLauncher.class.getName(), "Launch failed: " + exception.getMessage());
+            logThrowableDetails("Launch failed", exception);
             if (consoleLaunch) {
                 System.err.println("ReMEXA launch failed: " + exception.getMessage());
                 exception.printStackTrace(System.err);
@@ -114,6 +116,7 @@ public final class JadLauncher {
             DebugLog.log(LogCategory.HOST, JadLauncher.class.getName(), "Loaded entry class: " + result.entryClass());
         } catch (LaunchException exception) {
             restoreDefaultExceptionHandler(previousDefaultHandler);
+            logThrowableDetails("Launch failed for " + descriptor.title(), exception);
             if (consoleLaunch) {
                 frame.dispose();
             } else {
@@ -193,8 +196,9 @@ public final class JadLauncher {
                 DebugLog.log(
                         LogCategory.HOST,
                         JadLauncher.class.getName(),
-                        "Uncaught app exception in " + descriptor.title() + " on " + thread.getName() + ": " + throwable
+                        "Uncaught app exception in " + descriptor.title() + " on " + thread.getName() + ": " + describeException(throwable)
                 );
+                logThrowableDetails("Uncaught app exception stack", throwable);
                 frame.exitOnFatalException("uncaught app exception", throwable);
             }
             if (previousHandler != null) {
@@ -206,5 +210,37 @@ public final class JadLauncher {
 
     private void restoreDefaultExceptionHandler(Thread.UncaughtExceptionHandler handler) {
         Thread.setDefaultUncaughtExceptionHandler(handler);
+    }
+
+    private static void logThrowableDetails(String prefix, Throwable throwable) {
+        DebugLog.log(LogCategory.HOST, JadLauncher.class.getName(), prefix + ": " + describeException(throwable));
+        if (throwable == null) {
+            return;
+        }
+        var writer = new StringWriter();
+        throwable.printStackTrace(new PrintWriter(writer));
+        DebugLog.log(LogCategory.HOST, JadLauncher.class.getName(), writer.toString().trim());
+    }
+
+    private static String describeException(Throwable throwable) {
+        if (throwable == null) {
+            return "unknown";
+        }
+        StringBuilder description = new StringBuilder(96);
+        Throwable current = throwable;
+        int depth = 0;
+        while (current != null && depth < 4) {
+            if (depth > 0) {
+                description.append(" <- ");
+            }
+            description.append(current.getClass().getSimpleName());
+            String message = current.getMessage();
+            if (message != null && !message.isBlank()) {
+                description.append(": ").append(message);
+            }
+            current = current.getCause();
+            depth++;
+        }
+        return description.toString();
     }
 }
