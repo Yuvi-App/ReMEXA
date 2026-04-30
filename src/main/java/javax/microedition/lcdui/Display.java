@@ -1,10 +1,13 @@
 package javax.microedition.lcdui;
 
 import com.j_phone.system.DeviceControl;
+import java.util.ArrayDeque;
+import java.util.Queue;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import javax.swing.SwingUtilities;
 import javax.microedition.midlet.MIDlet;
 import remexa.host.profile.DisplayMetrics;
 import remexa.host.runtime.MidletRuntime;
@@ -19,7 +22,9 @@ public final class Display {
 
     private Displayable current;
     private final MIDlet midlet;
+    private final Queue<Runnable> pendingSerialCallbacks = new ArrayDeque<>();
     private ScheduledFuture<?> pendingAlertTimeout;
+    private boolean serialCallbackDrainScheduled;
 
     public Display(MIDlet midlet) {
         this.midlet = midlet;
@@ -72,6 +77,20 @@ public final class Display {
         return true;
     }
 
+    public void callSerially(Runnable runnable) {
+        if (runnable == null) {
+            throw new NullPointerException("Runnable must be non-null.");
+        }
+        synchronized (pendingSerialCallbacks) {
+            pendingSerialCallbacks.add(runnable);
+            if (serialCallbackDrainScheduled) {
+                return;
+            }
+            serialCallbackDrainScheduled = true;
+        }
+        SwingUtilities.invokeLater(this::drainSerialCallbacks);
+    }
+
     DisplayMetrics displayMetrics() {
         return MidletRuntime.getDisplayMetrics(midlet);
     }
@@ -116,6 +135,26 @@ public final class Display {
         }
         pendingAlertTimeout.cancel(false);
         pendingAlertTimeout = null;
+    }
+
+    private void drainSerialCallbacks() {
+        while (true) {
+            Runnable callback;
+            synchronized (pendingSerialCallbacks) {
+                callback = pendingSerialCallbacks.poll();
+                if (callback == null) {
+                    serialCallbackDrainScheduled = false;
+                    return;
+                }
+            }
+            try {
+                callback.run();
+            } catch (Throwable throwable) {
+                var message = "Display.callSerially callback failed";
+                SdkStubSupport.log(Display.class.getName(), "callSerially", message, throwable);
+                throw throwable;
+            }
+        }
     }
 
     private static void initializeDisplayable(Displayable displayable) {
