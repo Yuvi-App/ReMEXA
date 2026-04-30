@@ -29,6 +29,7 @@ public final class SmafRenderedPlayer implements AutoCloseable {
     private int nextUserEventIndex;
     private int volume = 127;
     private int panpot = 64;
+    private long playbackEpoch;
 
     public SmafRenderedPlayer(SmafRenderedAudio audio) {
         this(audio, List.of());
@@ -68,6 +69,7 @@ public final class SmafRenderedPlayer implements AutoCloseable {
 
     public void play(int loopCount) {
         synchronized (lock) {
+            playbackEpoch++;
             framePosition = 0;
             remainingLoops = loopCount == 0 ? -1 : Math.max(0, loopCount - 1);
             nextUserEventIndex = 0;
@@ -84,9 +86,11 @@ public final class SmafRenderedPlayer implements AutoCloseable {
 
     public void stop() {
         synchronized (lock) {
+            playbackEpoch++;
             paused = false;
             playing = false;
             framePosition = 0;
+            remainingLoops = 0;
             nextUserEventIndex = 0;
             if (line != null) {
                 line.stop();
@@ -100,6 +104,7 @@ public final class SmafRenderedPlayer implements AutoCloseable {
             if (!playing) {
                 return;
             }
+            playbackEpoch++;
             paused = true;
             playing = false;
             if (line != null) {
@@ -113,6 +118,7 @@ public final class SmafRenderedPlayer implements AutoCloseable {
             if (!paused) {
                 return;
             }
+            playbackEpoch++;
             paused = false;
             playing = true;
             ensureWorkerLocked();
@@ -128,6 +134,7 @@ public final class SmafRenderedPlayer implements AutoCloseable {
         Thread workerToJoin;
         synchronized (lock) {
             closed = true;
+            playbackEpoch++;
             paused = false;
             playing = false;
             if (line != null) {
@@ -182,8 +189,16 @@ public final class SmafRenderedPlayer implements AutoCloseable {
             int startFrame;
             float leftGain;
             float rightGain;
+            long chunkEpoch;
             List<Integer> pendingUserEvents = List.of();
             synchronized (lock) {
+                if (closed) {
+                    closeLineLocked();
+                    return;
+                }
+                if (!playing) {
+                    continue;
+                }
                 int available = audio.frameCount() - framePosition;
                 if (available <= 0) {
                     if (remainingLoops == -1 || remainingLoops > 0) {
@@ -212,6 +227,7 @@ public final class SmafRenderedPlayer implements AutoCloseable {
                 leftGain = gain * (pan > 0.0f ? 1.0f - pan : 1.0f);
                 rightGain = gain * (pan < 0.0f ? 1.0f + pan : 1.0f);
                 framePosition += framesToWrite;
+                chunkEpoch = playbackEpoch;
                 pendingUserEvents = consumeUserEventsLocked(startFrame, framesToWrite);
             }
 
@@ -221,6 +237,11 @@ public final class SmafRenderedPlayer implements AutoCloseable {
             }
 
             scaleIntoChunk(audio.pcm16Le(), startFrame, framesToWrite, leftGain, rightGain, chunkBuffer);
+            synchronized (lock) {
+                if (closed || !playing || chunkEpoch != playbackEpoch || line == null) {
+                    continue;
+                }
+            }
             line.write(chunkBuffer, 0, framesToWrite * 4);
             for (int userEventId : pendingUserEvents) {
                 if (listener != null) {
