@@ -1,10 +1,16 @@
 package com.mexa.opgl;
 
+import java.awt.image.BufferedImage;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import javax.microedition.lcdui.Graphics;
+import remexa.host.jblend.CanvasGraphics3D;
 
 public class OpglGraphics {
     private static volatile OpglGraphics instance;
@@ -16,7 +22,7 @@ public class OpglGraphics {
     public static final int GL_ALPHA = 0;
     public static final int GL_ALPHA_BITS = 0;
     public static final int GL_ALPHA_SCALE = 0;
-    public static final int GL_ALPHA_TEST = 0;
+    public static final int GL_ALPHA_TEST = 3008;
     public static final int GL_ALPHA_TEST_FUNC = 0;
     public static final int GL_ALPHA_TEST_REF = 0;
     public static final int GL_ALWAYS = 0;
@@ -27,16 +33,16 @@ public class OpglGraphics {
     public static final int GL_AND_REVERSE = 0;
     public static final int GL_ARRAY_BUFFER = 34962;
     public static final int GL_ARRAY_BUFFER_BINDING = 0;
-    public static final int GL_BACK = 0;
-    public static final int GL_BLEND = 0;
-    public static final int GL_BLEND_DST = 0;
-    public static final int GL_BLEND_SRC = 0;
+    public static final int GL_BACK = 1029;
+    public static final int GL_BLEND = 3042;
+    public static final int GL_BLEND_DST = 3040;
+    public static final int GL_BLEND_SRC = 3041;
     public static final int GL_BLUE_BITS = 0;
     public static final int GL_BUFFER_SIZE = 0;
     public static final int GL_BUFFER_USAGE = 0;
     public static final int GL_BYTE = 5120;
-    public static final int GL_CCW = 0;
-    public static final int GL_CLAMP_TO_EDGE = 0;
+    public static final int GL_CCW = 2305;
+    public static final int GL_CLAMP_TO_EDGE = 33071;
     public static final int GL_CLEAR = 0;
     public static final int GL_CLIENT_ACTIVE_TEXTURE = 0;
     public static final int GL_CLIP_PLANE0 = 0;
@@ -62,24 +68,24 @@ public class OpglGraphics {
     public static final int GL_COMPRESSED_TEXTURE_FORMATS = 0;
     public static final int GL_CONSTANT = 0;
     public static final int GL_CONSTANT_ATTENUATION = 0;
-    public static final int GL_COORD_REPLACE_OES = 0;
+    public static final int GL_COORD_REPLACE_OES = 34914;
     public static final int GL_COPY = 0;
     public static final int GL_COPY_INVERTED = 0;
-    public static final int GL_CULL_FACE = 0;
+    public static final int GL_CULL_FACE = 2884;
     public static final int GL_CULL_FACE_MODE = 0;
     public static final int GL_CURRENT_COLOR = 0;
     public static final int GL_CURRENT_NORMAL = 0;
     public static final int GL_CURRENT_PALETTE_MATRIX_OES = 0;
     public static final int GL_CURRENT_TEXTURE_COORDS = 0;
-    public static final int GL_CW = 0;
+    public static final int GL_CW = 2304;
     public static final int GL_DECAL = 0;
     public static final int GL_DECR = 0;
     public static final int GL_DEPTH_BITS = 0;
-    public static final int GL_DEPTH_BUFFER_BIT = 0;
+    public static final int GL_DEPTH_BUFFER_BIT = 256;
     public static final int GL_DEPTH_CLEAR_VALUE = 0;
     public static final int GL_DEPTH_FUNC = 0;
     public static final int GL_DEPTH_RANGE = 0;
-    public static final int GL_DEPTH_TEST = 0;
+    public static final int GL_DEPTH_TEST = 2929;
     public static final int GL_DEPTH_WRITEMASK = 0;
     public static final int GL_DIFFUSE = 0;
     public static final int GL_DITHER = 0;
@@ -99,15 +105,15 @@ public class OpglGraphics {
     public static final int GL_EXTENSIONS = 7939;
     public static final int GL_FALSE = 0;
     public static final int GL_FASTEST = 0;
-    public static final int GL_FLAT = 0;
+    public static final int GL_FLAT = 7424;
     public static final int GL_FLOAT = 5126;
-    public static final int GL_FOG = 0;
-    public static final int GL_FOG_COLOR = 0;
-    public static final int GL_FOG_DENSITY = 0;
-    public static final int GL_FOG_END = 0;
+    public static final int GL_FOG = 2912;
+    public static final int GL_FOG_COLOR = 2918;
+    public static final int GL_FOG_DENSITY = 2914;
+    public static final int GL_FOG_END = 2916;
     public static final int GL_FOG_HINT = 0;
-    public static final int GL_FOG_MODE = 0;
-    public static final int GL_FOG_START = 0;
+    public static final int GL_FOG_MODE = 2917;
+    public static final int GL_FOG_START = 2915;
     public static final int GL_FRONT = 0;
     public static final int GL_FRONT_AND_BACK = 0;
     public static final int GL_FRONT_FACE = 0;
@@ -141,7 +147,7 @@ public class OpglGraphics {
     public static final int GL_LINE_SMOOTH_HINT = 0;
     public static final int GL_LINE_STRIP = 3;
     public static final int GL_LINE_WIDTH = 0;
-    public static final int GL_LINEAR = 0;
+    public static final int GL_LINEAR = 9729;
     public static final int GL_LINEAR_ATTENUATION = 0;
     public static final int GL_LINEAR_MIPMAP_LINEAR = 0;
     public static final int GL_LINEAR_MIPMAP_NEAREST = 0;
@@ -174,7 +180,7 @@ public class OpglGraphics {
     public static final int GL_MODULATE = 0;
     public static final int GL_MULTISAMPLE = 0;
     public static final int GL_NAND = 0;
-    public static final int GL_NEAREST = 0;
+    public static final int GL_NEAREST = 9728;
     public static final int GL_NEAREST_MIPMAP_LINEAR = 0;
     public static final int GL_NEAREST_MIPMAP_NEAREST = 0;
     public static final int GL_NEVER = 0;
@@ -188,12 +194,12 @@ public class OpglGraphics {
     public static final int GL_NORMAL_ARRAY_STRIDE = 0;
     public static final int GL_NORMAL_ARRAY_TYPE = 0;
     public static final int GL_NORMALIZE = 0;
-    public static final int GL_NOTEQUAL = 0;
+    public static final int GL_NOTEQUAL = 517;
     public static final int GL_NUM_COMPRESSED_TEXTURE_FORMATS = 0;
-    public static final int GL_ONE = 0;
+    public static final int GL_ONE = 1;
     public static final int GL_ONE_MINUS_DST_ALPHA = 0;
     public static final int GL_ONE_MINUS_DST_COLOR = 0;
-    public static final int GL_ONE_MINUS_SRC_ALPHA = 0;
+    public static final int GL_ONE_MINUS_SRC_ALPHA = 771;
     public static final int GL_ONE_MINUS_SRC_COLOR = 0;
     public static final int GL_OPERAND0_ALPHA = 0;
     public static final int GL_OPERAND0_RGB = 0;
@@ -219,7 +225,7 @@ public class OpglGraphics {
     public static final int GL_PERSPECTIVE_CORRECTION_HINT = 0;
     public static final int GL_POINT_DISTANCE_ATTENUATION = 0;
     public static final int GL_POINT_FADE_THRESHOLD_SIZE = 0;
-    public static final int GL_POINT_SIZE = 0;
+    public static final int GL_POINT_SIZE = 2833;
     public static final int GL_POINT_SIZE_ARRAY_BUFFER_BINDING_OES = 0;
     public static final int GL_POINT_SIZE_ARRAY_OES = 35740;
     public static final int GL_POINT_SIZE_ARRAY_POINTER_OES = 0;
@@ -229,7 +235,7 @@ public class OpglGraphics {
     public static final int GL_POINT_SIZE_MIN = 0;
     public static final int GL_POINT_SMOOTH = 0;
     public static final int GL_POINT_SMOOTH_HINT = 0;
-    public static final int GL_POINT_SPRITE_OES = 0;
+    public static final int GL_POINT_SPRITE_OES = 34913;
     public static final int GL_POINTS = 0;
     public static final int GL_POLYGON_OFFSET_FACTOR = 0;
     public static final int GL_POLYGON_OFFSET_FILL = 0;
@@ -245,12 +251,12 @@ public class OpglGraphics {
     public static final int GL_QUADRATIC_ATTENUATION = 0;
     public static final int GL_RED_BITS = 0;
     public static final int GL_RENDERER = 7937;
-    public static final int GL_REPEAT = 0;
+    public static final int GL_REPEAT = 10497;
     public static final int GL_REPLACE = 0;
     public static final int GL_RESCALE_NORMAL = 0;
     public static final int GL_RGB = 0;
     public static final int GL_RGB_SCALE = 0;
-    public static final int GL_RGBA = 0;
+    public static final int GL_RGBA = 6408;
     public static final int GL_SAMPLE_ALPHA_TO_COVERAGE = 0;
     public static final int GL_SAMPLE_ALPHA_TO_ONE = 0;
     public static final int GL_SAMPLE_BUFFERS = 0;
@@ -259,19 +265,19 @@ public class OpglGraphics {
     public static final int GL_SAMPLE_COVERAGE_VALUE = 0;
     public static final int GL_SAMPLES = 0;
     public static final int GL_SCISSOR_BOX = 0;
-    public static final int GL_SCISSOR_TEST = 0;
+    public static final int GL_SCISSOR_TEST = 3089;
     public static final int GL_SET = 0;
-    public static final int GL_SHADE_MODEL = 0;
+    public static final int GL_SHADE_MODEL = 2900;
     public static final int GL_SHININESS = 0;
     public static final int GL_SHORT = 5122;
-    public static final int GL_SMOOTH = 0;
+    public static final int GL_SMOOTH = 7425;
     public static final int GL_SMOOTH_LINE_WIDTH_RANGE = 0;
     public static final int GL_SMOOTH_POINT_SIZE_RANGE = 0;
     public static final int GL_SPECULAR = 0;
     public static final int GL_SPOT_CUTOFF = 0;
     public static final int GL_SPOT_DIRECTION = 0;
     public static final int GL_SPOT_EXPONENT = 0;
-    public static final int GL_SRC_ALPHA = 0;
+    public static final int GL_SRC_ALPHA = 770;
     public static final int GL_SRC_ALPHA_SATURATE = 0;
     public static final int GL_SRC_COLOR = 0;
     public static final int GL_SRC0_ALPHA = 0;
@@ -298,24 +304,24 @@ public class OpglGraphics {
     public static final int GL_SUBTRACT = 0;
     public static final int GL_TEXTURE = 5890;
     public static final int GL_TEXTURE_2D = 3553;
-    public static final int GL_TEXTURE_BINDING_2D = 0;
+    public static final int GL_TEXTURE_BINDING_2D = 32873;
     public static final int GL_TEXTURE_COORD_ARRAY = 32888;
     public static final int GL_TEXTURE_COORD_ARRAY_BUFFER_BINDING = 0;
     public static final int GL_TEXTURE_COORD_ARRAY_POINTER = 0;
     public static final int GL_TEXTURE_COORD_ARRAY_SIZE = 0;
     public static final int GL_TEXTURE_COORD_ARRAY_STRIDE = 0;
     public static final int GL_TEXTURE_COORD_ARRAY_TYPE = 0;
-    public static final int GL_TEXTURE_CROP_RECT_OES = 0;
-    public static final int GL_TEXTURE_ENV = 0;
-    public static final int GL_TEXTURE_ENV_COLOR = 0;
-    public static final int GL_TEXTURE_ENV_MODE = 0;
-    public static final int GL_TEXTURE_MAG_FILTER = 0;
+    public static final int GL_TEXTURE_CROP_RECT_OES = 35741;
+    public static final int GL_TEXTURE_ENV = 8960;
+    public static final int GL_TEXTURE_ENV_COLOR = 8705;
+    public static final int GL_TEXTURE_ENV_MODE = 8704;
+    public static final int GL_TEXTURE_MAG_FILTER = 10240;
     public static final int GL_TEXTURE_MATRIX = 0;
     public static final int GL_TEXTURE_MATRIX_FLOAT_AS_INT_BITS_OES = 0;
-    public static final int GL_TEXTURE_MIN_FILTER = 0;
+    public static final int GL_TEXTURE_MIN_FILTER = 10241;
     public static final int GL_TEXTURE_STACK_DEPTH = 0;
-    public static final int GL_TEXTURE_WRAP_S = 0;
-    public static final int GL_TEXTURE_WRAP_T = 0;
+    public static final int GL_TEXTURE_WRAP_S = 10242;
+    public static final int GL_TEXTURE_WRAP_T = 10243;
     public static final int GL_TEXTURE0 = 33984;
     public static final int GL_TEXTURE1 = 33985;
     public static final int GL_TEXTURE10 = 33994;
@@ -351,8 +357,8 @@ public class OpglGraphics {
     public static final int GL_TRIANGLE_FAN = 6;
     public static final int GL_TRIANGLE_STRIP = 5;
     public static final int GL_TRIANGLES = 4;
-    public static final int GL_TRUE = 0;
-    public static final int GL_UNPACK_ALIGNMENT = 0;
+    public static final int GL_TRUE = 1;
+    public static final int GL_UNPACK_ALIGNMENT = 3317;
     public static final int GL_UNSIGNED_BYTE = 5121;
     public static final int GL_UNSIGNED_SHORT = 5123;
     public static final int GL_UNSIGNED_SHORT_4_4_4_4 = 0;
@@ -384,15 +390,48 @@ public class OpglGraphics {
     private final Set<Integer> buffers = new HashSet<>();
     private final Set<Integer> enabledCaps = new HashSet<>();
     private final Set<Integer> enabledClientStates = new HashSet<>();
+    private final Map<Integer, Buffer> bufferData = new HashMap<>();
     private final Map<Integer, Integer> bufferSizes = new HashMap<>();
     private final Map<Integer, Integer> bufferUsages = new HashMap<>();
+    private final Map<Integer, TextureState> textureStates = new HashMap<>();
     private Object boundTarget;
+    private BufferedImage boundBackingImage;
     private int boundArrayBuffer;
     private int boundElementArrayBuffer;
     private int nextTextureId = 1;
     private int nextBufferId = 1;
     private int clearColorArgb = 0xFF000000;
     private int lastError = GL_NO_ERROR;
+    private int surfaceWidth;
+    private int surfaceHeight;
+    private int[] surfacePixels = new int[0];
+    private float[] surfaceDepth = new float[0];
+    private int currentMatrixMode = GL_MODELVIEW;
+    private final float[] modelViewMatrix = identityMatrix();
+    private final float[] projectionMatrix = identityMatrix();
+    private final float[] textureMatrix = identityMatrix();
+    private final ArrayDeque<float[]> modelViewStack = new ArrayDeque<>();
+    private final ArrayDeque<float[]> projectionStack = new ArrayDeque<>();
+    private final ArrayDeque<float[]> textureStack = new ArrayDeque<>();
+    private int viewportX;
+    private int viewportY;
+    private int viewportWidth;
+    private int viewportHeight;
+    private int boundTexture2d;
+    private int currentColorArgb = 0xFFFFFFFF;
+    private float currentColorR = 1.0f;
+    private float currentColorG = 1.0f;
+    private float currentColorB = 1.0f;
+    private float currentColorA = 1.0f;
+    private int blendSrcFactor = GL_ONE;
+    private int blendDstFactor = GL_ZERO;
+    private int alphaFunc = GL_NOTEQUAL;
+    private float alphaRef = 0.0f;
+    private boolean depthWriteEnabled = true;
+    private float fogStart = 0.0f;
+    private float fogEnd = 1.0f;
+    private int fogColorArgb = 0xFF000000;
+    private float pointSize = 1.0f;
     private ClientArrayBinding colorArrayBinding;
     private ClientArrayBinding normalArrayBinding;
     private ClientArrayBinding texCoordArrayBinding;
@@ -430,6 +469,22 @@ public class OpglGraphics {
             this.bufferId = bufferId;
             this.pointer = pointer;
         }
+    }
+
+    private static final class TextureState {
+        private int width;
+        private int height;
+        private int[] pixels;
+        private int wrapS = GL_REPEAT;
+        private int wrapT = GL_REPEAT;
+        private int minFilter = GL_NEAREST;
+        private int magFilter = GL_NEAREST;
+    }
+
+    private record ClipVertex(float clipX, float clipY, float clipZ, float clipW, float u, float v, float eyeDepth, int color) {
+    }
+
+    private record Vertex(float x, float y, float z, float w, float u, float v, float eyeDepth, int color) {
     }
 
     private OpglGraphics() {
@@ -471,10 +526,40 @@ public class OpglGraphics {
             throw new IllegalStateException("target already bound");
         }
         boundTarget = target;
+        boundBackingImage = null;
+        if (target instanceof CanvasGraphics3D canvasGraphics3D) {
+            boundBackingImage = canvasGraphics3D.backingImage();
+        }
+        if (boundBackingImage != null) {
+            surfaceWidth = boundBackingImage.getWidth();
+            surfaceHeight = boundBackingImage.getHeight();
+            ensureSurfaceBuffers();
+            boundBackingImage.getRGB(0, 0, surfaceWidth, surfaceHeight, surfacePixels, 0, surfaceWidth);
+        } else {
+            surfaceWidth = Math.max(1, ((Graphics) target).getClipWidth());
+            surfaceHeight = Math.max(1, ((Graphics) target).getClipHeight());
+            ensureSurfaceBuffers();
+            Arrays.fill(surfacePixels, 0);
+        }
+        Arrays.fill(surfaceDepth, 1.0f);
+        if (viewportWidth <= 0 || viewportHeight <= 0) {
+            viewportX = 0;
+            viewportY = 0;
+            viewportWidth = surfaceWidth;
+            viewportHeight = surfaceHeight;
+        }
     }
 
     public void release () {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "release");
+        if (boundTarget instanceof Graphics graphics) {
+            if (boundBackingImage != null) {
+                boundBackingImage.setRGB(0, 0, surfaceWidth, surfaceHeight, surfacePixels, 0, surfaceWidth);
+            } else {
+                graphics.drawRGB(surfacePixels, 0, surfaceWidth, 0, 0, surfaceWidth, surfaceHeight, true);
+            }
+        }
+        boundBackingImage = null;
         boundTarget = null;
     }
 
@@ -489,17 +574,32 @@ public class OpglGraphics {
     public void glBindTexture (int target, int texture) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glBindTexture", target, texture);
         ensureBound();
+        if (target != GL_TEXTURE_2D) {
+            setError(GL_INVALID_ENUM);
+            return;
+        }
+        if (texture != 0 && !textures.contains(texture)) {
+            setError(GL_INVALID_VALUE);
+            return;
+        }
+        boundTexture2d = texture;
     }
 
     public void glBlendFunc (int sfactor, int dfactor) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glBlendFunc", sfactor, dfactor);
+        ensureBound();
+        blendSrcFactor = sfactor;
+        blendDstFactor = dfactor;
     }
 
     public void glClear (int mask) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glClear", mask);
         ensureBound();
         if ((mask & 0x4000) != 0) {
-            ((Graphics) boundTarget).clearSurface(clearColorArgb);
+            Arrays.fill(surfacePixels, clearColorArgb);
+        }
+        if ((mask & 0x100) != 0) {
+            Arrays.fill(surfaceDepth, 1.0f);
         }
     }
 
@@ -514,6 +614,8 @@ public class OpglGraphics {
 
     public void glClearDepthf (float depth) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glClearDepthf", depth);
+        ensureBound();
+        Arrays.fill(surfaceDepth, depth);
     }
 
     public void glClearStencil (int s) {
@@ -526,6 +628,15 @@ public class OpglGraphics {
 
     public void glColor4f (float red, float green, float blue, float alpha) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glColor4f", red, green, blue, alpha);
+        ensureBound();
+        currentColorR = clampUnit(red);
+        currentColorG = clampUnit(green);
+        currentColorB = clampUnit(blue);
+        currentColorA = clampUnit(alpha);
+        currentColorArgb = (clampColor(currentColorA) << 24)
+                | (clampColor(currentColorR) << 16)
+                | (clampColor(currentColorG) << 8)
+                | clampColor(currentColorB);
     }
 
     public void glColorMask (boolean red, boolean green, boolean blue, boolean alpha) {
@@ -554,6 +665,14 @@ public class OpglGraphics {
 
     public void glCompressedTexImage2D (int target, int level, int internalformat, int width, int height, int border, com.mexa.opgl.ByteBuffer data) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glCompressedTexImage2D", target, level, internalformat, width, height, border, data);
+        ensureBound();
+        if (target != GL_TEXTURE_2D || boundTexture2d == 0 || data == null) {
+            return;
+        }
+        TextureState textureState = textureStates.computeIfAbsent(boundTexture2d, ignored -> new TextureState());
+        textureState.width = width;
+        textureState.height = height;
+        textureState.pixels = decodePaletteTexture(data, width, height);
     }
 
     public void glCompressedTexSubImage2D (int target, int level, int xoffset, int yoffset, int width, int height, int format, com.mexa.opgl.ByteBuffer data) {
@@ -583,6 +702,10 @@ public class OpglGraphics {
         }
         for (int texture : textures) {
             this.textures.remove(texture);
+            textureStates.remove(texture);
+            if (boundTexture2d == texture) {
+                boundTexture2d = 0;
+            }
         }
     }
 
@@ -592,6 +715,8 @@ public class OpglGraphics {
 
     public void glDepthMask (boolean flag) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glDepthMask", flag);
+        ensureBound();
+        depthWriteEnabled = flag;
     }
 
     public void glDepthRangef (float zNear, float zFar) {
@@ -625,6 +750,7 @@ public class OpglGraphics {
         }
         boolean usesVbo = requireConsistentEnabledArrays();
         validateDrawArrayRange(first, count, usesVbo);
+        renderDrawArrays(mode, first, count);
     }
 
     public void glDrawElements (int mode, int type, com.mexa.opgl.Buffer indices) {
@@ -645,6 +771,7 @@ public class OpglGraphics {
             throw new IllegalStateException("enabled arrays require VBO draw");
         }
         validateDrawElementsIndices(type, indices);
+        renderDrawElements(mode, readIndices(indices, type, indices.boundedOffset(), indices.boundedLength()));
     }
 
     public void glDrawElements (int mode, int count, int type, int offset) {
@@ -665,6 +792,12 @@ public class OpglGraphics {
         if (!requireConsistentEnabledArrays()) {
             throw new IllegalStateException("enabled arrays require buffer draw");
         }
+        Buffer elementBuffer = bufferData.get(boundElementArrayBuffer);
+        if (elementBuffer == null) {
+            setError(GL_INVALID_OPERATION);
+            return;
+        }
+        renderDrawElements(mode, readIndices(elementBuffer, type, offset / sizeOfType(type), count));
     }
 
     public void glEnable (int cap) {
@@ -686,10 +819,23 @@ public class OpglGraphics {
 
     public void glFogf (int pname, float param) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glFogf", pname, param);
+        ensureBound();
+        if (pname == GL_FOG_START) {
+            fogStart = param;
+        } else if (pname == GL_FOG_END) {
+            fogEnd = param;
+        }
     }
 
     public void glFogfv (int pname, float[] params) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glFogfv", pname, params);
+        ensureBound();
+        if (pname == GL_FOG_COLOR && params != null && params.length >= 4) {
+            fogColorArgb = (clampColor(params[3]) << 24)
+                    | (clampColor(params[0]) << 16)
+                    | (clampColor(params[1]) << 8)
+                    | clampColor(params[2]);
+        }
     }
 
     public void glFrontFace (int mode) {
@@ -698,6 +844,8 @@ public class OpglGraphics {
 
     public void glFrustumf (float left, float right, float bottom, float top, float zNear, float zFar) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glFrustumf", left, right, bottom, top, zNear, zFar);
+        ensureBound();
+        multiplyCurrentMatrix(frustumMatrix(left, right, bottom, top, zNear, zFar));
     }
 
     public void glGenTextures (int[] textures) {
@@ -775,6 +923,7 @@ public class OpglGraphics {
     public void glLoadIdentity () {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glLoadIdentity");
         ensureBound();
+        loadIdentity(currentMatrix());
     }
 
     public void glLoadMatrixf (float[] m) {
@@ -786,6 +935,7 @@ public class OpglGraphics {
         if (m.length < 16) {
             throw new IllegalArgumentException("m");
         }
+        System.arraycopy(m, 0, currentMatrix(), 0, 16);
     }
 
     public void glLogicOp (int opcode) {
@@ -803,6 +953,7 @@ public class OpglGraphics {
     public void glMatrixMode (int mode) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glMatrixMode", mode);
         ensureBound();
+        currentMatrixMode = mode;
     }
 
     public void glMultMatrixf (float[] m) {
@@ -814,6 +965,7 @@ public class OpglGraphics {
         if (m.length < 16) {
             throw new IllegalArgumentException("m");
         }
+        multiplyCurrentMatrix(m);
     }
 
     public void glMultiTexCoord4f (int target, float s, float t, float r, float q) {
@@ -847,6 +999,7 @@ public class OpglGraphics {
     public void glOrthof (float left, float right, float bottom, float top, float zNear, float zFar) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glOrthof", left, right, bottom, top, zNear, zFar);
         ensureBound();
+        multiplyCurrentMatrix(orthoMatrix(left, right, bottom, top, zNear, zFar));
     }
 
     public void glPixelStorei (int pname, int param) {
@@ -856,6 +1009,8 @@ public class OpglGraphics {
 
     public void glPointSize (float size) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glPointSize", size);
+        ensureBound();
+        pointSize = Math.max(1.0f, size);
     }
 
     public void glPolygonOffset (float factor, float units) {
@@ -864,14 +1019,20 @@ public class OpglGraphics {
 
     public void glPopMatrix () {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glPopMatrix");
+        ensureBound();
+        popMatrix();
     }
 
     public void glPushMatrix () {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glPushMatrix");
+        ensureBound();
+        pushMatrix();
     }
 
     public void glRotatef (float angle, float x, float y, float z) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glRotatef", angle, x, y, z);
+        ensureBound();
+        multiplyCurrentMatrix(rotationMatrix(angle, x, y, z));
     }
 
     public void glSampleCoverage (float value, boolean invert) {
@@ -880,6 +1041,8 @@ public class OpglGraphics {
 
     public void glScalef (float x, float y, float z) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glScalef", x, y, z);
+        ensureBound();
+        multiplyCurrentMatrix(scaleMatrix(x, y, z));
     }
 
     public void glScissor (int x, int y, int width, int height) {
@@ -934,11 +1097,19 @@ public class OpglGraphics {
     public void glTexImage2D (int target, int level, int internalformat, int width, int height, int border, int format, int type, com.mexa.opgl.Buffer pixels) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glTexImage2D", target, level, internalformat, width, height, border, format, type, pixels);
         ensureBound();
+        if (target != GL_TEXTURE_2D || boundTexture2d == 0 || !(pixels instanceof ByteBuffer byteBuffer)) {
+            return;
+        }
+        TextureState textureState = textureStates.computeIfAbsent(boundTexture2d, ignored -> new TextureState());
+        textureState.width = width;
+        textureState.height = height;
+        textureState.pixels = decodeRgbaTexture(byteBuffer, width, height);
     }
 
     public void glTexParameterf (int target, int pname, float param) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glTexParameterf", target, pname, param);
         ensureBound();
+        applyTextureParameter(target, pname, Math.round(param));
     }
 
     public void glTexSubImage2D (int target, int level, int xoffset, int yoffset, int width, int height, int format, int type, com.mexa.opgl.Buffer pixels) {
@@ -948,6 +1119,7 @@ public class OpglGraphics {
     public void glTranslatef (float x, float y, float z) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glTranslatef", x, y, z);
         ensureBound();
+        multiplyCurrentMatrix(translationMatrix(x, y, z));
     }
 
     public void glVertexPointer (int size, int type, int stride, com.mexa.opgl.Buffer pointer) {
@@ -973,6 +1145,10 @@ public class OpglGraphics {
     public void glViewport (int x, int y, int width, int height) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glViewport", x, y, width, height);
         ensureBound();
+        viewportX = x;
+        viewportY = y;
+        viewportWidth = Math.max(1, width);
+        viewportHeight = Math.max(1, height);
     }
 
     public void glBindBuffer (int target, int buffer) {
@@ -1018,10 +1194,27 @@ public class OpglGraphics {
         }
         bufferSizes.put(bufferId, bufferLengthInBytes(data));
         bufferUsages.put(bufferId, usage);
+        bufferData.put(bufferId, cloneBuffer(data));
     }
 
     public void glBufferSubData (int target, int offset, com.mexa.opgl.Buffer data) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glBufferSubData", target, offset, data);
+        ensureBound();
+        if (data == null) {
+            throw new NullPointerException("data");
+        }
+        int bufferId = target == GL_ARRAY_BUFFER ? boundArrayBuffer
+                : target == GL_ELEMENT_ARRAY_BUFFER ? boundElementArrayBuffer : 0;
+        if (bufferId == 0) {
+            setError(GL_INVALID_OPERATION);
+            return;
+        }
+        Buffer destination = bufferData.get(bufferId);
+        if (destination == null) {
+            setError(GL_INVALID_OPERATION);
+            return;
+        }
+        writeBufferData(destination, offset, data);
     }
 
     public void glClipPlanef (int plane, float[] equation) {
@@ -1031,6 +1224,14 @@ public class OpglGraphics {
     public void glColor4ub (byte red, byte green, byte blue, byte alpha) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glColor4ub", red, green, blue, alpha);
         ensureBound();
+        currentColorR = (red & 0xFF) / 255.0f;
+        currentColorG = (green & 0xFF) / 255.0f;
+        currentColorB = (blue & 0xFF) / 255.0f;
+        currentColorA = (alpha & 0xFF) / 255.0f;
+        currentColorArgb = ((alpha & 0xFF) << 24)
+                | ((red & 0xFF) << 16)
+                | ((green & 0xFF) << 8)
+                | (blue & 0xFF);
     }
 
     public void glDeleteBuffers (int[] buffers) {
@@ -1044,6 +1245,7 @@ public class OpglGraphics {
         }
         for (int buffer : buffers) {
             this.buffers.remove(buffer);
+            bufferData.remove(buffer);
             bufferSizes.remove(buffer);
             bufferUsages.remove(buffer);
             if (boundArrayBuffer == buffer) {
@@ -1139,6 +1341,7 @@ public class OpglGraphics {
 
     public void glTexEnvi (int target, int pname, int param) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glTexEnvi", target, pname, param);
+        ensureBound();
     }
 
     public void glTexEnviv (int target, int pname, int[] params) {
@@ -1151,6 +1354,8 @@ public class OpglGraphics {
 
     public void glTexParameteri (int target, int pname, int param) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glTexParameteri", target, pname, param);
+        ensureBound();
+        applyTextureParameter(target, pname, param);
     }
 
     public void glTexParameteriv (int target, int pname, int[] params) {
@@ -1239,6 +1444,671 @@ public class OpglGraphics {
 
     public void glDrawTexfOES (float x, float y, float z, float width, float height) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glDrawTexfOES", x, y, z, width, height);
+    }
+
+    private void ensureSurfaceBuffers() {
+        int size = Math.max(1, surfaceWidth * surfaceHeight);
+        if (surfacePixels.length != size) {
+            surfacePixels = new int[size];
+            surfaceDepth = new float[size];
+        }
+    }
+
+    private void applyTextureParameter(int target, int pname, int param) {
+        if (target != GL_TEXTURE_2D || boundTexture2d == 0) {
+            return;
+        }
+        TextureState textureState = textureStates.computeIfAbsent(boundTexture2d, ignored -> new TextureState());
+        if (pname == GL_TEXTURE_WRAP_S) {
+            textureState.wrapS = param;
+        } else if (pname == GL_TEXTURE_WRAP_T) {
+            textureState.wrapT = param;
+        } else if (pname == GL_TEXTURE_MIN_FILTER) {
+            textureState.minFilter = param;
+        } else if (pname == GL_TEXTURE_MAG_FILTER) {
+            textureState.magFilter = param;
+        }
+    }
+
+    private void renderDrawArrays(int mode, int first, int count) {
+        switch (mode) {
+            case GL_TRIANGLES -> {
+                for (int i = 0; i + 2 < count; i += 3) {
+                    drawTriangle(fetchVertex(first + i), fetchVertex(first + i + 1), fetchVertex(first + i + 2));
+                }
+            }
+            case GL_TRIANGLE_STRIP -> {
+                for (int i = 0; i + 2 < count; i++) {
+                    ClipVertex v0 = fetchVertex(first + i);
+                    ClipVertex v1 = fetchVertex(first + i + 1);
+                    ClipVertex v2 = fetchVertex(first + i + 2);
+                    if ((i & 1) == 0) {
+                        drawTriangle(v0, v1, v2);
+                    } else {
+                        drawTriangle(v1, v0, v2);
+                    }
+                }
+            }
+            case GL_TRIANGLE_FAN -> {
+                ClipVertex center = fetchVertex(first);
+                for (int i = 1; i + 1 < count; i++) {
+                    drawTriangle(center, fetchVertex(first + i), fetchVertex(first + i + 1));
+                }
+            }
+            case GL_POINTS -> {
+                for (int i = 0; i < count; i++) {
+                    drawPoint(fetchVertex(first + i));
+                }
+            }
+            default -> {
+            }
+        }
+    }
+
+    private void renderDrawElements(int mode, int[] indices) {
+        switch (mode) {
+            case GL_TRIANGLES -> {
+                for (int i = 0; i + 2 < indices.length; i += 3) {
+                    drawTriangle(fetchVertex(indices[i]), fetchVertex(indices[i + 1]), fetchVertex(indices[i + 2]));
+                }
+            }
+            case GL_TRIANGLE_STRIP -> {
+                for (int i = 0; i + 2 < indices.length; i++) {
+                    ClipVertex v0 = fetchVertex(indices[i]);
+                    ClipVertex v1 = fetchVertex(indices[i + 1]);
+                    ClipVertex v2 = fetchVertex(indices[i + 2]);
+                    if ((i & 1) == 0) {
+                        drawTriangle(v0, v1, v2);
+                    } else {
+                        drawTriangle(v1, v0, v2);
+                    }
+                }
+            }
+            case GL_TRIANGLE_FAN -> {
+                if (indices.length == 0) {
+                    return;
+                }
+                ClipVertex center = fetchVertex(indices[0]);
+                for (int i = 1; i + 1 < indices.length; i++) {
+                    drawTriangle(center, fetchVertex(indices[i]), fetchVertex(indices[i + 1]));
+                }
+            }
+            case GL_POINTS -> {
+                for (int index : indices) {
+                    drawPoint(fetchVertex(index));
+                }
+            }
+            default -> {
+            }
+        }
+    }
+
+    private ClipVertex fetchVertex(int vertexIndex) {
+        float[] pos = readVertexComponents(vertexArrayBinding, vertexIndex, 4, 1.0f);
+        float[] tex = texCoordArrayBinding == null || !enabledClientStates.contains(GL_TEXTURE_COORD_ARRAY)
+                ? new float[] {0.0f, 0.0f, 0.0f, 1.0f}
+                : readVertexComponents(texCoordArrayBinding, vertexIndex, 4, 1.0f);
+
+        float[] model = multiplyVec4(modelViewMatrix, pos[0], pos[1], pos[2], pos[3]);
+        float[] clip = multiplyVec4(projectionMatrix, model[0], model[1], model[2], model[3]);
+        float[] texCoord = multiplyVec4(textureMatrix, tex[0], tex[1], tex[2], tex[3]);
+        return new ClipVertex(
+                clip[0],
+                clip[1],
+                clip[2],
+                clip[3],
+                texCoord[0],
+                texCoord[1],
+                -model[2],
+                currentColorArgb
+        );
+    }
+
+    private Vertex projectVertex(ClipVertex vertex) {
+        if (Math.abs(vertex.clipW()) < 0.000001f) {
+            return null;
+        }
+        float invW = 1.0f / vertex.clipW();
+        float ndcX = vertex.clipX() * invW;
+        float ndcY = vertex.clipY() * invW;
+        float ndcZ = vertex.clipZ() * invW;
+        float screenX = viewportX + ((ndcX + 1.0f) * 0.5f * viewportWidth);
+        float screenY = viewportY + ((1.0f - (ndcY + 1.0f) * 0.5f) * viewportHeight);
+        float screenZ = Math.max(0.0f, Math.min(1.0f, (ndcZ + 1.0f) * 0.5f));
+        return new Vertex(
+                screenX,
+                screenY,
+                screenZ,
+                vertex.clipW(),
+                vertex.u(),
+                vertex.v(),
+                vertex.eyeDepth(),
+                vertex.color()
+        );
+    }
+
+    private void drawPoint(ClipVertex clipVertex) {
+        if (!isInsideClipVolume(clipVertex)) {
+            return;
+        }
+        Vertex vertex = projectVertex(clipVertex);
+        if (vertex == null) {
+            return;
+        }
+        if (vertex.w() <= 0.0f) {
+            return;
+        }
+        float half = pointSize * 0.5f;
+        int minX = Math.max(0, (int) Math.floor(vertex.x() - half));
+        int maxX = Math.min(surfaceWidth - 1, (int) Math.ceil(vertex.x() + half));
+        int minY = Math.max(0, (int) Math.floor(vertex.y() - half));
+        int maxY = Math.min(surfaceHeight - 1, (int) Math.ceil(vertex.y() + half));
+        for (int y = minY; y <= maxY; y++) {
+            for (int x = minX; x <= maxX; x++) {
+                float u = pointSize <= 1.0f ? 0.5f : (x + 0.5f - (vertex.x() - half)) / pointSize;
+                float v = pointSize <= 1.0f ? 0.5f : (y + 0.5f - (vertex.y() - half)) / pointSize;
+                int color = shadeFragment(u, v, vertex.eyeDepth(), vertex.color());
+                writePixel(x, y, vertex.z(), color);
+            }
+        }
+    }
+
+    private void drawTriangle(ClipVertex v0, ClipVertex v1, ClipVertex v2) {
+        List<ClipVertex> polygon = clipTriangleToFrustum(v0, v1, v2);
+        if (polygon.size() < 3) {
+            return;
+        }
+        Vertex first = projectVertex(polygon.get(0));
+        if (first == null) {
+            return;
+        }
+        for (int i = 1; i + 1 < polygon.size(); i++) {
+            Vertex second = projectVertex(polygon.get(i));
+            Vertex third = projectVertex(polygon.get(i + 1));
+            if (second == null || third == null) {
+                continue;
+            }
+            rasterizeTriangle(first, second, third);
+        }
+    }
+
+    private void rasterizeTriangle(Vertex v0, Vertex v1, Vertex v2) {
+        if (v0.w() <= 0.0f || v1.w() <= 0.0f || v2.w() <= 0.0f) {
+            return;
+        }
+        float area = edge(v0.x(), v0.y(), v1.x(), v1.y(), v2.x(), v2.y());
+        if (Math.abs(area) < 0.00001f) {
+            return;
+        }
+        int minX = Math.max(0, (int) Math.floor(Math.min(v0.x(), Math.min(v1.x(), v2.x()))));
+        int maxX = Math.min(surfaceWidth - 1, (int) Math.ceil(Math.max(v0.x(), Math.max(v1.x(), v2.x()))));
+        int minY = Math.max(0, (int) Math.floor(Math.min(v0.y(), Math.min(v1.y(), v2.y()))));
+        int maxY = Math.min(surfaceHeight - 1, (int) Math.ceil(Math.max(v0.y(), Math.max(v1.y(), v2.y()))));
+        float invW0 = 1.0f / v0.w();
+        float invW1 = 1.0f / v1.w();
+        float invW2 = 1.0f / v2.w();
+        for (int y = minY; y <= maxY; y++) {
+            for (int x = minX; x <= maxX; x++) {
+                float px = x + 0.5f;
+                float py = y + 0.5f;
+                float w0 = edge(v1.x(), v1.y(), v2.x(), v2.y(), px, py) / area;
+                float w1 = edge(v2.x(), v2.y(), v0.x(), v0.y(), px, py) / area;
+                float w2 = edge(v0.x(), v0.y(), v1.x(), v1.y(), px, py) / area;
+                if (w0 < -0.0001f || w1 < -0.0001f || w2 < -0.0001f) {
+                    continue;
+                }
+                float reciprocal = w0 * invW0 + w1 * invW1 + w2 * invW2;
+                if (reciprocal == 0.0f) {
+                    continue;
+                }
+                float u = (w0 * v0.u() * invW0 + w1 * v1.u() * invW1 + w2 * v2.u() * invW2) / reciprocal;
+                float v = (w0 * v0.v() * invW0 + w1 * v1.v() * invW1 + w2 * v2.v() * invW2) / reciprocal;
+                float depth = w0 * v0.z() + w1 * v1.z() + w2 * v2.z();
+                float eyeDepth = w0 * v0.eyeDepth() + w1 * v1.eyeDepth() + w2 * v2.eyeDepth();
+                int color = shadeFragment(u, v, eyeDepth, v0.color());
+                writePixel(x, y, depth, color);
+            }
+        }
+    }
+
+    private List<ClipVertex> clipTriangleToFrustum(ClipVertex v0, ClipVertex v1, ClipVertex v2) {
+        List<ClipVertex> polygon = new ArrayList<>(3);
+        polygon.add(v0);
+        polygon.add(v1);
+        polygon.add(v2);
+        for (int plane = 0; plane < 6 && !polygon.isEmpty(); plane++) {
+            polygon = clipPolygonToPlane(polygon, plane);
+        }
+        return polygon;
+    }
+
+    private List<ClipVertex> clipPolygonToPlane(List<ClipVertex> polygon, int plane) {
+        if (polygon.isEmpty()) {
+            return List.of();
+        }
+        List<ClipVertex> output = new ArrayList<>(polygon.size() + 2);
+        ClipVertex previous = polygon.get(polygon.size() - 1);
+        float previousDistance = clipDistance(previous, plane);
+        boolean previousInside = previousDistance >= 0.0f;
+        for (ClipVertex current : polygon) {
+            float currentDistance = clipDistance(current, plane);
+            boolean currentInside = currentDistance >= 0.0f;
+            if (currentInside != previousInside) {
+                output.add(interpolateClipVertex(previous, current, previousDistance, currentDistance));
+            }
+            if (currentInside) {
+                output.add(current);
+            }
+            previous = current;
+            previousDistance = currentDistance;
+            previousInside = currentInside;
+        }
+        return output;
+    }
+
+    private boolean isInsideClipVolume(ClipVertex vertex) {
+        if (vertex.clipW() <= 0.0f) {
+            return false;
+        }
+        for (int plane = 0; plane < 6; plane++) {
+            if (clipDistance(vertex, plane) < 0.0f) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static float clipDistance(ClipVertex vertex, int plane) {
+        return switch (plane) {
+            case 0 -> vertex.clipW() + vertex.clipX();
+            case 1 -> vertex.clipW() - vertex.clipX();
+            case 2 -> vertex.clipW() + vertex.clipY();
+            case 3 -> vertex.clipW() - vertex.clipY();
+            case 4 -> vertex.clipW() + vertex.clipZ();
+            case 5 -> vertex.clipW() - vertex.clipZ();
+            default -> throw new IllegalArgumentException("Unsupported clip plane: " + plane);
+        };
+    }
+
+    private static ClipVertex interpolateClipVertex(ClipVertex start, ClipVertex end, float startDistance, float endDistance) {
+        float denominator = startDistance - endDistance;
+        float t = Math.abs(denominator) < 0.000001f ? 0.0f : startDistance / denominator;
+        t = Math.max(0.0f, Math.min(1.0f, t));
+        return new ClipVertex(
+                lerp(start.clipX(), end.clipX(), t),
+                lerp(start.clipY(), end.clipY(), t),
+                lerp(start.clipZ(), end.clipZ(), t),
+                lerp(start.clipW(), end.clipW(), t),
+                lerp(start.u(), end.u(), t),
+                lerp(start.v(), end.v(), t),
+                lerp(start.eyeDepth(), end.eyeDepth(), t),
+                lerpColor(start.color(), end.color(), t)
+        );
+    }
+
+    private int shadeFragment(float u, float v, float eyeDepth, int baseColor) {
+        int color = baseColor;
+        if (enabledCaps.contains(GL_TEXTURE_2D)) {
+            TextureState textureState = textureStates.get(boundTexture2d);
+            if (textureState != null && textureState.pixels != null) {
+                color = modulateColor(color, sampleTexture(textureState, u, v));
+            }
+        }
+        if (enabledCaps.contains(GL_ALPHA_TEST)) {
+            int alpha = (color >>> 24) & 0xFF;
+            if (alphaFunc == GL_NOTEQUAL && alpha == clampColor(alphaRef)) {
+                return 0;
+            }
+        }
+        if (enabledCaps.contains(GL_FOG) && fogEnd > fogStart) {
+            float fogFactor = (fogEnd - eyeDepth) / (fogEnd - fogStart);
+            fogFactor = Math.max(0.0f, Math.min(1.0f, fogFactor));
+            color = lerpColor(fogColorArgb, color, fogFactor);
+        }
+        return color;
+    }
+
+    private void writePixel(int x, int y, float depth, int color) {
+        if (color == 0) {
+            return;
+        }
+        int index = y * surfaceWidth + x;
+        if (enabledCaps.contains(GL_DEPTH_TEST) && depth > surfaceDepth[index] + 0.000001f) {
+            return;
+        }
+        int existing = surfacePixels[index];
+        surfacePixels[index] = enabledCaps.contains(GL_BLEND) ? blend(color, existing) : color;
+        if (depthWriteEnabled || !enabledCaps.contains(GL_DEPTH_TEST)) {
+            surfaceDepth[index] = depth;
+        }
+    }
+
+    private int blend(int src, int dst) {
+        float srcA = ((src >>> 24) & 0xFF) / 255.0f;
+        float[] srcFactor = factor(blendSrcFactor, srcA);
+        float[] dstFactor = factor(blendDstFactor, srcA);
+        int sr = (src >>> 16) & 0xFF;
+        int sg = (src >>> 8) & 0xFF;
+        int sb = src & 0xFF;
+        int sa = (src >>> 24) & 0xFF;
+        int dr = (dst >>> 16) & 0xFF;
+        int dg = (dst >>> 8) & 0xFF;
+        int db = dst & 0xFF;
+        int da = (dst >>> 24) & 0xFF;
+        int r = clampByte(sr * srcFactor[0] + dr * dstFactor[0]);
+        int g = clampByte(sg * srcFactor[1] + dg * dstFactor[1]);
+        int b = clampByte(sb * srcFactor[2] + db * dstFactor[2]);
+        int a = clampByte(sa * srcFactor[3] + da * dstFactor[3]);
+        return (a << 24) | (r << 16) | (g << 8) | b;
+    }
+
+    private float[] factor(int factor, float srcAlpha) {
+        if (factor == GL_ZERO) {
+            return new float[] {0.0f, 0.0f, 0.0f, 0.0f};
+        }
+        if (factor == GL_ONE) {
+            return new float[] {1.0f, 1.0f, 1.0f, 1.0f};
+        }
+        if (factor == GL_SRC_ALPHA) {
+            return new float[] {srcAlpha, srcAlpha, srcAlpha, srcAlpha};
+        }
+        if (factor == GL_ONE_MINUS_SRC_ALPHA) {
+            float value = 1.0f - srcAlpha;
+            return new float[] {value, value, value, value};
+        }
+        return new float[] {1.0f, 1.0f, 1.0f, 1.0f};
+    }
+
+    private int[] decodeRgbaTexture(ByteBuffer buffer, int width, int height) {
+        byte[] data = buffer.rawData();
+        int[] pixels = new int[width * height];
+        int offset = buffer.boundedOffset();
+        for (int i = 0; i < pixels.length; i++) {
+            int base = offset + i * 4;
+            int r = data[base] & 0xFF;
+            int g = data[base + 1] & 0xFF;
+            int b = data[base + 2] & 0xFF;
+            int a = data[base + 3] & 0xFF;
+            pixels[i] = (a << 24) | (r << 16) | (g << 8) | b;
+        }
+        return pixels;
+    }
+
+    private int[] decodePaletteTexture(ByteBuffer buffer, int width, int height) {
+        byte[] data = buffer.rawData();
+        int offset = buffer.boundedOffset();
+        int[] palette = new int[256];
+        for (int i = 0; i < palette.length; i++) {
+            int base = offset + i * 4;
+            int r = data[base] & 0xFF;
+            int g = data[base + 1] & 0xFF;
+            int b = data[base + 2] & 0xFF;
+            int a = data[base + 3] & 0xFF;
+            palette[i] = (a << 24) | (r << 16) | (g << 8) | b;
+        }
+        int[] pixels = new int[width * height];
+        int indexOffset = offset + 1024;
+        for (int i = 0; i < pixels.length; i++) {
+            pixels[i] = palette[data[indexOffset + i] & 0xFF];
+        }
+        return pixels;
+    }
+
+    private int sampleTexture(TextureState textureState, float u, float v) {
+        if (textureState.width <= 0 || textureState.height <= 0 || textureState.pixels == null) {
+            return currentColorArgb;
+        }
+        float wrappedU = wrapCoordinate(u, textureState.wrapS);
+        float wrappedV = wrapCoordinate(v, textureState.wrapT);
+        int x = Math.max(0, Math.min(textureState.width - 1, (int) (wrappedU * (textureState.width - 1))));
+        int y = Math.max(0, Math.min(textureState.height - 1, (int) (wrappedV * (textureState.height - 1))));
+        return textureState.pixels[y * textureState.width + x];
+    }
+
+    private float wrapCoordinate(float value, int wrapMode) {
+        if (wrapMode == GL_CLAMP_TO_EDGE) {
+            return Math.max(0.0f, Math.min(1.0f, value));
+        }
+        return value - (float) Math.floor(value);
+    }
+
+    private int[] readIndices(Buffer buffer, int type, int start, int count) {
+        int[] indices = new int[count];
+        if (type == GL_UNSIGNED_BYTE) {
+            byte[] data = ((ByteBuffer) buffer).rawData();
+            for (int i = 0; i < count; i++) {
+                indices[i] = data[start + i] & 0xFF;
+            }
+        } else {
+            short[] data = ((ShortBuffer) buffer).rawData();
+            for (int i = 0; i < count; i++) {
+                indices[i] = data[start + i] & 0xFFFF;
+            }
+        }
+        return indices;
+    }
+
+    private float[] readVertexComponents(ClientArrayBinding binding, int vertexIndex, int components, float defaultW) {
+        float[] values = new float[] {0.0f, 0.0f, 0.0f, defaultW};
+        if (binding == null) {
+            return values;
+        }
+        int componentSize = sizeOfType(binding.type);
+        int strideBytes = binding.stride == 0 ? binding.componentCount * componentSize : binding.stride;
+        int byteOffset = binding.offset + vertexIndex * strideBytes;
+        Buffer source = binding.usesVbo ? bufferData.get(binding.bufferId) : binding.pointer;
+        if (source == null) {
+            return values;
+        }
+        for (int component = 0; component < Math.min(binding.componentCount, components); component++) {
+            int componentOffset = byteOffset + component * componentSize;
+            values[component] = readComponent(source, binding.type, componentOffset);
+        }
+        return values;
+    }
+
+    private float readComponent(Buffer buffer, int type, int byteOffset) {
+        return switch (type) {
+            case GL_BYTE -> ((ByteBuffer) buffer).rawData()[byteOffset];
+            case GL_UNSIGNED_BYTE -> ((ByteBuffer) buffer).rawData()[byteOffset] & 0xFF;
+            case GL_SHORT -> ((ShortBuffer) buffer).rawData()[byteOffset / 2];
+            case GL_UNSIGNED_SHORT -> ((ShortBuffer) buffer).rawData()[byteOffset / 2] & 0xFFFF;
+            case GL_FLOAT -> ((FloatBuffer) buffer).rawData()[byteOffset / 4];
+            default -> 0.0f;
+        };
+    }
+
+    private Buffer cloneBuffer(Buffer source) {
+        if (source instanceof ByteBuffer byteBuffer) {
+            return ByteBuffer.allocateDirect(byteBuffer);
+        }
+        if (source instanceof ShortBuffer shortBuffer) {
+            return ShortBuffer.allocateDirect(shortBuffer);
+        }
+        if (source instanceof FloatBuffer floatBuffer) {
+            return FloatBuffer.allocateDirect(floatBuffer);
+        }
+        if (source instanceof IntBuffer intBuffer) {
+            return IntBuffer.allocateDirect(intBuffer);
+        }
+        throw new IllegalArgumentException("Unsupported buffer: " + source.getClass().getName());
+    }
+
+    private void writeBufferData(Buffer destination, int offsetBytes, Buffer source) {
+        if (destination instanceof ByteBuffer dst && source instanceof ByteBuffer src) {
+            System.arraycopy(src.rawData(), src.boundedOffset(), dst.rawData(), offsetBytes, src.boundedLength());
+            return;
+        }
+        if (destination instanceof ShortBuffer dst && source instanceof ShortBuffer src) {
+            System.arraycopy(src.rawData(), src.boundedOffset(), dst.rawData(), offsetBytes / 2, src.boundedLength());
+            return;
+        }
+        if (destination instanceof FloatBuffer dst && source instanceof FloatBuffer src) {
+            System.arraycopy(src.rawData(), src.boundedOffset(), dst.rawData(), offsetBytes / 4, src.boundedLength());
+        }
+    }
+
+    private float[] currentMatrix() {
+        return switch (currentMatrixMode) {
+            case GL_PROJECTION -> projectionMatrix;
+            case GL_TEXTURE -> textureMatrix;
+            default -> modelViewMatrix;
+        };
+    }
+
+    private ArrayDeque<float[]> currentStack() {
+        return switch (currentMatrixMode) {
+            case GL_PROJECTION -> projectionStack;
+            case GL_TEXTURE -> textureStack;
+            default -> modelViewStack;
+        };
+    }
+
+    private void pushMatrix() {
+        currentStack().push(Arrays.copyOf(currentMatrix(), 16));
+    }
+
+    private void popMatrix() {
+        ArrayDeque<float[]> stack = currentStack();
+        if (!stack.isEmpty()) {
+            System.arraycopy(stack.pop(), 0, currentMatrix(), 0, 16);
+        }
+    }
+
+    private void multiplyCurrentMatrix(float[] rhs) {
+        float[] result = multiply(currentMatrix(), rhs);
+        System.arraycopy(result, 0, currentMatrix(), 0, 16);
+    }
+
+    private static float[] identityMatrix() {
+        float[] matrix = new float[16];
+        loadIdentity(matrix);
+        return matrix;
+    }
+
+    private static void loadIdentity(float[] matrix) {
+        Arrays.fill(matrix, 0.0f);
+        matrix[0] = 1.0f;
+        matrix[5] = 1.0f;
+        matrix[10] = 1.0f;
+        matrix[15] = 1.0f;
+    }
+
+    private static float[] multiply(float[] lhs, float[] rhs) {
+        float[] out = new float[16];
+        for (int row = 0; row < 4; row++) {
+            for (int col = 0; col < 4; col++) {
+                out[col * 4 + row] = lhs[row] * rhs[col * 4]
+                        + lhs[4 + row] * rhs[col * 4 + 1]
+                        + lhs[8 + row] * rhs[col * 4 + 2]
+                        + lhs[12 + row] * rhs[col * 4 + 3];
+            }
+        }
+        return out;
+    }
+
+    private static float[] multiplyVec4(float[] matrix, float x, float y, float z, float w) {
+        return new float[] {
+                matrix[0] * x + matrix[4] * y + matrix[8] * z + matrix[12] * w,
+                matrix[1] * x + matrix[5] * y + matrix[9] * z + matrix[13] * w,
+                matrix[2] * x + matrix[6] * y + matrix[10] * z + matrix[14] * w,
+                matrix[3] * x + matrix[7] * y + matrix[11] * z + matrix[15] * w
+        };
+    }
+
+    private static float[] translationMatrix(float x, float y, float z) {
+        float[] matrix = identityMatrix();
+        matrix[12] = x;
+        matrix[13] = y;
+        matrix[14] = z;
+        return matrix;
+    }
+
+    private static float[] scaleMatrix(float x, float y, float z) {
+        float[] matrix = identityMatrix();
+        matrix[0] = x;
+        matrix[5] = y;
+        matrix[10] = z;
+        return matrix;
+    }
+
+    private static float[] rotationMatrix(float angleDegrees, float x, float y, float z) {
+        float length = (float) Math.sqrt(x * x + y * y + z * z);
+        if (length == 0.0f) {
+            return identityMatrix();
+        }
+        x /= length;
+        y /= length;
+        z /= length;
+        float radians = (float) Math.toRadians(angleDegrees);
+        float c = (float) Math.cos(radians);
+        float s = (float) Math.sin(radians);
+        float oneMinusC = 1.0f - c;
+        return new float[] {
+                x * x * oneMinusC + c, y * x * oneMinusC + z * s, z * x * oneMinusC - y * s, 0.0f,
+                x * y * oneMinusC - z * s, y * y * oneMinusC + c, z * y * oneMinusC + x * s, 0.0f,
+                x * z * oneMinusC + y * s, y * z * oneMinusC - x * s, z * z * oneMinusC + c, 0.0f,
+                0.0f, 0.0f, 0.0f, 1.0f
+        };
+    }
+
+    private static float[] orthoMatrix(float left, float right, float bottom, float top, float zNear, float zFar) {
+        float[] matrix = identityMatrix();
+        matrix[0] = 2.0f / (right - left);
+        matrix[5] = 2.0f / (top - bottom);
+        matrix[10] = -2.0f / (zFar - zNear);
+        matrix[12] = -(right + left) / (right - left);
+        matrix[13] = -(top + bottom) / (top - bottom);
+        matrix[14] = -(zFar + zNear) / (zFar - zNear);
+        return matrix;
+    }
+
+    private static float[] frustumMatrix(float left, float right, float bottom, float top, float zNear, float zFar) {
+        float[] matrix = new float[16];
+        matrix[0] = (2.0f * zNear) / (right - left);
+        matrix[5] = (2.0f * zNear) / (top - bottom);
+        matrix[8] = (right + left) / (right - left);
+        matrix[9] = (top + bottom) / (top - bottom);
+        matrix[10] = -(zFar + zNear) / (zFar - zNear);
+        matrix[11] = -1.0f;
+        matrix[14] = -(2.0f * zFar * zNear) / (zFar - zNear);
+        return matrix;
+    }
+
+    private static float edge(float ax, float ay, float bx, float by, float px, float py) {
+        return (px - ax) * (by - ay) - (py - ay) * (bx - ax);
+    }
+
+    private static int modulateColor(int baseColor, int textureColor) {
+        int a = (((baseColor >>> 24) & 0xFF) * ((textureColor >>> 24) & 0xFF)) / 255;
+        int r = (((baseColor >>> 16) & 0xFF) * ((textureColor >>> 16) & 0xFF)) / 255;
+        int g = (((baseColor >>> 8) & 0xFF) * ((textureColor >>> 8) & 0xFF)) / 255;
+        int b = ((baseColor & 0xFF) * (textureColor & 0xFF)) / 255;
+        return (a << 24) | (r << 16) | (g << 8) | b;
+    }
+
+    private static int lerpColor(int fogColor, int color, float factor) {
+        int fa = (fogColor >>> 24) & 0xFF;
+        int fr = (fogColor >>> 16) & 0xFF;
+        int fg = (fogColor >>> 8) & 0xFF;
+        int fb = fogColor & 0xFF;
+        int ca = (color >>> 24) & 0xFF;
+        int cr = (color >>> 16) & 0xFF;
+        int cg = (color >>> 8) & 0xFF;
+        int cb = color & 0xFF;
+        int a = clampByte(fa + (ca - fa) * factor);
+        int r = clampByte(fr + (cr - fr) * factor);
+        int g = clampByte(fg + (cg - fg) * factor);
+        int b = clampByte(fb + (cb - fb) * factor);
+        return (a << 24) | (r << 16) | (g << 8) | b;
+    }
+
+    private static float lerp(float start, float end, float factor) {
+        return start + (end - start) * factor;
+    }
+
+    private static int clampByte(float value) {
+        return Math.max(0, Math.min(255, Math.round(value)));
     }
 
     private void ensureBound() {
@@ -1575,5 +2445,9 @@ public class OpglGraphics {
             return 255;
         }
         return Math.round(component * 255.0f);
+    }
+
+    private static float clampUnit(float value) {
+        return Math.max(0.0f, Math.min(1.0f, value));
     }
 }

@@ -19,7 +19,7 @@ public final class HostKeyMapper {
             return directionalKeyCode;
         }
 
-        var sharedKeyCode = toSharedPhoneKeyCode(awtKeyCode);
+        var sharedKeyCode = toSharedPhoneKeyCode(awtKeyCode, jPhoneDirectionalLayout);
         if (sharedKeyCode != NO_MAPPING) {
             return sharedKeyCode;
         }
@@ -59,10 +59,12 @@ public final class HostKeyMapper {
         };
     }
 
-    private static int toSharedPhoneKeyCode(int awtKeyCode) {
+    private static int toSharedPhoneKeyCode(int awtKeyCode, boolean jPhoneDirectionalLayout) {
         return switch (awtKeyCode) {
-            case KeyEvent.VK_A, KeyEvent.VK_F1 -> Canvas.SOFT1;
-            case KeyEvent.VK_S, KeyEvent.VK_F2 -> Canvas.SOFT2;
+            case KeyEvent.VK_A, KeyEvent.VK_F1 ->
+                    jPhoneDirectionalLayout ? -21 : Canvas.SOFT1;
+            case KeyEvent.VK_S, KeyEvent.VK_F2 ->
+                    jPhoneDirectionalLayout ? -22 : Canvas.SOFT2;
             case KeyEvent.VK_0 -> '0';
             case KeyEvent.VK_1 -> '1';
             case KeyEvent.VK_2 -> '2';

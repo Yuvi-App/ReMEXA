@@ -3,6 +3,7 @@ package javax.microedition.lcdui;
 import java.util.HashSet;
 import java.util.Set;
 import javax.swing.SwingUtilities;
+import remexa.host.runtime.LegacyRuntimeSupport;
 import remexa.host.runtime.MidletRuntime;
 
 public abstract class Canvas extends Displayable {
@@ -408,6 +409,7 @@ public abstract class Canvas extends Displayable {
         }
         shown = true;
         showNotify();
+        LegacyRuntimeSupport.publishLegacyState();
     }
 
     final void fireHideNotify() {

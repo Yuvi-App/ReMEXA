@@ -44,4 +44,8 @@ public class ByteBuffer extends com.mexa.opgl.Buffer {
         validateRange(dstIndex, buf.length, srcIndex, length);
         System.arraycopy(buf, srcIndex, data, dstIndex, length);
     }
+
+    byte[] rawData() {
+        return data;
+    }
 }

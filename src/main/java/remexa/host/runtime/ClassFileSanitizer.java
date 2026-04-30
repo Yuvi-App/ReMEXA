@@ -6,6 +6,7 @@ import java.lang.classfile.CodeBuilder;
 import java.lang.classfile.CodeElement;
 import java.lang.classfile.CodeModel;
 import java.lang.classfile.CodeTransform;
+import java.lang.classfile.ClassModel;
 import java.lang.classfile.Instruction;
 import java.lang.classfile.Label;
 import java.lang.classfile.MethodBuilder;
@@ -22,6 +23,7 @@ import java.lang.classfile.instruction.ReturnInstruction;
 import java.lang.classfile.instruction.ThrowInstruction;
 import java.lang.constant.ClassDesc;
 import java.lang.constant.MethodTypeDesc;
+import java.lang.reflect.AccessFlag;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -33,6 +35,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 final class ClassFileSanitizer {
     private static final ClassDesc SPIN_SUPPORT = ClassDesc.of("remexa.host.runtime.LegacyRuntimeSupport");
+    private static final String GAME_CANVAS_INTERNAL_NAME = "javax/microedition/lcdui/game/GameCanvas";
+    private static final String RUNNABLE_INTERNAL_NAME = "java/lang/Runnable";
+    private static final String GRAPHICS_DESCRIPTOR = "Ljavax/microedition/lcdui/Graphics;";
     private static final MethodTypeDesc SPIN_HINT_DESCRIPTOR = MethodTypeDesc.ofDescriptor("()V");
     private static final MethodTypeDesc BOOLEAN_STRING_DESCRIPTOR = MethodTypeDesc.ofDescriptor("(Ljava/lang/String;)Z");
     private static final MethodTypeDesc RESOURCE_STREAM_DESCRIPTOR = MethodTypeDesc.of(
@@ -109,10 +114,11 @@ final class ClassFileSanitizer {
             var changes = new AtomicInteger();
             byte[] transformed = classFile.transformClass(
                     classModel,
-                    ClassTransform.transformingMethods(
+                    ClassTransform.ofStateful(() -> new LegacyFieldCompatibilityTransform(classModel, changes))
+                            .andThen(ClassTransform.transformingMethods(
                                     ClassFileSanitizer::isLegacyBootstrapStub,
                                     MethodTransform.ofStateful(() -> new LegacyBootstrapStubTransform(changes))
-                            )
+                            ))
                             .andThen(ClassTransform.transformingMethodBodies(
                                     CodeTransform.ofStateful(() -> new LegacyCodeTransform(changes))
                             ))
@@ -333,6 +339,50 @@ final class ClassFileSanitizer {
                 return;
             }
             builder.with(element);
+        }
+    }
+
+    private static final class LegacyFieldCompatibilityTransform implements ClassTransform {
+        private final AtomicInteger changeCount;
+        private final boolean makeGraphicsFieldsVolatile;
+
+        private LegacyFieldCompatibilityTransform(ClassModel classModel, AtomicInteger changeCount) {
+            this.changeCount = changeCount;
+            this.makeGraphicsFieldsVolatile = isLegacyCanvasWorkerClass(classModel);
+        }
+
+        @Override
+        public void accept(java.lang.classfile.ClassBuilder builder, java.lang.classfile.ClassElement element) {
+            if (makeGraphicsFieldsVolatile && element instanceof java.lang.classfile.FieldModel field && shouldMakeGraphicsFieldVolatile(field)) {
+                builder.withField(field.fieldName(), field.fieldType(), fieldBuilder -> {
+                    var flags = new ArrayList<>(field.flags().flags());
+                    flags.add(AccessFlag.VOLATILE);
+                    fieldBuilder.withFlags(flags.toArray(AccessFlag[]::new));
+                    field.forEach(fieldElement -> {
+                        if (!(fieldElement instanceof java.lang.classfile.AccessFlags)) {
+                            fieldBuilder.with(fieldElement);
+                        }
+                    });
+                });
+                changeCount.incrementAndGet();
+                return;
+            }
+            builder.with(element);
+        }
+
+        private static boolean isLegacyCanvasWorkerClass(ClassModel classModel) {
+            return classModel.superclass()
+                            .map(superClass -> GAME_CANVAS_INTERNAL_NAME.equals(superClass.asInternalName()))
+                            .orElse(false)
+                    && classModel.interfaces().stream().anyMatch(iface -> RUNNABLE_INTERNAL_NAME.equals(iface.asInternalName()));
+        }
+
+        private static boolean shouldMakeGraphicsFieldVolatile(java.lang.classfile.FieldModel field) {
+            var flags = field.flags();
+            return !flags.has(AccessFlag.STATIC)
+                    && !flags.has(AccessFlag.FINAL)
+                    && !flags.has(AccessFlag.VOLATILE)
+                    && field.fieldType().equalsString(GRAPHICS_DESCRIPTOR);
         }
     }
 }

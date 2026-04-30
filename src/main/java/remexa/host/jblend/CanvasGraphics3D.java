@@ -209,6 +209,10 @@ public final class CanvasGraphics3D extends Graphics implements Graphics3D {
         sceneDirty = true;
     }
 
+    public BufferedImage backingImage() {
+        return backingImage;
+    }
+
     @Override
     public void resetState() {
         flush();

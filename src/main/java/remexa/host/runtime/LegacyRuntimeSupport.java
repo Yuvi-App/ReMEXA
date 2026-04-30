@@ -21,6 +21,13 @@ public final class LegacyRuntimeSupport {
         Thread.onSpinWait();
     }
 
+    public static void publishLegacyState() {
+        synchronized (SPIN_MONITOR) {
+            // Pair with spinLoopHint() so UI-thread callbacks publish state changes
+            // to legacy worker threads that busy-spin without volatile fields.
+        }
+    }
+
     public static InputStream getResourceAsStream(Class<?> anchor, String name) {
         if (anchor == null || name == null) {
             return null;

@@ -44,4 +44,8 @@ public class IntBuffer extends com.mexa.opgl.Buffer {
         validateRange(dstIndex, buf.length, srcIndex, length);
         System.arraycopy(buf, srcIndex, data, dstIndex, length);
     }
+
+    int[] rawData() {
+        return data;
+    }
 }
