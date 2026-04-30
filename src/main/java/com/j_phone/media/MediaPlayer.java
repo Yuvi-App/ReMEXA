@@ -1,6 +1,19 @@
 package com.j_phone.media;
 
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.util.Locale;
+import javax.microedition.media.Manager;
+import javax.microedition.media.MediaException;
+import javax.microedition.media.Player;
+import javax.microedition.media.PlayerListener;
+import org.recompile.mobile.Mobile;
+import remexa.probes.DebugLog;
+import remexa.probes.LogCategory;
+
 public class MediaPlayer extends javax.microedition.lcdui.Canvas {
+    private static final String LOG_SOURCE = MediaPlayer.class.getName();
+
     private byte[] mediaData;
     private String mediaUrl;
     private int contentX;
@@ -8,6 +21,11 @@ public class MediaPlayer extends javax.microedition.lcdui.Canvas {
     private boolean playing;
     private boolean paused;
     private MediaPlayerListener listener;
+    private Player delegate;
+    private PlayerListener delegateListener;
+    private boolean delegatePaused;
+    private boolean fallbackMode;
+    private boolean suppressDelegateStopEvent;
 
     protected MediaPlayer() {
         remexa.probes.SdkStubSupport.log("com.j_phone.media.MediaPlayer", "MediaPlayer");
@@ -26,14 +44,22 @@ public class MediaPlayer extends javax.microedition.lcdui.Canvas {
 
     public void setMediaData (byte[] data) {
         remexa.probes.SdkStubSupport.log("com.j_phone.media.MediaPlayer", "setMediaData", data);
+        releaseDelegate();
         this.mediaData = data;
         this.mediaUrl = null;
+        this.playing = false;
+        this.paused = false;
+        this.fallbackMode = false;
     }
 
     public void setMediaData (java.lang.String url) {
         remexa.probes.SdkStubSupport.log("com.j_phone.media.MediaPlayer", "setMediaData", url);
+        releaseDelegate();
         this.mediaUrl = url;
         this.mediaData = null;
+        this.playing = false;
+        this.paused = false;
+        this.fallbackMode = false;
     }
 
     public int getMediaWidth () {
@@ -64,18 +90,25 @@ public class MediaPlayer extends javax.microedition.lcdui.Canvas {
 
     public void play () {
         remexa.probes.SdkStubSupport.log("com.j_phone.media.MediaPlayer", "play");
-        this.playing = true;
-        this.paused = false;
-        fireStateChanged(MediaPlayerListener.PLAYED);
+        if (startDelegatePlayback(false)) {
+            return;
+        }
+        enterFallbackPlayback();
     }
 
     public void play (boolean isRepeat) {
         remexa.probes.SdkStubSupport.log("com.j_phone.media.MediaPlayer", "play", isRepeat);
-        play();
+        if (startDelegatePlayback(isRepeat)) {
+            return;
+        }
+        enterFallbackPlayback();
     }
 
     public void stop () {
         remexa.probes.SdkStubSupport.log("com.j_phone.media.MediaPlayer", "stop");
+        if (stopDelegatePlayback(true)) {
+            return;
+        }
         this.playing = false;
         this.paused = false;
         fireStateChanged(MediaPlayerListener.STOPPED);
@@ -83,6 +116,9 @@ public class MediaPlayer extends javax.microedition.lcdui.Canvas {
 
     public void pause () {
         remexa.probes.SdkStubSupport.log("com.j_phone.media.MediaPlayer", "pause");
+        if (pauseDelegatePlayback()) {
+            return;
+        }
         this.playing = false;
         this.paused = true;
         fireStateChanged(MediaPlayerListener.PAUSED);
@@ -90,6 +126,9 @@ public class MediaPlayer extends javax.microedition.lcdui.Canvas {
 
     public void resume () {
         remexa.probes.SdkStubSupport.log("com.j_phone.media.MediaPlayer", "resume");
+        if (resumeDelegatePlayback()) {
+            return;
+        }
         this.playing = true;
         this.paused = false;
         fireStateChanged(MediaPlayerListener.PLAYED);
@@ -136,6 +175,221 @@ public class MediaPlayer extends javax.microedition.lcdui.Canvas {
 
     boolean hasMedia() {
         return mediaData != null || (mediaUrl != null && !mediaUrl.isBlank());
+    }
+
+    private boolean startDelegatePlayback(boolean repeat) {
+        if (!hasMedia()) {
+            return false;
+        }
+        if (!ensureDelegate()) {
+            return false;
+        }
+        try {
+            if (delegate.getState() == Player.STARTED) {
+                return true;
+            }
+            delegate.setLoopCount(repeat ? -1 : 1);
+            delegate.start();
+            delegatePaused = false;
+            playing = true;
+            paused = false;
+            fireStateChanged(MediaPlayerListener.PLAYED);
+            return true;
+        } catch (MediaException | IllegalStateException exception) {
+            logMediaIssue("Failed to start delegated media playback", exception);
+            releaseDelegate();
+            return false;
+        }
+    }
+
+    private boolean stopDelegatePlayback(boolean resetPosition) {
+        if (delegate == null) {
+            return false;
+        }
+        try {
+            suppressDelegateStopEvent = true;
+            if (delegate.getState() == Player.STARTED) {
+                delegate.stop();
+            }
+            if (resetPosition) {
+                delegate.setMediaTime(0L);
+            }
+        } catch (MediaException | IllegalStateException exception) {
+            logMediaIssue("Failed to stop delegated media playback", exception);
+        } finally {
+            suppressDelegateStopEvent = false;
+        }
+        delegatePaused = false;
+        playing = false;
+        paused = false;
+        fireStateChanged(MediaPlayerListener.STOPPED);
+        return true;
+    }
+
+    private boolean pauseDelegatePlayback() {
+        if (delegate == null || delegate.getState() != Player.STARTED) {
+            return false;
+        }
+        try {
+            suppressDelegateStopEvent = true;
+            delegate.stop();
+            delegatePaused = true;
+            playing = false;
+            paused = true;
+            fireStateChanged(MediaPlayerListener.PAUSED);
+            return true;
+        } catch (MediaException | IllegalStateException exception) {
+            logMediaIssue("Failed to pause delegated media playback", exception);
+            return false;
+        } finally {
+            suppressDelegateStopEvent = false;
+        }
+    }
+
+    private boolean resumeDelegatePlayback() {
+        if (delegate == null || !delegatePaused) {
+            return false;
+        }
+        try {
+            delegate.start();
+            delegatePaused = false;
+            playing = true;
+            paused = false;
+            fireStateChanged(MediaPlayerListener.PLAYED);
+            return true;
+        } catch (MediaException | IllegalStateException exception) {
+            logMediaIssue("Failed to resume delegated media playback", exception);
+            releaseDelegate();
+            return false;
+        }
+    }
+
+    private boolean ensureDelegate() {
+        if (fallbackMode) {
+            return false;
+        }
+        if (delegate != null) {
+            return true;
+        }
+        byte[] source;
+        try {
+            source = loadSourceBytes();
+        } catch (IOException exception) {
+            logMediaIssue("Failed to load media source", exception);
+            fallbackMode = true;
+            return false;
+        }
+        if (source == null || source.length == 0) {
+            fallbackMode = true;
+            return false;
+        }
+        try {
+            String contentType = guessContentType(source, mediaUrl);
+            delegate = Manager.createPlayer(new ByteArrayInputStream(source), contentType);
+            delegateListener = this::handleDelegateEvent;
+            delegate.addPlayerListener(delegateListener);
+            fallbackMode = false;
+            return true;
+        } catch (IOException | MediaException | IllegalArgumentException exception) {
+            logMediaIssue("Falling back to stubbed J-Phone media playback", exception);
+            releaseDelegate();
+            fallbackMode = true;
+            return false;
+        }
+    }
+
+    private byte[] loadSourceBytes() throws IOException {
+        if (mediaData != null) {
+            return mediaData;
+        }
+        if (mediaUrl == null || mediaUrl.isBlank()) {
+            return null;
+        }
+        return Mobile.getMIDletResourceAsByteArray(mediaUrl);
+    }
+
+    private String guessContentType(byte[] source, String sourceName) {
+        if (startsWith(source, 'M', 'M', 'M', 'D')) {
+            return "application/x-smaf";
+        }
+        if (startsWith(source, 'M', 'T', 'h', 'd')) {
+            return "audio/midi";
+        }
+        if (startsWith(source, 'R', 'I', 'F', 'F')) {
+            return "audio/x-wav";
+        }
+        var normalizedName = sourceName == null ? "" : sourceName.trim().toLowerCase(Locale.ROOT);
+        if (normalizedName.endsWith(".mmf") || normalizedName.endsWith(".smaf") || normalizedName.endsWith(".mld")) {
+            return "application/x-smaf";
+        }
+        if (normalizedName.endsWith(".mid") || normalizedName.endsWith(".midi")) {
+            return "audio/midi";
+        }
+        if (normalizedName.endsWith(".wav")) {
+            return "audio/x-wav";
+        }
+        return "unknown";
+    }
+
+    private boolean startsWith(byte[] source, int... bytes) {
+        if (source.length < bytes.length) {
+            return false;
+        }
+        for (int index = 0; index < bytes.length; index++) {
+            if ((source[index] & 0xFF) != (bytes[index] & 0xFF)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private void handleDelegateEvent(Player player, String event, Object eventData) {
+        if (PlayerListener.END_OF_MEDIA.equals(event)
+                || PlayerListener.STOPPED.equals(event)
+                || PlayerListener.STOPPED_AT_TIME.equals(event)
+                || PlayerListener.CLOSED.equals(event)) {
+            if (suppressDelegateStopEvent) {
+                return;
+            }
+            delegatePaused = false;
+            playing = false;
+            paused = false;
+            fireStateChanged(MediaPlayerListener.STOPPED);
+            return;
+        }
+        if (PlayerListener.ERROR.equals(event)) {
+            delegatePaused = false;
+            playing = false;
+            paused = false;
+            logMediaIssue("Delegated media playback reported an error", eventData);
+            fireStateChanged(MediaPlayerListener.STOPPED);
+        }
+    }
+
+    private void enterFallbackPlayback() {
+        this.playing = true;
+        this.paused = false;
+        fireStateChanged(MediaPlayerListener.PLAYED);
+    }
+
+    private void releaseDelegate() {
+        if (delegate != null && delegateListener != null) {
+            delegate.removePlayerListener(delegateListener);
+        }
+        if (delegate != null) {
+            try {
+                delegate.close();
+            } catch (RuntimeException ignored) {
+                // Best-effort release; the stub fallback remains usable.
+            }
+        }
+        delegate = null;
+        delegateListener = null;
+        delegatePaused = false;
+    }
+
+    private void logMediaIssue(String message, Object detail) {
+        DebugLog.log(LogCategory.MEDIA, LOG_SOURCE, message + ": " + detail);
     }
 
     private void fireStateChanged(int state) {
