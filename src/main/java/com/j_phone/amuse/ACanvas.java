@@ -22,8 +22,14 @@ public abstract class ACanvas extends javax.microedition.lcdui.Canvas implements
         if (numPalettes < 1 || numPalettes > 256 || numPatterns < 1 || numPatterns > 256) {
             throw new IllegalArgumentException("ACanvas palette and pattern counts must be between 1 and 256.");
         }
-        if (fw <= 0 || fh <= 0) {
-            throw new IllegalArgumentException("ACanvas framebuffer size must be positive.");
+        var metrics = remexa.host.runtime.MidletRuntime.getDisplayMetrics((javax.microedition.lcdui.Displayable) null);
+        if (fw < 0 || fh < 0) {
+            throw new IllegalArgumentException("ACanvas framebuffer size must not be negative.");
+        }
+        int resolvedWidth = fw == 0 ? metrics.width() : fw;
+        int resolvedHeight = fh == 0 ? metrics.height() : fh;
+        if (resolvedWidth > metrics.width() || resolvedHeight > metrics.height()) {
+            throw new IllegalArgumentException("ACanvas framebuffer size must not exceed the display size.");
         }
         palette = new int[numPalettes];
         patterns = new byte[numPatterns][];
@@ -32,7 +38,7 @@ public abstract class ACanvas extends javax.microedition.lcdui.Canvas implements
         // and titles can flush the framebuffer into that screen at arbitrary
         // coordinates. Updating the display metrics here breaks games that
         // probe getWidth()/getHeight() before the canvas is shown.
-        remexa.host.runtime.MidletRuntime.createAmuseFrameBuffer(this, fw, fh);
+        remexa.host.runtime.MidletRuntime.createAmuseFrameBuffer(this, resolvedWidth, resolvedHeight);
     }
 
 
