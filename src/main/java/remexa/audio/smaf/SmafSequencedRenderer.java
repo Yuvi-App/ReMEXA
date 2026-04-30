@@ -17,6 +17,7 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
@@ -25,6 +26,10 @@ import java.util.Set;
 final class SmafSequencedRenderer {
     private static final int DEFAULT_OUTPUT_SAMPLE_RATE = 32_000;
     private static final int OUTPUT_CHANNELS = 2;
+    private static final float TRAILING_SILENCE_EPSILON = 0.0001f;
+    private static final int TRAILING_SILENCE_GRACE_MILLIS = 120;
+    private static final int MAX_STREAM_TAIL_MILLIS =
+            Integer.getInteger("remexa.smafMaxStreamTailMs", 500);
     private final String rendererName;
     private final SmafSynthProvider synthProvider;
     private final int outputSampleRate;
@@ -97,6 +102,14 @@ final class SmafSequencedRenderer {
         int finalFrameCount = trimTrailingSilence(mix, mixedFrameCount);
         return new SmafRenderedAudio(outputSampleRate, OUTPUT_CHANNELS, finalFrameCount,
                 encodePcm16Le(mix, finalFrameCount));
+    }
+
+    SmafStreamingSession openStream(Sequence sequence,
+                                    List<SMAFDecoder.SequenceSysExEvent> sysExEvents,
+                                    List<byte[]> startupPackets,
+                                    List<byte[]> pcmClipData,
+                                    List<SMAFDecoder.PcmSequenceTrigger> pcmTriggers) throws Exception {
+        return new StreamingSession(sequence, sysExEvents, startupPackets, pcmClipData, pcmTriggers);
     }
 
     private static MidiChannelState[] createChannelStates() {
@@ -439,6 +452,62 @@ final class SmafSequencedRenderer {
         return resolved;
     }
 
+    private List<ScheduledPcmClip> schedulePcmClips(List<PcmClip> pcmClips,
+                                                    List<SMAFDecoder.PcmSequenceTrigger> pcmTriggers) {
+        List<ScheduledPcmClip> scheduled = new ArrayList<>();
+        for (SMAFDecoder.PcmSequenceTrigger trigger : pcmTriggers) {
+            ResolvedPcmClip resolved = resolvePcmClip(trigger, pcmClips);
+            if (resolved == null) {
+                continue;
+            }
+            PcmClip clip = resolved.clip();
+            if (clip == null || clip.frameCount <= 0) {
+                continue;
+            }
+            int startFrame = tickToFrames(trigger.triggerTick());
+            float gain = Math.max(0.0f, Math.min(1.0f, trigger.velocity() / 127.0f));
+            scheduled.add(new ScheduledPcmClip(startFrame, clip, gain));
+        }
+        scheduled.sort(Comparator.comparingInt(ScheduledPcmClip::startFrame));
+        return scheduled;
+    }
+
+    private int scheduledPcmEndFrame(List<ScheduledPcmClip> scheduled) {
+        int endFrame = 0;
+        for (ScheduledPcmClip clip : scheduled) {
+            endFrame = Math.max(endFrame, clip.endFrame());
+        }
+        return endFrame;
+    }
+
+    private static void mixScheduledPcmClips(float[] output,
+                                             int chunkStartFrame,
+                                             int frameCount,
+                                             List<ScheduledPcmClip> scheduled) {
+        int chunkEndFrame = chunkStartFrame + frameCount;
+        for (ScheduledPcmClip scheduledClip : scheduled) {
+            if (scheduledClip.endFrame() <= chunkStartFrame) {
+                continue;
+            }
+            if (scheduledClip.startFrame() >= chunkEndFrame) {
+                break;
+            }
+            int sourceStartFrame = Math.max(0, chunkStartFrame - scheduledClip.startFrame());
+            int outputStartFrame = Math.max(0, scheduledClip.startFrame() - chunkStartFrame);
+            int framesToCopy = Math.min(
+                    scheduledClip.clip().frameCount - sourceStartFrame,
+                    frameCount - outputStartFrame);
+            int sourceOffset = sourceStartFrame * OUTPUT_CHANNELS;
+            int outputOffset = outputStartFrame * OUTPUT_CHANNELS;
+            for (int frame = 0; frame < framesToCopy; frame++) {
+                output[outputOffset] += scheduledClip.clip().samples[sourceOffset] * scheduledClip.gain();
+                output[outputOffset + 1] += scheduledClip.clip().samples[sourceOffset + 1] * scheduledClip.gain();
+                sourceOffset += OUTPUT_CHANNELS;
+                outputOffset += OUTPUT_CHANNELS;
+            }
+        }
+    }
+
     private static int countNonNullClips(List<PcmClip> pcmClips) {
         int count = 0;
         for (PcmClip clip : pcmClips) {
@@ -453,6 +522,15 @@ final class SmafSequencedRenderer {
         float peak = 0.0f;
         for (float sample : samples) {
             peak = Math.max(peak, Math.abs(sample));
+        }
+        return peak;
+    }
+
+    private static float peak(float[] samples, int sampleCount) {
+        float peak = 0.0f;
+        int length = Math.max(0, Math.min(samples.length, sampleCount));
+        for (int i = 0; i < length; i++) {
+            peak = Math.max(peak, Math.abs(samples[i]));
         }
         return peak;
     }
@@ -578,6 +656,12 @@ final class SmafSequencedRenderer {
     private record PcmClip(float[] samples, int frameCount) {
     }
 
+    private record ScheduledPcmClip(int startFrame, PcmClip clip, float gain) {
+        private int endFrame() {
+            return startFrame + clip.frameCount;
+        }
+    }
+
     private record ResolvedPcmClip(int index, PcmClip clip) {
     }
 
@@ -624,6 +708,138 @@ final class SmafSequencedRenderer {
                 case ShortMessage.NOTE_ON -> velocity == 0 ? 2 : 3;
                 default -> 4;
             };
+        }
+    }
+
+    private final class StreamingSession implements SmafStreamingSession {
+        private final Sequence sequence;
+        private final List<SMAFDecoder.SequenceSysExEvent> sysExEvents;
+        private final List<byte[]> startupPackets;
+        private final List<PcmClip> pcmClips;
+        private final List<ScheduledPcmClip> scheduledPcmClips;
+        private final List<RenderEvent> events;
+        private final MidiChannelState[] channelStates = createChannelStates();
+        private final int pcmEndFrame;
+        private final int trailingSilenceGraceFrames;
+        private final int maxTailFrames;
+        private SmafSynthAdapter sampler;
+        private int framePosition;
+        private int eventIndex;
+        private int trailingSilentFrames;
+        private int tailFramesRendered;
+
+        private StreamingSession(Sequence sequence,
+                                 List<SMAFDecoder.SequenceSysExEvent> sysExEvents,
+                                 List<byte[]> startupPackets,
+                                 List<byte[]> pcmClipData,
+                                 List<SMAFDecoder.PcmSequenceTrigger> pcmTriggers) throws Exception {
+            this.sequence = sequence;
+            this.sysExEvents = sysExEvents;
+            this.startupPackets = startupPackets;
+            this.events = collectEvents(sequence, sysExEvents, startupPackets);
+            this.pcmClips = decodePcmClips(pcmClipData);
+            this.scheduledPcmClips = schedulePcmClips(this.pcmClips, pcmTriggers);
+            this.pcmEndFrame = scheduledPcmEndFrame(scheduledPcmClips);
+            this.trailingSilenceGraceFrames = Math.max(1,
+                    outputSampleRate * TRAILING_SILENCE_GRACE_MILLIS / 1_000);
+            this.maxTailFrames = Math.max(trailingSilenceGraceFrames,
+                    outputSampleRate * MAX_STREAM_TAIL_MILLIS / 1_000);
+            if (SmafDebug.isEnabled("render", SmafDebug.Level.INFO)) {
+                SmafDebug.info("render",
+                        rendererName + " stream events=" + events.size()
+                                + " startupPackets=" + startupPackets.size()
+                                + " sequenceSysEx=" + sysExEvents.size()
+                                + " pcmClips=" + countNonNullClips(this.pcmClips)
+                                + " pcmTriggers=" + pcmTriggers.size());
+            }
+            resetSampler();
+        }
+
+        @Override
+        public int sampleRate() {
+            return outputSampleRate;
+        }
+
+        @Override
+        public int channelCount() {
+            return OUTPUT_CHANNELS;
+        }
+
+        @Override
+        public int render(float[] output, int maxFrames) {
+            if (maxFrames <= 0) {
+                return 0;
+            }
+            Arrays.fill(output, 0, Math.min(output.length, maxFrames * OUTPUT_CHANNELS), 0.0f);
+            int producedFrames = 0;
+            int chunkStartFrame = framePosition;
+            while (producedFrames < maxFrames) {
+                while (eventIndex < events.size() && tickToFrames(events.get(eventIndex).tick()) <= framePosition) {
+                    applyEvent(sampler, channelStates, events.get(eventIndex));
+                    eventIndex++;
+                }
+                if (eventIndex >= events.size() && sampler.isFinished() && framePosition >= pcmEndFrame) {
+                    break;
+                }
+                int framesUntilEvent = maxFrames - producedFrames;
+                if (eventIndex < events.size()) {
+                    framesUntilEvent = Math.min(framesUntilEvent,
+                            Math.max(0, tickToFrames(events.get(eventIndex).tick()) - framePosition));
+                }
+                boolean tailOnly = eventIndex >= events.size() && framePosition >= pcmEndFrame;
+                if (tailOnly) {
+                    int remainingTailFrames = maxTailFrames - tailFramesRendered;
+                    if (remainingTailFrames <= 0) {
+                        break;
+                    }
+                    framesUntilEvent = Math.min(framesUntilEvent, remainingTailFrames);
+                }
+                if (framesUntilEvent == 0) {
+                    continue;
+                }
+                sampler.render(output, producedFrames * OUTPUT_CHANNELS, framesUntilEvent, 1.0f, 1.0f, false, false);
+                producedFrames += framesUntilEvent;
+                framePosition += framesUntilEvent;
+                if (tailOnly) {
+                    tailFramesRendered += framesUntilEvent;
+                }
+            }
+            if (producedFrames > 0) {
+                mixScheduledPcmClips(output, chunkStartFrame, producedFrames, scheduledPcmClips);
+                boolean tailOnly = eventIndex >= events.size() && framePosition >= pcmEndFrame;
+                if (tailOnly) {
+                    float peak = peak(output, producedFrames * OUTPUT_CHANNELS);
+                    if (peak <= TRAILING_SILENCE_EPSILON) {
+                        trailingSilentFrames += producedFrames;
+                        if (trailingSilentFrames >= trailingSilenceGraceFrames) {
+                            return 0;
+                        }
+                    } else {
+                        trailingSilentFrames = 0;
+                    }
+                } else {
+                    trailingSilentFrames = 0;
+                    tailFramesRendered = 0;
+                }
+            }
+            return producedFrames;
+        }
+
+        @Override
+        public void rewind() throws Exception {
+            framePosition = 0;
+            eventIndex = 0;
+            trailingSilentFrames = 0;
+            tailFramesRendered = 0;
+            for (MidiChannelState channelState : channelStates) {
+                channelState.reset();
+            }
+            resetSampler();
+        }
+
+        private void resetSampler() throws Exception {
+            sampler = synthProvider.instance(outputSampleRate);
+            sampler.reset();
         }
     }
 

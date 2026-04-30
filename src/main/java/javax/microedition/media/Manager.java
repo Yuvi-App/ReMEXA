@@ -41,6 +41,7 @@ public final class Manager {
         byte[] source = readAllBytes(stream);
         String normalizedType = normalizeContentType(type);
         if (isSmafType(normalizedType, source)) {
+            SmafPlayback.prewarm(source);
             return new SmafPlayer(source, normalizedType.isEmpty() ? "application/x-smaf" : normalizedType);
         }
         if (isMidiType(normalizedType, source)) {
@@ -628,11 +629,25 @@ public final class Manager {
                         notifyEndOfMedia();
                     }
                 });
+                playback.prepareAsync();
                 pausedByStop = false;
                 onVolumeChanged();
             } catch (Exception exception) {
                 closeQuietly();
                 throw new MediaException("Failed to realize SMAF player.", exception);
+            }
+        }
+
+        @Override
+        protected synchronized void doPrefetch() throws MediaException {
+            if (playback == null) {
+                throw new MediaException("SMAF player was not realized.");
+            }
+            try {
+                playback.prefetch();
+                onVolumeChanged();
+            } catch (Exception exception) {
+                throw new MediaException("Failed to prefetch SMAF player.", exception);
             }
         }
 

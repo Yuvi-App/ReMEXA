@@ -1,8 +1,6 @@
 package com.jblend.media.smaf.phrase;
 
-import remexa.audio.smaf.SmafRenderedAudio;
 import remexa.audio.smaf.SmafPlayback;
-import remexa.audio.smaf.SmafRenderedPlayer;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -21,9 +19,9 @@ public final class PhraseTrack {
 
     private Phrase phrase;
     private SmafPlayback playback;
-    private SmafRenderedPlayer linkedRenderedPlayer;
     private PhraseTrack subjectTo;
     private PhraseTrackListener listener;
+    private GroupLoopCoordinator loopCoordinator;
     private int volume = 127;
     private int panpot = 64;
     private boolean muted;
@@ -36,7 +34,7 @@ public final class PhraseTrack {
         DebugLog.log(LogCategory.MEDIA, PhraseTrack.class.getName(), "Track " + id + " setPhrase(size="
                 + (phrase == null ? 0 : phrase.getSize()) + ")");
         try {
-            closeMasterLinkedRenderedPlayback();
+            cancelLoopCoordinator();
             closePlayback();
             this.phrase = phrase;
             if (phrase == null) {
@@ -45,7 +43,8 @@ public final class PhraseTrack {
             playback = SmafPlayback.create(phrase.getData());
             playback.setVolume(muted ? 0 : volume);
             playback.setPanpot(panpot);
-            playback.setListener(listener);
+            playback.setListener(this::handlePlaybackEvent);
+            playback.prepareAsync();
         } catch (Exception exception) {
             DebugLog.log(LogCategory.AUDIO, PhraseTrack.class.getName(),
                     "Track " + id + " setPhrase failed: " + exception.getMessage());
@@ -55,7 +54,7 @@ public final class PhraseTrack {
 
     public void removePhrase() {
         DebugLog.log(LogCategory.MEDIA, PhraseTrack.class.getName(), "Track " + id + " removePhrase()");
-        closeMasterLinkedRenderedPlayback();
+        cancelLoopCoordinator();
         stopInternal(new HashSet<>());
         clearSyncRelationship();
         closePlayback();
@@ -64,19 +63,9 @@ public final class PhraseTrack {
 
     public void setEventListener(PhraseTrackListener listener) {
         this.listener = listener;
-        if (playback != null) {
-            playback.setListener(listener);
-        }
-        if (linkedRenderedPlayer != null) {
-            linkedRenderedPlayer.setListener(listener);
-        }
     }
 
     public void setSubjectTo(PhraseTrack masterTrack) {
-        closeMasterLinkedRenderedPlayback();
-        if (masterTrack != null) {
-            masterTrack.closeMasterLinkedRenderedPlayback();
-        }
         if (subjectTo != null) {
             subjectTo.slaveTracks.remove(this);
         }
@@ -95,18 +84,12 @@ public final class PhraseTrack {
         if (playback != null) {
             playback.setVolume(effectiveVolume());
         }
-        if (linkedRenderedPlayer != null) {
-            linkedRenderedPlayer.setVolume(effectiveVolume());
-        }
     }
 
     public void mute(boolean value) {
         muted = value;
         if (playback != null) {
             playback.setVolume(effectiveVolume());
-        }
-        if (linkedRenderedPlayer != null) {
-            linkedRenderedPlayer.setVolume(effectiveVolume());
         }
     }
 
@@ -115,10 +98,6 @@ public final class PhraseTrack {
     }
 
     public int getState() {
-        PhraseTrack masterTrack = groupMaster();
-        if (masterTrack.linkedRenderedPlayer != null) {
-            return masterTrack.linkedRenderedPlayer.getState();
-        }
         if (playback == null) {
             return NO_DATA;
         }
@@ -135,7 +114,7 @@ public final class PhraseTrack {
             return;
         }
         try {
-            playInternal(loop, new HashSet<>());
+            playGroup(loop);
         } catch (RuntimeException exception) {
             DebugLog.log(LogCategory.AUDIO, PhraseTrack.class.getName(),
                     "Track " + id + " play failed: " + exception.getMessage());
@@ -148,6 +127,7 @@ public final class PhraseTrack {
         if (subjectTo != null) {
             return;
         }
+        cancelLoopCoordinator();
         stopInternal(new HashSet<>());
     }
 
@@ -212,9 +192,6 @@ public final class PhraseTrack {
         if (playback != null) {
             playback.setPanpot(panpot);
         }
-        if (linkedRenderedPlayer != null) {
-            linkedRenderedPlayer.setPanpot(panpot);
-        }
     }
 
     private void ensurePlayback() {
@@ -228,24 +205,86 @@ public final class PhraseTrack {
             return;
         }
         ensurePlayback();
-        if (tryPlayLinkedRendered(loop)) {
-            return;
-        }
         playback.play(loop);
         for (PhraseTrack slaveTrack : slaveTracks) {
             slaveTrack.playInternal(loop, visited);
         }
     }
 
-    private void stopInternal(Set<PhraseTrack> visited) {
+    private void playGroup(int loop) {
+        cancelLoopCoordinator();
+        List<PhraseTrack> group = new ArrayList<>();
+        collectPlaybackGroup(group, new HashSet<>());
+        preparePlaybackGroup(group);
+        if (group.size() == 1 || loop == 1) {
+            startPreparedPlaybackGroup(group, loop);
+            return;
+        }
+        GroupLoopCoordinator coordinator = new GroupLoopCoordinator(group, loop);
+        coordinator.start();
+    }
+
+    private void collectPlaybackGroup(List<PhraseTrack> group, Set<PhraseTrack> visited) {
         if (!visited.add(this)) {
             return;
         }
-        PhraseTrack masterTrack = groupMaster();
-        if (masterTrack.linkedRenderedPlayer != null) {
-            if (this == masterTrack) {
-                masterTrack.linkedRenderedPlayer.stop();
+        group.add(this);
+        for (PhraseTrack slaveTrack : slaveTracks) {
+            slaveTrack.collectPlaybackGroup(group, visited);
+        }
+    }
+
+    private static void preparePlaybackGroup(List<PhraseTrack> group) {
+        for (PhraseTrack track : group) {
+            track.ensurePlayback();
+        }
+        for (PhraseTrack track : group) {
+            try {
+                track.playback.prefetch();
+            } catch (Exception exception) {
+                throw new RuntimeException("Failed to prepare phrase track " + track.id, exception);
             }
+        }
+    }
+
+    private static void startPreparedPlaybackGroup(List<PhraseTrack> group, int loop) {
+        List<PhraseTrack> started = new ArrayList<>(group.size());
+        try {
+            for (PhraseTrack track : group) {
+                track.playback.play(loop);
+                started.add(track);
+            }
+        } catch (RuntimeException exception) {
+            for (PhraseTrack track : started) {
+                try {
+                    track.playback.stop();
+                } catch (RuntimeException ignored) {
+                }
+            }
+            throw exception;
+        }
+    }
+
+    private void handlePlaybackEvent(int eventId) {
+        if (eventId == -1) {
+            GroupLoopCoordinator coordinator = loopCoordinator;
+            if (coordinator != null) {
+                coordinator.onTrackCompleted(this);
+                return;
+            }
+        }
+        dispatchExternalEvent(eventId);
+    }
+
+    private void dispatchExternalEvent(int eventId) {
+        PhraseTrackListener currentListener = listener;
+        if (currentListener != null) {
+            currentListener.eventOccurred(eventId);
+        }
+    }
+
+    private void stopInternal(Set<PhraseTrack> visited) {
+        if (!visited.add(this)) {
             return;
         }
         if (playback != null) {
@@ -260,13 +299,6 @@ public final class PhraseTrack {
         if (!visited.add(this)) {
             return;
         }
-        PhraseTrack masterTrack = groupMaster();
-        if (masterTrack.linkedRenderedPlayer != null) {
-            if (this == masterTrack) {
-                masterTrack.linkedRenderedPlayer.pause();
-            }
-            return;
-        }
         if (playback != null) {
             playback.pause();
         }
@@ -277,13 +309,6 @@ public final class PhraseTrack {
 
     private void resumeInternal(Set<PhraseTrack> visited) {
         if (!visited.add(this)) {
-            return;
-        }
-        PhraseTrack masterTrack = groupMaster();
-        if (masterTrack.linkedRenderedPlayer != null) {
-            if (this == masterTrack) {
-                masterTrack.linkedRenderedPlayer.resume();
-            }
             return;
         }
         if (playback != null) {
@@ -328,98 +353,16 @@ public final class PhraseTrack {
         }
     }
 
-    private boolean tryPlayLinkedRendered(int loop) {
-        if (!subjectToRoot() || slaveTracks.isEmpty()) {
-            return false;
+    private void cancelLoopCoordinator() {
+        PhraseTrack masterTrack = subjectTo == null ? this : subjectTo;
+        GroupLoopCoordinator coordinator = masterTrack.loopCoordinator;
+        if (coordinator != null) {
+            coordinator.cancel();
         }
-
-        List<PhraseTrack> linkedTracks = new ArrayList<>();
-        collectLinkedTracks(linkedTracks, new HashSet<>());
-        if (linkedTracks.size() <= 1) {
-            return false;
-        }
-
-        int masterVolume = effectiveVolume();
-        float baseVolume = masterVolume <= 0 ? 1.0f : masterVolume;
-        List<SmafRenderedAudio.Layer> layers = new ArrayList<>(linkedTracks.size());
-        try {
-            for (PhraseTrack track : linkedTracks) {
-                if (track.playback == null) {
-                    DebugLog.log(LogCategory.AUDIO, PhraseTrack.class.getName(),
-                            "Track " + id + " linked render fallback: track "
-                                    + track.id + " has no playback instance");
-                    return false;
-                }
-                SmafRenderedAudio audio = track.playback.renderedAudio();
-                if (audio == null) {
-                    DebugLog.log(LogCategory.AUDIO, PhraseTrack.class.getName(),
-                            "Track " + id + " linked render fallback: track "
-                                    + track.id + " has no rendered audio");
-                    return false;
-                }
-                float gain = masterVolume <= 0 ? 0.0f : track.effectiveVolume() / baseVolume;
-                layers.add(new SmafRenderedAudio.Layer(audio, gain, track.panpot));
-            }
-        } catch (Exception exception) {
-            DebugLog.log(LogCategory.AUDIO, PhraseTrack.class.getName(),
-                    "Track " + id + " linked render failed: " + describeException(exception));
-            return false;
-        }
-
-        try {
-            closeLinkedRenderedPlayback();
-            SmafRenderedAudio linkedAudio = loop == 1
-                    ? SmafRenderedAudio.mix(layers)
-                    : SmafRenderedAudio.mixLoopingLayers(layers);
-            linkedRenderedPlayer = new SmafRenderedPlayer(linkedAudio, playback.userEvents());
-            linkedRenderedPlayer.setListener(listener);
-            linkedRenderedPlayer.setVolume(masterVolume);
-            linkedRenderedPlayer.setPanpot(64);
-            linkedRenderedPlayer.play(loop);
-            return true;
-        } catch (RuntimeException exception) {
-            DebugLog.log(LogCategory.AUDIO, PhraseTrack.class.getName(),
-                    "Track " + id + " linked render mix/player failed: " + describeException(exception));
-            closeLinkedRenderedPlayback();
-            return false;
-        }
-    }
-
-    private void collectLinkedTracks(List<PhraseTrack> linkedTracks, Set<PhraseTrack> visited) {
-        if (!visited.add(this)) {
-            return;
-        }
-        linkedTracks.add(this);
-        for (PhraseTrack slaveTrack : slaveTracks) {
-            slaveTrack.collectLinkedTracks(linkedTracks, visited);
-        }
-    }
-
-    private boolean subjectToRoot() {
-        return subjectTo == null;
     }
 
     private int effectiveVolume() {
         return muted ? 0 : volume;
-    }
-
-    private PhraseTrack groupMaster() {
-        PhraseTrack current = this;
-        while (current.subjectTo != null) {
-            current = current.subjectTo;
-        }
-        return current;
-    }
-
-    private void closeMasterLinkedRenderedPlayback() {
-        groupMaster().closeLinkedRenderedPlayback();
-    }
-
-    private void closeLinkedRenderedPlayback() {
-        if (linkedRenderedPlayer != null) {
-            linkedRenderedPlayer.close();
-            linkedRenderedPlayer = null;
-        }
     }
 
     private static String describeException(Throwable throwable) {
@@ -442,5 +385,85 @@ public final class PhraseTrack {
             depth++;
         }
         return description.toString();
+    }
+
+    private static final class GroupLoopCoordinator {
+        private final List<PhraseTrack> group;
+        private final Set<PhraseTrack> completedTracks = new HashSet<>();
+        private int remainingRepeats;
+        private boolean cancelled;
+
+        private GroupLoopCoordinator(List<PhraseTrack> group, int loop) {
+            this.group = List.copyOf(group);
+            this.remainingRepeats = loop == 0 ? -1 : Math.max(0, loop - 1);
+            attachLocked();
+        }
+
+        private void start() {
+            startPreparedPlaybackGroup(group, 1);
+        }
+
+        private synchronized void cancel() {
+            if (cancelled) {
+                return;
+            }
+            cancelled = true;
+            completedTracks.clear();
+            detachLocked();
+        }
+
+        private void onTrackCompleted(PhraseTrack track) {
+            boolean restart = false;
+            boolean finished = false;
+            synchronized (this) {
+                if (cancelled || track.loopCoordinator != this) {
+                    return;
+                }
+                completedTracks.add(track);
+                if (completedTracks.size() < group.size()) {
+                    return;
+                }
+                completedTracks.clear();
+                if (remainingRepeats == -1 || remainingRepeats > 0) {
+                    if (remainingRepeats > 0) {
+                        remainingRepeats--;
+                    }
+                    restart = true;
+                } else {
+                    cancelled = true;
+                    detachLocked();
+                    finished = true;
+                }
+            }
+            if (restart) {
+                try {
+                    startPreparedPlaybackGroup(group, 1);
+                } catch (RuntimeException exception) {
+                    DebugLog.log(LogCategory.AUDIO, PhraseTrack.class.getName(),
+                            "Grouped loop restart failed: " + exception.getMessage());
+                    cancel();
+                    finished = true;
+                }
+            }
+            if (finished) {
+                for (PhraseTrack phraseTrack : group) {
+                    phraseTrack.dispatchExternalEvent(-1);
+                }
+            }
+        }
+
+        private synchronized void attachLocked() {
+            for (PhraseTrack track : group) {
+                track.loopCoordinator = this;
+            }
+        }
+
+        private synchronized void detachLocked() {
+            for (PhraseTrack track : group) {
+                if (track.loopCoordinator == this) {
+                    track.loopCoordinator = null;
+                }
+            }
+        }
     }
 }

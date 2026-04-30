@@ -32,6 +32,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.FutureTask;
 
 /**
  * Lightweight phrase playback wrapper for MEXA SMAF/SPF data.
@@ -63,19 +68,30 @@ public final class SmafPlayback implements AutoCloseable {
     // Some game Destory and recreate the same short action phrases per input event.
     private static final Map<SmafCacheKey, DecodedSmaf> DECODE_CACHE = createLruCache(DECODE_CACHE_LIMIT);
     private static final Map<SmafRenderCacheKey, SmafRenderedAudio> RENDER_CACHE = createLruCache(RENDER_CACHE_LIMIT);
+    private static final Map<SmafCacheKey, Future<DecodedSmaf>> DECODE_TASKS = createLruCache(DECODE_CACHE_LIMIT);
+    private static final Map<SmafRenderCacheKey, Future<?>> RENDER_WARMUP_TASKS = createLruCache(RENDER_CACHE_LIMIT);
+    private static final ExecutorService WARMUP_EXECUTOR = Executors.newFixedThreadPool(1, runnable -> {
+        Thread thread = new Thread(runnable, "remexa-smaf-warmup");
+        thread.setDaemon(true);
+        thread.setPriority(Thread.MIN_PRIORITY);
+        return thread;
+    });
 
     private final SmafCacheKey cacheKey;
     private final byte[] source;
-    private final Sequence sequence;
-    private final Sequence midiSequence;
-    private final List<SMAFDecoder.SequenceSysExEvent> sequenceSysExEvents;
-    private final List<byte[]> startupPackets;
-    private final List<byte[]> exclusiveVoices;
-    private final List<byte[]> pcmClipData;
-    private final List<SMAFDecoder.PcmSequenceTrigger> pcmTriggers;
-    private final List<SMAFDecoder.SequenceUserEvent> userEvents;
-    private final boolean hasPcmPayload;
-    private final int pcmClipCount;
+    private final Object decodeLock = new Object();
+    private final Object openLock = new Object();
+    private Sequence sequence;
+    private Sequence midiSequence;
+    private List<SMAFDecoder.SequenceSysExEvent> sequenceSysExEvents = Collections.emptyList();
+    private List<byte[]> startupPackets = Collections.emptyList();
+    private List<byte[]> exclusiveVoices = Collections.emptyList();
+    private List<byte[]> pcmClipData = Collections.emptyList();
+    private List<SMAFDecoder.PcmSequenceTrigger> pcmTriggers = Collections.emptyList();
+    private List<SMAFDecoder.SequenceUserEvent> userEvents = Collections.emptyList();
+    private boolean hasPcmPayload;
+    private int pcmClipCount;
+    private boolean decodedLoaded;
 
     // Yamaha EXVO custom voices do not translate to the desktop GM synth.
     // Prefer fuller orchestral defaults over the tiny piano/square-lead sounding fallbacks.
@@ -107,8 +123,10 @@ public final class SmafPlayback implements AutoCloseable {
     private Sequencer sequencer;
     private SmafRenderedAudio renderedAudio;
     private YamahaAudioEngine renderedAudioEngine;
-    private SmafRenderedPlayer renderedPlayer;
+    private SmafAudioPlayer audioPlayer;
     private boolean paused;
+    private boolean closed;
+    private Future<Void> openTask;
     private Exception renderedAudioFailure;
     private String renderedAudioFailureEngineId;
     private int volume = 127;
@@ -118,53 +136,37 @@ public final class SmafPlayback implements AutoCloseable {
     private Map<Integer, Integer> channelRouting = Collections.emptyMap();
     private Set<Integer> outputChannels = Collections.emptySet();
 
-    private SmafPlayback(SmafCacheKey cacheKey,
-                         byte[] source,
-                         Sequence sequence,
-                         Sequence midiSequence,
-                         List<SMAFDecoder.SequenceSysExEvent> sequenceSysExEvents,
-                         List<byte[]> startupPackets,
-                         List<byte[]> exclusiveVoices,
-                         List<byte[]> pcmClipData,
-                         List<SMAFDecoder.PcmSequenceTrigger> pcmTriggers,
-                         List<SMAFDecoder.SequenceUserEvent> userEvents,
-                         boolean hasPcmPayload,
-                         int pcmClipCount) {
+    private SmafPlayback(SmafCacheKey cacheKey, byte[] source) {
         this.cacheKey = cacheKey;
         this.source = source;
-        this.sequence = sequence;
-        this.midiSequence = midiSequence;
-        this.sequenceSysExEvents = sequenceSysExEvents;
-        this.startupPackets = startupPackets;
-        this.exclusiveVoices = exclusiveVoices;
-        this.pcmClipData = pcmClipData;
-        this.pcmTriggers = pcmTriggers;
-        this.userEvents = userEvents;
-        this.hasPcmPayload = hasPcmPayload;
-        this.pcmClipCount = pcmClipCount;
     }
 
     public static SmafPlayback create(byte[] source) throws Exception {
         byte[] sourceCopy = source.clone();
         SmafCacheKey cacheKey = new SmafCacheKey(sourceCopy);
-        DecodedSmaf decoded = decodeCached(cacheKey, sourceCopy);
-        return new SmafPlayback(cacheKey,
-                sourceCopy,
-                decoded.sequence(),
-                decoded.midiSequence(),
-                decoded.sequenceSysExEvents(),
-                decoded.startupPackets(),
-                decoded.exclusiveVoices(),
-                decoded.pcmClipData(),
-                decoded.pcmTriggers(),
-                decoded.userEvents(),
-                decoded.hasPcmPayload(),
-                decoded.pcmClipCount());
+        return new SmafPlayback(cacheKey, sourceCopy);
+    }
+
+    public static void prewarm(byte[] source) {
+        if (source == null || source.length == 0) {
+            return;
+        }
+        byte[] sourceCopy = source.clone();
+        SmafCacheKey cacheKey = new SmafCacheKey(sourceCopy);
+        scheduleDecode(cacheKey, sourceCopy, true);
+    }
+
+    public void prefetch() throws Exception {
+        ensureOpen();
+    }
+
+    public void prepareAsync() {
+        scheduleOpen(true);
     }
 
     public int getState() {
-        if (renderedPlayer != null) {
-            return renderedPlayer.getState();
+        if (audioPlayer != null) {
+            return audioPlayer.getState();
         }
         if (paused) {
             return PAUSED;
@@ -177,15 +179,15 @@ public final class SmafPlayback implements AutoCloseable {
 
     public void setListener(PhraseTrackListener listener) {
         this.listener = listener;
-        if (renderedPlayer != null) {
-            renderedPlayer.setListener(listener);
+        if (audioPlayer != null) {
+            audioPlayer.setListener(listener);
         }
     }
 
     public void setVolume(int value) {
         volume = clamp(value, 0, 127);
-        if (renderedPlayer != null) {
-            renderedPlayer.setVolume(volume);
+        if (audioPlayer != null) {
+            audioPlayer.setVolume(volume);
         } else {
             applyMixerState();
         }
@@ -193,8 +195,8 @@ public final class SmafPlayback implements AutoCloseable {
 
     public void setPanpot(int value) {
         panpot = clamp(value, 0, 127);
-        if (renderedPlayer != null) {
-            renderedPlayer.setPanpot(panpot);
+        if (audioPlayer != null) {
+            audioPlayer.setPanpot(panpot);
         } else {
             applyMixerState();
         }
@@ -203,11 +205,11 @@ public final class SmafPlayback implements AutoCloseable {
     public void play(int loopCount) {
         try {
             ensureOpen();
-            if (renderedPlayer != null) {
+            if (audioPlayer != null) {
                 Mobile.log(Mobile.LOG_INFO,
                         "Playing SMAF phrase through " + renderedBackendLabel()
-                                + " rendered backend (loop=" + loopCount + ").");
-                renderedPlayer.play(loopCount);
+                                + " audio backend (loop=" + loopCount + ").");
+                audioPlayer.play(loopCount);
                 return;
             }
             sequencer.stop();
@@ -225,8 +227,8 @@ public final class SmafPlayback implements AutoCloseable {
     }
 
     public void stop() {
-        if (renderedPlayer != null) {
-            renderedPlayer.stop();
+        if (audioPlayer != null) {
+            audioPlayer.stop();
             return;
         }
         if (sequencer == null) {
@@ -239,8 +241,8 @@ public final class SmafPlayback implements AutoCloseable {
     }
 
     public void pause() {
-        if (renderedPlayer != null) {
-            renderedPlayer.pause();
+        if (audioPlayer != null) {
+            audioPlayer.pause();
             return;
         }
         if (sequencer == null) {
@@ -252,8 +254,8 @@ public final class SmafPlayback implements AutoCloseable {
     }
 
     public void resume() {
-        if (renderedPlayer != null) {
-            renderedPlayer.resume();
+        if (audioPlayer != null) {
+            audioPlayer.resume();
             return;
         }
         if (sequencer == null) {
@@ -269,10 +271,12 @@ public final class SmafPlayback implements AutoCloseable {
     }
 
     public boolean hasPcmPayload() {
+        ensureDecodedUnchecked("inspect SMAF PCM payload");
         return hasPcmPayload;
     }
 
     public int pcmClipCount() {
+        ensureDecodedUnchecked("inspect SMAF PCM clips");
         return pcmClipCount;
     }
 
@@ -281,6 +285,7 @@ public final class SmafPlayback implements AutoCloseable {
     }
 
     public List<SMAFDecoder.SequenceUserEvent> userEvents() {
+        ensureDecodedUnchecked("inspect SMAF user events");
         return userEvents;
     }
 
@@ -303,15 +308,15 @@ public final class SmafPlayback implements AutoCloseable {
         if (renderedAudioFailure != null && engine.id().equals(renderedAudioFailureEngineId)) {
             throw renderedAudioFailure;
         }
+        awaitRenderedWarmup(renderCacheKey);
+        SmafRenderedAudio warmed = cachedRenderedAudio(renderCacheKey);
+        if (warmed != null) {
+            renderedAudio = warmed;
+            renderedAudioEngine = engine;
+            return renderedAudio;
+        }
         try {
-            renderedAudio = engine.render(new SmafRenderContext(
-                    source,
-                    sequence,
-                    sequenceSysExEvents,
-                    startupPackets,
-                    exclusiveVoices,
-                    pcmClipData,
-                    pcmTriggers));
+            renderedAudio = engine.render(createRenderContext());
             renderedAudioEngine = engine;
             cacheRenderedAudio(renderCacheKey, renderedAudio);
             return renderedAudio;
@@ -324,57 +329,137 @@ public final class SmafPlayback implements AutoCloseable {
         }
     }
 
+    public SmafRenderedAudio cachedRenderedAudioIfReady() {
+        if (!decodedLoaded) {
+            return null;
+        }
+        String synthPreference = normalizeSmafSynthPreference(System.getProperty("remexa.smafSynth", "auto"));
+        if (SMAF_SYNTH_MIDI.equals(synthPreference)) {
+            return null;
+        }
+        YamahaAudioEngine engine = resolveAudioEngine(synthPreference);
+        if (renderedAudio != null
+                && renderedAudioEngine != null
+                && renderedAudioEngine.id().equals(engine.id())) {
+            return renderedAudio;
+        }
+        SmafRenderCacheKey renderCacheKey = new SmafRenderCacheKey(cacheKey, engine.id());
+        SmafRenderedAudio cached = cachedRenderedAudio(renderCacheKey);
+        if (cached != null) {
+            renderedAudio = cached;
+            renderedAudioEngine = engine;
+        }
+        return cached;
+    }
+
     @Override
     public void close() {
-        if (renderedPlayer != null) {
-            renderedPlayer.close();
-            renderedPlayer = null;
+        synchronized (openLock) {
+            closed = true;
+            if (audioPlayer != null) {
+                audioPlayer.close();
+                audioPlayer = null;
+            }
+            if (sequencer != null) {
+                sequencer.stop();
+                silenceOutputChannels();
+                sequencer.close();
+                sequencer = null;
+            }
+            releaseSharedMidi();
+            releaseChannelRouting();
+            playbackSequence = null;
+            paused = false;
+            openTask = null;
         }
-        if (sequencer != null) {
-            sequencer.stop();
-            silenceOutputChannels();
-            sequencer.close();
-            sequencer = null;
-        }
-        releaseSharedMidi();
-        releaseChannelRouting();
-        playbackSequence = null;
-        paused = false;
     }
 
     private void ensureOpen() throws Exception {
-        if (renderedPlayer != null || sequencer != null) {
-            return;
-        }
-        String synthPreference = normalizeSmafSynthPreference(System.getProperty("remexa.smafSynth", "auto"));
-        if (!SMAF_SYNTH_MIDI.equals(synthPreference)) {
-            try {
-                openRenderedBackend();
-                return;
-            } catch (Exception exception) {
-                Mobile.log(Mobile.LOG_WARNING,
-                        "Unable to render SMAF through Yamaha backend: " + describeException(exception)
-                                + ". Falling back to host MIDI output.");
+        synchronized (openLock) {
+            if (closed) {
+                throw new IllegalStateException("SMAF playback has been closed");
             }
         }
-        openMidiBackend();
+        Future<Void> task = scheduleOpen(true);
+        if (task instanceof FutureTask<Void> futureTask) {
+            futureTask.run();
+        }
+        awaitOpen(task);
+    }
+
+    private Future<Void> scheduleOpen(boolean async) {
+        FutureTask<Void> newTask = null;
+        synchronized (openLock) {
+            if (closed || audioPlayer != null || sequencer != null) {
+                return completedFuture();
+            }
+            if (openTask != null) {
+                return openTask;
+            }
+            newTask = new FutureTask<>(() -> {
+                openPlayback();
+                return null;
+            });
+            openTask = newTask;
+        }
+        FutureTask<Void> taskToRun = newTask;
+        Runnable runner = () -> {
+            try {
+                taskToRun.run();
+            } finally {
+                synchronized (openLock) {
+                    if (openTask == taskToRun) {
+                        openTask = null;
+                    }
+                }
+            }
+        };
+        if (async) {
+            WARMUP_EXECUTOR.submit(runner);
+        } else {
+            runner.run();
+        }
+        return taskToRun;
+    }
+
+    private void openPlayback() throws Exception {
+        synchronized (openLock) {
+            if (closed || audioPlayer != null || sequencer != null) {
+                return;
+            }
+            String synthPreference = normalizeSmafSynthPreference(System.getProperty("remexa.smafSynth", "auto"));
+            if (!SMAF_SYNTH_MIDI.equals(synthPreference)) {
+                try {
+                    openRenderedBackend();
+                    return;
+                } catch (Exception exception) {
+                    Mobile.log(Mobile.LOG_WARNING,
+                            "Unable to open SMAF through Yamaha audio backend: " + describeException(exception)
+                                    + ". Falling back to host MIDI output.");
+                }
+            }
+            openMidiBackend();
+        }
     }
 
     private void openRenderedBackend() throws Exception {
-        SmafRenderedAudio audio = renderedAudio();
-        if (audio == null) {
-            throw new IOException("SMAF rendering is disabled for MIDI-only playback");
-        }
-        renderedPlayer = new SmafRenderedPlayer(audio, userEvents);
-        renderedPlayer.setListener(listener);
-        renderedPlayer.setVolume(volume);
-        renderedPlayer.setPanpot(panpot);
+        ensureDecoded();
+        String synthPreference = normalizeSmafSynthPreference(System.getProperty("remexa.smafSynth", "auto"));
+        YamahaAudioEngine engine = resolveAudioEngine(synthPreference);
+        renderedAudioEngine = engine;
+        SmafStreamingSession session = engine.openStream(createRenderContext());
+        int sampleRate = session.sampleRate();
+        audioPlayer = new SmafStreamingPlayer(session, userEvents);
+        audioPlayer.setListener(listener);
+        audioPlayer.setVolume(volume);
+        audioPlayer.setPanpot(panpot);
         Mobile.log(Mobile.LOG_INFO,
-                "SMAF rendered with " + renderedBackendLabel() + " backend at " + audio.sampleRate() + " Hz"
+                "SMAF streamed with " + renderedBackendLabel() + " backend at " + sampleRate
                         + (hasPcmPayload ? " with " + pcmClipCount + " PCM clip(s)." : "."));
     }
 
     private void openMidiBackend() throws Exception {
+        ensureDecoded();
         acquireSharedMidi();
         if (playbackSequence == null) {
             channelRouting = allocateChannelRouting(midiSequence);
@@ -578,16 +663,26 @@ public final class SmafPlayback implements AutoCloseable {
     }
 
     private YamahaAudioEngine resolveAudioEngine(String synthPreference) {
+        ensureDecodedUnchecked("resolve SMAF audio engine");
+        return resolveAudioEngine(synthPreference, source, startupPackets, sequenceSysExEvents);
+    }
+
+    private static YamahaAudioEngine resolveAudioEngine(String synthPreference,
+                                                        byte[] source,
+                                                        List<byte[]> startupPackets,
+                                                        List<SMAFDecoder.SequenceSysExEvent> sequenceSysExEvents) {
         return switch (synthPreference) {
             case SMAF_SYNTH_MA3 -> MA3_ENGINE;
             case SMAF_SYNTH_MA5 -> MA5_ENGINE;
             case SMAF_SYNTH_MA7 -> MA7_ENGINE;
-            case SMAF_SYNTH_AUTO -> resolveAutomaticAudioEngine();
+            case SMAF_SYNTH_AUTO -> resolveAutomaticAudioEngine(source, startupPackets, sequenceSysExEvents);
             default -> MA3_ENGINE;
         };
     }
 
-    private YamahaAudioEngine resolveAutomaticAudioEngine() {
+    private static YamahaAudioEngine resolveAutomaticAudioEngine(byte[] source,
+                                                                 List<byte[]> startupPackets,
+                                                                 List<SMAFDecoder.SequenceSysExEvent> sequenceSysExEvents) {
         SmafAudioFamily family = SmafAudioDetector.detect(source, startupPackets, sequenceSysExEvents);
         YamahaAudioEngine engine = switch (family) {
             case MA3 -> MA3_ENGINE;
@@ -831,6 +926,57 @@ public final class SmafPlayback implements AutoCloseable {
                 return cached;
             }
         }
+        return awaitDecode(scheduleDecode(cacheKey, source, false));
+    }
+
+    private static Future<DecodedSmaf> scheduleDecode(SmafCacheKey cacheKey, byte[] source, boolean async) {
+        synchronized (DECODE_CACHE) {
+            DecodedSmaf cached = DECODE_CACHE.get(cacheKey);
+            if (cached != null) {
+                return new FutureTask<>(() -> cached) {{
+                    run();
+                }};
+            }
+        }
+        FutureTask<DecodedSmaf> newTask = null;
+        Future<DecodedSmaf> task;
+        synchronized (DECODE_TASKS) {
+            task = DECODE_TASKS.get(cacheKey);
+            if (task == null) {
+                newTask = new FutureTask<>(() -> decodeAndCache(cacheKey, source));
+                DECODE_TASKS.put(cacheKey, newTask);
+                task = newTask;
+            }
+        }
+        if (newTask != null) {
+            FutureTask<DecodedSmaf> taskToRun = newTask;
+            Runnable runner = () -> {
+                try {
+                    taskToRun.run();
+                } finally {
+                    synchronized (DECODE_TASKS) {
+                        if (DECODE_TASKS.get(cacheKey) == taskToRun) {
+                            DECODE_TASKS.remove(cacheKey);
+                        }
+                    }
+                }
+            };
+            if (async) {
+                WARMUP_EXECUTOR.submit(runner);
+            } else {
+                runner.run();
+            }
+        }
+        return task;
+    }
+
+    private static DecodedSmaf decodeAndCache(SmafCacheKey cacheKey, byte[] source) throws Exception {
+        synchronized (DECODE_CACHE) {
+            DecodedSmaf cached = DECODE_CACHE.get(cacheKey);
+            if (cached != null) {
+                return cached;
+            }
+        }
         DecodedSmaf decoded = decode(source);
         synchronized (DECODE_CACHE) {
             DecodedSmaf cached = DECODE_CACHE.get(cacheKey);
@@ -839,6 +985,42 @@ public final class SmafPlayback implements AutoCloseable {
             }
             DECODE_CACHE.put(cacheKey, decoded);
             return decoded;
+        }
+    }
+
+    private static DecodedSmaf awaitDecode(Future<DecodedSmaf> task) throws Exception {
+        try {
+            return task.get();
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Interrupted while preparing SMAF decode", exception);
+        } catch (ExecutionException exception) {
+            Throwable cause = exception.getCause();
+            if (cause instanceof Exception checked) {
+                throw checked;
+            }
+            if (cause instanceof Error error) {
+                throw error;
+            }
+            throw new IOException("Failed to prepare SMAF decode", cause);
+        }
+    }
+
+    private static void awaitOpen(Future<Void> task) throws Exception {
+        try {
+            task.get();
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Interrupted while opening SMAF playback", exception);
+        } catch (ExecutionException exception) {
+            Throwable cause = exception.getCause();
+            if (cause instanceof Exception checked) {
+                throw checked;
+            }
+            if (cause instanceof Error error) {
+                throw error;
+            }
+            throw new IOException("Failed to open SMAF playback", cause);
         }
     }
 
@@ -854,6 +1036,79 @@ public final class SmafPlayback implements AutoCloseable {
         }
     }
 
+    private void awaitRenderedWarmup(SmafRenderCacheKey renderCacheKey) {
+        Future<?> task;
+        synchronized (RENDER_WARMUP_TASKS) {
+            task = RENDER_WARMUP_TASKS.get(renderCacheKey);
+        }
+        if (task == null) {
+            return;
+        }
+        try {
+            task.get();
+        } catch (Exception ignored) {
+            // Fall back to the synchronous render path below.
+        }
+    }
+
+    private SmafRenderContext createRenderContext() {
+        ensureDecodedUnchecked("create SMAF render context");
+        return new SmafRenderContext(
+                source,
+                sequence,
+                sequenceSysExEvents,
+                startupPackets,
+                exclusiveVoices,
+                pcmClipData,
+                pcmTriggers);
+    }
+
+    private void ensureDecoded() throws Exception {
+        if (decodedLoaded) {
+            return;
+        }
+        synchronized (decodeLock) {
+            if (decodedLoaded) {
+                return;
+            }
+            applyDecoded(decodeCached(cacheKey, source));
+        }
+    }
+
+    private void applyDecoded(DecodedSmaf decoded) {
+        sequence = decoded.sequence();
+        midiSequence = decoded.midiSequence();
+        sequenceSysExEvents = decoded.sequenceSysExEvents();
+        startupPackets = decoded.startupPackets();
+        exclusiveVoices = decoded.exclusiveVoices();
+        pcmClipData = decoded.pcmClipData();
+        pcmTriggers = decoded.pcmTriggers();
+        userEvents = decoded.userEvents();
+        hasPcmPayload = decoded.hasPcmPayload();
+        pcmClipCount = decoded.pcmClipCount();
+        decodedLoaded = true;
+    }
+
+    private void ensureDecodedUnchecked(String action) {
+        try {
+            ensureDecoded();
+        } catch (Exception exception) {
+            throw new RuntimeException("Failed to " + action, exception);
+        }
+    }
+
+
+    private static SmafRenderContext createRenderContext(byte[] source, DecodedSmaf decoded) {
+        return new SmafRenderContext(
+                source,
+                decoded.sequence(),
+                decoded.sequenceSysExEvents(),
+                decoded.startupPackets(),
+                decoded.exclusiveVoices(),
+                decoded.pcmClipData(),
+                decoded.pcmTriggers());
+    }
+
     private static <K, V> Map<K, V> createLruCache(int limit) {
         return new LinkedHashMap<>(limit, 0.75f, true) {
             @Override
@@ -861,6 +1116,12 @@ public final class SmafPlayback implements AutoCloseable {
                 return size() > limit;
             }
         };
+    }
+
+    private static Future<Void> completedFuture() {
+        FutureTask<Void> completed = new FutureTask<>(() -> null);
+        completed.run();
+        return completed;
     }
 
     private static Sequence cloneSequence(Sequence sourceSequence) throws Exception {

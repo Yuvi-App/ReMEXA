@@ -35,6 +35,16 @@ final class Ma3SmafAudioEngine implements YamahaAudioEngine {
                 context.pcmTriggers());
     }
 
+    @Override
+    public SmafStreamingSession openStream(SmafRenderContext context) throws Exception {
+        return renderer.openStream(
+                context.sequence(),
+                context.sequenceSysExEvents(),
+                context.startupPackets(),
+                context.pcmClipData(),
+                context.pcmTriggers());
+    }
+
     private static final class Ma3Adapter implements SmafSynthAdapter {
         private static final int CHANNEL_COUNT = 16;
         private static final int INTERNAL_LEGACY_YAMAHA_MESSAGE = 0x72;

@@ -15,7 +15,8 @@ import java.util.List;
 import java.util.Map;
 
 final class Ma5SmafAudioEngine implements YamahaAudioEngine {
-    private static final int MA5_OUTPUT_SAMPLE_RATE = 48_000;
+    private static final int MA5_OUTPUT_SAMPLE_RATE =
+            Integer.getInteger("remexa.ma5SampleRate", 32_000);
     private final SmafSequencedRenderer renderer;
 
     Ma5SmafAudioEngine() {
@@ -45,6 +46,16 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
                 context.sequenceSysExEvents());
         inventory.log("ma5");
         return renderer.render(
+                context.sequence(),
+                context.sequenceSysExEvents(),
+                context.startupPackets(),
+                context.pcmClipData(),
+                context.pcmTriggers());
+    }
+
+    @Override
+    public SmafStreamingSession openStream(SmafRenderContext context) throws Exception {
+        return renderer.openStream(
                 context.sequence(),
                 context.sequenceSysExEvents(),
                 context.startupPackets(),
