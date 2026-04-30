@@ -4,6 +4,7 @@ import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
 import javax.imageio.ImageIO;
 import javax.swing.JOptionPane;
@@ -58,6 +59,9 @@ public final class JadLauncher {
 
     public void launch(Path jadPath) {
         try {
+            if (!isJadPath(jadPath)) {
+                throw new LaunchException("Only .jad files can be opened in ReMEXA.");
+            }
             var descriptor = descriptorForLaunch(JadParser.parse(jadPath));
             recentJads.remember(descriptor);
             openFrame(descriptor);
@@ -79,6 +83,14 @@ public final class JadLauncher {
 
     public RecentJadsRepository recentJads() {
         return recentJads;
+    }
+
+    private static boolean isJadPath(Path path) {
+        if (path == null) {
+            return false;
+        }
+        var fileName = path.getFileName();
+        return fileName != null && fileName.toString().toLowerCase(Locale.ROOT).endsWith(".jad");
     }
 
     private JadDescriptor descriptorForLaunch(JadDescriptor descriptor) throws LaunchException {

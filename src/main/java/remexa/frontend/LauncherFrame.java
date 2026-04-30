@@ -12,6 +12,7 @@ import java.awt.Font;
 import java.awt.Frame;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
+import java.awt.GridLayout;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
@@ -23,6 +24,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.ButtonGroup;
@@ -36,6 +38,7 @@ import javax.swing.JCheckBoxMenuItem;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JRadioButtonMenuItem;
+import javax.swing.JButton;
 import javax.swing.SwingConstants;
 import javax.swing.JTextField;
 import javax.swing.TransferHandler;
@@ -51,6 +54,7 @@ import remexa.probes.LogSettings;
 import remexa.ui.RemexaTheme;
 
 public final class LauncherFrame extends JFrame {
+    private static final String DEFAULT_VERSION = "0.1.0-SNAPSHOT";
     private static final Color APP_BACKGROUND = RemexaTheme.APP_BACKGROUND;
     private static final Color MENU_BACKGROUND = RemexaTheme.MENU_BACKGROUND;
     private static final Color MENU_BORDER = RemexaTheme.MENU_BORDER;
@@ -81,7 +85,7 @@ public final class LauncherFrame extends JFrame {
         var content = new JPanel(new BorderLayout());
         content.setBorder(BorderFactory.createEmptyBorder(28, 28, 28, 28));
         content.setBackground(APP_BACKGROUND);
-        dropPanel.setPreferredSize(new Dimension(520, 300));
+        dropPanel.setPreferredSize(new Dimension(560, 320));
         content.add(dropPanel, BorderLayout.CENTER);
 
         setTransferHandler(new JadTransferHandler(dropPanel));
@@ -106,9 +110,26 @@ public final class LauncherFrame extends JFrame {
     }
 
     private void launch(Path jadPath) {
+        if (!isJadPath(jadPath)) {
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Only .jad files can be opened in ReMEXA.",
+                    "Unsupported File Type",
+                    JOptionPane.ERROR_MESSAGE
+            );
+            return;
+        }
         DebugLog.log(LogCategory.FRONTEND, LauncherFrame.class.getName(), "Launching from frontend: " + jadPath);
         launcher.launch(jadPath);
         refreshRecents();
+    }
+
+    private static boolean isJadPath(Path path) {
+        if (path == null) {
+            return false;
+        }
+        var fileName = path.getFileName();
+        return fileName != null && fileName.toString().toLowerCase(Locale.ROOT).endsWith(".jad");
     }
 
     private void refreshRecents() {
@@ -376,13 +397,22 @@ public final class LauncherFrame extends JFrame {
         menuBar.add(settingsMenu);
         menuBar.add(Box.createHorizontalGlue());
 
-        var brand = new JLabel("ReMEXA");
+        var brand = new JLabel("ReMEXA-v" + resolveVersionLabel());
         brand.setForeground(TEXT_SECONDARY);
         brand.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        brand.setHorizontalAlignment(SwingConstants.RIGHT);
         brand.setBorder(new EmptyBorder(0, 8, 0, 2));
         menuBar.add(brand);
 
         return menuBar;
+    }
+
+    private static String resolveVersionLabel() {
+        var implementationVersion = LauncherFrame.class.getPackage().getImplementationVersion();
+        if (implementationVersion == null || implementationVersion.isBlank()) {
+            return DEFAULT_VERSION;
+        }
+        return implementationVersion.trim();
     }
 
     private void styleMenu(JMenu menu) {
@@ -402,6 +432,20 @@ public final class LauncherFrame extends JFrame {
         item.setForeground(TEXT_PRIMARY);
         item.setFont(new Font("Segoe UI", Font.PLAIN, 13));
         item.setBorder(new EmptyBorder(8, 12, 8, 12));
+        item.setHorizontalAlignment(SwingConstants.LEADING);
+        item.setHorizontalTextPosition(SwingConstants.RIGHT);
+    }
+
+    private void styleLauncherButton(JButton button, boolean primary) {
+        button.setFocusable(false);
+        button.setOpaque(true);
+        button.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        button.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(primary ? CARD_BORDER_ACTIVE : CARD_BORDER, 1),
+                new EmptyBorder(9, 14, 9, 14)
+        ));
+        button.setBackground(primary ? MENU_HOVER_BACKGROUND : POPUP_BACKGROUND);
+        button.setForeground(primary ? MENU_HOVER_FOREGROUND : TEXT_PRIMARY);
     }
 
     private void installMenuTheme() {
@@ -615,7 +659,16 @@ public final class LauncherFrame extends JFrame {
 
         @Override
         public boolean canImport(TransferSupport support) {
-            var canImport = support.isDataFlavorSupported(DataFlavor.javaFileListFlavor);
+            boolean canImport = false;
+            if (support.isDataFlavorSupported(DataFlavor.javaFileListFlavor)) {
+                try {
+                    @SuppressWarnings("unchecked")
+                    List<File> files = (List<File>) support.getTransferable().getTransferData(DataFlavor.javaFileListFlavor);
+                    canImport = files != null && !files.isEmpty() && isJadPath(files.getFirst().toPath());
+                } catch (Exception ignored) {
+                    canImport = false;
+                }
+            }
             panel.setDragActive(canImport);
             return canImport;
         }
@@ -633,7 +686,18 @@ public final class LauncherFrame extends JFrame {
                     panel.setDragActive(false);
                     return false;
                 }
-                launch(files.getFirst().toPath());
+                var firstPath = files.getFirst().toPath();
+                if (!isJadPath(firstPath)) {
+                    panel.setDragActive(false);
+                    JOptionPane.showMessageDialog(
+                            LauncherFrame.this,
+                            "Only .jad files can be dropped into ReMEXA.",
+                            "Unsupported File Type",
+                            JOptionPane.ERROR_MESSAGE
+                    );
+                    return false;
+                }
+                launch(firstPath);
                 panel.setDragActive(false);
                 return true;
             } catch (Exception exception) {
@@ -655,52 +719,66 @@ public final class LauncherFrame extends JFrame {
         }
     }
 
-    private static final class DropPanel extends JPanel {
+    private final class DropPanel extends JPanel {
         private final JLabel eyebrow;
         private final JLabel subtitle;
         private final JLabel hint;
+        private final JButton openButton;
         private boolean dragActive;
 
         private DropPanel() {
             setOpaque(false);
             setLayout(new BorderLayout());
 
-            eyebrow = new JLabel("JAD Launcher", SwingConstants.CENTER);
+            eyebrow = new JLabel("", SwingConstants.CENTER);
             eyebrow.setForeground(TEXT_SECONDARY);
             eyebrow.setFont(new Font("Segoe UI", Font.BOLD, 12));
 
             subtitle = new JLabel(
-                    "<html><div style='text-align:center;'>Drag a <b>.jad</b> file into this space to launch it.</div></html>",
+                    "<html><div style='text-align:center;'>Drop a <b>.jad</b> file here to launch it.</div></html>",
                     SwingConstants.CENTER
             );
             subtitle.setForeground(TEXT_PRIMARY);
-            subtitle.setFont(new Font("Segoe UI", Font.PLAIN, 20));
+            subtitle.setFont(new Font("Segoe UI", Font.PLAIN, 22));
 
             hint = new JLabel(
-                    "<html><div style='text-align:center;'>Use <b>File</b> -> <b>Open JAD...</b> for manual selection.<br/>Your recent JADs stay available from the menu.</div></html>",
+                    "<html><div style='text-align:center;'>Open a file manually or drag one in. Recent launches stay available from the <b>File</b> menu.</div></html>",
                     SwingConstants.CENTER
             );
             hint.setForeground(TEXT_SECONDARY);
             hint.setFont(new Font("Segoe UI", Font.PLAIN, 14));
 
-            var content = new JPanel(new BorderLayout(0, 16));
+            openButton = new JButton("Open JAD...");
+            styleLauncherButton(openButton, true);
+            openButton.addActionListener(event -> chooseAndLaunch());
+
+            var buttonRow = new JPanel(new GridLayout(1, 1, 0, 0));
+            buttonRow.setOpaque(false);
+            buttonRow.add(openButton);
+
+            var content = new JPanel(new BorderLayout(0, 18));
             content.setOpaque(false);
-            content.setBorder(new EmptyBorder(34, 34, 34, 34));
+            content.setBorder(new EmptyBorder(38, 38, 38, 38));
             content.add(eyebrow, BorderLayout.NORTH);
-            content.add(subtitle, BorderLayout.CENTER);
-            content.add(hint, BorderLayout.SOUTH);
+            var body = new JPanel(new BorderLayout(0, 14));
+            body.setOpaque(false);
+            body.add(subtitle, BorderLayout.NORTH);
+            body.add(hint, BorderLayout.CENTER);
+            body.add(buttonRow, BorderLayout.SOUTH);
+            content.add(body, BorderLayout.CENTER);
             add(content, BorderLayout.CENTER);
         }
 
         private void setDragActive(boolean dragActive) {
             this.dragActive = dragActive;
-            eyebrow.setText(dragActive ? "Release to Launch" : "JAD Launcher");
+            eyebrow.setText(dragActive ? "Release to Launch" : "Launcher");
             subtitle.setText(dragActive
                     ? "<html><div style='text-align:center;'>Drop the file to open it in ReMEXA.</div></html>"
-                    : "<html><div style='text-align:center;'>Drag a <b>.jad</b> file into this space to launch it.</div></html>");
+                    : "<html><div style='text-align:center;'>Drop a <b>.jad</b> file here to launch it.</div></html>");
             hint.setText(dragActive
                     ? "<html><div style='text-align:center;'>The selected JAD will be added to your recent list automatically.</div></html>"
-                    : "<html><div style='text-align:center;'>Use <b>File</b> -> <b>Open JAD...</b> for manual selection.<br/>Your recent JADs stay available from the menu.</div></html>");
+                    : "<html><div style='text-align:center;'>Open a file manually or drag one in. Recent launches stay available from the <b>File</b> menu.</div></html>");
+            openButton.setEnabled(!dragActive);
             repaint();
         }
 
@@ -711,21 +789,21 @@ public final class LauncherFrame extends JFrame {
             try {
                 g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
                 g2.setColor(new Color(228, 223, 214));
-                g2.fillRoundRect(10, 14, getWidth() - 20, getHeight() - 20, 34, 34);
+                g2.fillRoundRect(12, 16, getWidth() - 24, getHeight() - 24, 34, 34);
 
                 g2.setColor(CARD_BACKGROUND);
-                g2.fillRoundRect(0, 0, getWidth() - 1, getHeight() - 8, 34, 34);
+                g2.fillRoundRect(0, 0, getWidth() - 1, getHeight() - 10, 34, 34);
 
                 g2.setStroke(new BasicStroke(2.25f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND, 1f, new float[]{9f, 9f}, 0f));
                 g2.setColor(dragActive ? CARD_BORDER_ACTIVE : CARD_BORDER);
-                g2.drawRoundRect(16, 16, getWidth() - 33, getHeight() - 39, 24, 24);
+                g2.drawRoundRect(18, 18, getWidth() - 37, getHeight() - 45, 24, 24);
 
                 g2.setStroke(new BasicStroke(1f));
                 g2.setColor(new Color(236, 232, 224));
-                g2.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 8, 34, 34);
+                g2.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 10, 34, 34);
                 if (dragActive) {
                     g2.setColor(new Color(52, 119, 89, 24));
-                    g2.fillRoundRect(16, 16, getWidth() - 33, getHeight() - 39, 24, 24);
+                    g2.fillRoundRect(18, 18, getWidth() - 37, getHeight() - 45, 24, 24);
                 }
             } finally {
                 g2.dispose();
