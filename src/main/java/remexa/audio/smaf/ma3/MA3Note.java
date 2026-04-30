@@ -219,6 +219,16 @@ class MA3Note
         // Compute BLOCK and F_NUMBER
         double freq =
             this.algorithm.isDrum ? this.freqBase : this.freqBase * bend;
+
+        // VM5 Basic Octave shifts the operator frequency by full octaves
+        // before block/f_number decomposition. BO=1 is the default (no
+        // shift); BO=0 raises by an octave, 2 lowers by one, 3 by two.
+        int bo = this.algorithm.basicOctave;
+        if (bo != 1)
+        {
+            freq *= Math.pow(2, 1 - bo);
+        }
+
         this.block = Math.min(7, Math.max(0, (int)(Math.round(Math.log(
             freq / 440) * MA3SamplerProvider.MAGIC_B) + 57) / 12));
         this.f_number = Math.min(1023, Math.max(0, (int)Math.round(

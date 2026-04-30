@@ -243,6 +243,41 @@ public class MA3SamplerProvider
     static final int[] MULTIS =
         {1, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 20, 24, 24, 30, 30};
 
+    /**
+     * YMF/MA-5 detune coefficients, indexed by [DT(0-7)][KSN(0-15)] where
+     * KSN = (BLOCK<<1) | (FNUM>>9). Values are absolute frequency offsets in
+     * Hz added to the operator's base frequency. DT 0 and DT 4 are zero;
+     * DT 5-7 mirror DT 1-3 with negative sign. Source: fmfm.core ymfdata.
+     */
+    static final double[][] DT_COEF =
+    {
+        {0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00,
+         0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00},
+        {0.00, 0.00, 0.05, 0.05, 0.05, 0.05, 0.09, 0.09,
+         0.14, 0.14, 0.18, 0.23, 0.27, 0.32, 0.37, 0.37},
+        {0.05, 0.05, 0.09, 0.09, 0.14, 0.14, 0.18, 0.23,
+         0.27, 0.32, 0.41, 0.46, 0.59, 0.64, 0.73, 0.73},
+        {0.09, 0.09, 0.14, 0.14, 0.18, 0.23, 0.28, 0.32,
+         0.41, 0.46, 0.59, 0.64, 0.87, 0.91, 1.00, 1.00},
+        {0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00,
+         0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00},
+        {-0.00, -0.00, -0.05, -0.05, -0.05, -0.05, -0.09, -0.09,
+         -0.14, -0.14, -0.18, -0.23, -0.27, -0.32, -0.37, -0.37},
+        {-0.05, -0.05, -0.09, -0.09, -0.14, -0.14, -0.18, -0.23,
+         -0.27, -0.32, -0.41, -0.46, -0.59, -0.64, -0.73, -0.73},
+        {-0.09, -0.09, -0.14, -0.14, -0.18, -0.23, -0.28, -0.32,
+         -0.41, -0.46, -0.59, -0.64, -0.87, -0.91, -1.00, -1.00},
+    };
+
+    /**
+     * Oscillator phase increment per Hz at the chip's nominal sample rate.
+     * The wave LUT cycle is 1024 entries with the index taken from
+     * (oscPhase >> 9) & 1023, so one full cycle is 1024 * 512 = 524288
+     * oscPhase units. dividing by SAMPLE_RATE gives phase units per second
+     * per Hz.
+     */
+    static final double DT_PHASE_PER_HZ = 524288.0 / SAMPLE_RATE;
+
     static final int NTS = 1;
 
     /**

@@ -87,6 +87,29 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
         private static final double PCM_DECAY_DB_PER_SEC_AT_4 = 17.9342 / 2.0;
         private static final double PCM_ATTACK_TIME_SEC_AT_1 = 3.07068;
 
+        /**
+         * MIDI key at which a melodic PCM voice's frequencySetting represents
+         * unity (natural-rate) playback. Above this key the voice plays
+         * faster, below it slower. 60 (middle C) is the common Yamaha
+         * convention; tunable via {@code remexa.ma5PcmReferenceKey} if a
+         * particular bank was authored against a different center.
+         */
+        private static final int PCM_REFERENCE_KEY =
+                Integer.parseInt(System.getProperty("remexa.ma5PcmReferenceKey", "60"));
+
+        /**
+         * Hardware envelope rate multipliers (Q30) extracted from
+         * {@code M5_EmuHw.dll} at {@code data_100c95c8} (the 48 kHz table).
+         * Indexed by 4-bit rate field. Per-sample env_level *= entry / 2^30.
+         * Rates 0-3 are 1.0 (no decay).
+         */
+        private static final int[] HW_RATE_TABLE_Q30 = {
+                0x40000000, 0x40000000, 0x40000000, 0x40000000,
+                0x3fffe98b, 0x3fffe3ee, 0x3fffde51, 0x3fffd8b4,
+                0x3fffd317, 0x3fffc7dc, 0x3fffbca2, 0x3fffb168,
+                0x3fffa62e, 0x3fff8fb9, 0x3fff7945, 0x3fff62d0,
+        };
+
         private final Sampler sampler;
         private final float sampleRate;
         private final MA5SoftbankBridge softbankBridge;
@@ -571,7 +594,23 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
             }
 
             private float advance(float bendSemitones) {
-                return baseAdvance * hardwarePitchRatio(key + bendSemitones);
+                if (voice.drumVoice()) {
+                    // Drum-kit voices play at the authored natural rate. The
+                    // MIDI note only selects WHICH drum (via the per-note
+                    // program lookup), so transposing by key would shift bass
+                    // content out of the kick/tom thump range. Pitch bend
+                    // still applies as a fine adjustment if the sequence
+                    // sweeps a hit.
+                    if (bendSemitones == 0.0f) {
+                        return baseAdvance;
+                    }
+                    return baseAdvance * hardwarePitchRatio(bendSemitones);
+                }
+                // Melodic PCM transposes relative to a chip-defined center
+                // key. The voice's frequencySetting is calibrated for that
+                // key; above it plays faster, below it slower.
+                return baseAdvance
+                        * hardwarePitchRatio(key - PCM_REFERENCE_KEY + bendSemitones);
             }
 
             private static float hardwarePitchRatio(float semitones) {
@@ -668,8 +707,14 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
                 if (rate <= 0) {
                     return 1.0f;
                 }
-                double dbPerSample = PCM_DECAY_DB_PER_SEC_AT_4 * (1 << Math.min(rate, 30)) / 16.0 / outputSampleRate;
-                return (float) Math.pow(10.0, -dbPerSample / 10.0);
+                int idx = Math.min(rate, 15);
+                double coef48k = HW_RATE_TABLE_Q30[idx] / (double) (1 << 30);
+                if (Math.abs(outputSampleRate - 48_000.0f) < 1.0f) {
+                    return (float) coef48k;
+                }
+                // Per-sample multiplier rescales as a power of the SR ratio
+                // so wall-clock decay times stay constant at non-48k outputs.
+                return (float) Math.pow(coef48k, 48_000.0 / outputSampleRate);
             }
 
             private static float sustainLevel(int sustainLevel) {

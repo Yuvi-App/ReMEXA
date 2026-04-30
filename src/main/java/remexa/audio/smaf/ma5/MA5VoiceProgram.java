@@ -93,7 +93,7 @@ public record MA5VoiceProgram(int bankLsb,
         message[offset] = (byte) type;
         message[offset + 1] = (byte) (bankLsb & 0x7f);
         message[offset + 2] = (byte) (program & 0x7f);
-        message[offset + 3] = 0x00;
+        message[offset + 3] = (byte) (drumKey & 0xff);
         message[offset + 4] = (byte) (((panpot & 0x1f) << 3) | (basicOctave & 0x03));
         message[offset + 5] = (byte) (((lfo & 0x03) << 6)
                 | (panpotEnable ? 0x20 : 0x00)

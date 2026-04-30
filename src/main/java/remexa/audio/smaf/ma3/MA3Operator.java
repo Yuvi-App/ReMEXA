@@ -210,6 +210,21 @@ class MA3Operator
     int ws;
 
     /**
+     * Operator phase-counter offset from YMF/MA-5 detune (DT). Computed at
+     * each frequency change from {@link MA3SamplerProvider#DT_COEF} when
+     * {@link #ymfDetune} is set. Added to the per-sample oscillator advance.
+     */
+    int dtShift;
+
+    /**
+     * Whether this operator should apply YMF-style detune from the DT field.
+     * Only set by the MA-5 SysEx constructor; MA-2/MA-3 ROM presets parse a
+     * differently-shaped DT bit pattern, so leaving this false preserves
+     * their established sound.
+     */
+    boolean ymfDetune;
+
+    /**
      * Template constructor
      */
     MA3Operator(byte[] bytes, int offset)
@@ -296,6 +311,7 @@ class MA3Operator
         this.tl = o.tl;
         this.ws = o.ws;
         this.xof = o.xof;
+        this.ymfDetune = o.ymfDetune;
 
 
         this.algorithm = note.algorithm;
@@ -345,6 +361,7 @@ class MA3Operator
         bits = message[offset++] & 0xFF;
         this.ws = bits >> 3 & 31;
         this.fb = bits & 7;
+        this.ymfDetune = true;
     }
 
 
@@ -365,6 +382,23 @@ class MA3Operator
         this.kslOut = Math.max(0,
             MA3SamplerProvider.KSL_B[this.ksl] * ((note.block << 3) -
                 MA3SamplerProvider.KSL_F[note.f_number >> 6]));
+
+        // YMF/MA-5 detune adds a small Hz offset that depends on (block, fnum).
+        // Convert to oscillator phase units per sample, scaled by the
+        // operator's frequency multiplier so it tracks alongside the
+        // existing oscPhase advance.
+        if (this.ymfDetune && this.dt != 0)
+        {
+            int ksn = (note.block << 1) | (note.f_number >> 9 & 1);
+            double dtHz = MA3SamplerProvider.DT_COEF[this.dt][ksn];
+            this.dtShift = (int)Math.round(
+                dtHz * MA3SamplerProvider.DT_PHASE_PER_HZ
+                    * MA3SamplerProvider.MULTIS[this.multi] / 2.0);
+        }
+        else
+        {
+            this.dtShift = 0;
+        }
     }
 
     /**
@@ -507,7 +541,8 @@ class MA3Operator
 
         // Advance the oscillator
         this.oscPhase +=
-            (note.f_number << note.block >> 1) * constMultis[this.multi] >> 1;
+            ((note.f_number << note.block >> 1) * constMultis[this.multi] >> 1)
+                + this.dtShift;
 
         // GuyPerfect said: "According to available resources, the below algorithm should be
         // correct for vibrato, but no significance has been observed and

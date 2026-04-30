@@ -80,6 +80,13 @@ class MA3Algorithm
     int alg;
 
     /**
+     * VM5 Basic Octave field (2 bits). 0 = +12 semitones, 1 = unshifted
+     * (default), 2 = -12, 3 = -24. Only meaningful for MA-5 SysEx voices;
+     * the legacy MA-2/MA-3 path leaves this at 1.
+     */
+    int basicOctave = 1;
+
+    /**
      * Wave end point
      */
     int ep;
@@ -192,9 +199,15 @@ class MA3Algorithm
     {
         int bits;
         int type = message[offset] & 0xFF;
+        // Layout (built by MA5VoiceProgram.toMa3FmAlgorithmMessage):
+        //   [+0] type, [+1] bankLsb, [+2] program, [+3] drumKey,
+        //   [+4] panpot<<3 | basicOctave, [+5] lfo<<6 | PE<<5 | alg,
+        //   [+6..] operator records
+        this.drumKey = message[offset + 3] & 0xFF;
         offset += 4;
         bits = message[offset++] & 0xFF;
         this.panpot = bits >> 3 & 31;
+        this.basicOctave = bits & 0x03;
         bits = message[offset++] & 0xFF;
         this.lfo = bits >> 6 & 3;
         this.pe = (bits >> 5 & 1) != 0;
@@ -204,6 +217,15 @@ class MA3Algorithm
         this.operators = new MA3Operator[this.alg < 2 ? 2 : 4];
         for (int x = 0; x < this.operators.length; x++, offset += 7)
             this.operators[x] = new MA3Operator(message, offset, true);
+
+        // Drum-flagged voices (drumKey != 0) are authored to play at a fixed
+        // pitch independent of MIDI note. Mirror the FM-template ctor so the
+        // drum-routing path in MA3Sampler picks up a non-zero base frequency.
+        if (this.drumKey != 0)
+        {
+            this.freqBase = (float)(440 * Math.pow(2,
+                (this.drumKey - 69) / 12.0));
+        }
         this.initPost();
     }
 
