@@ -162,17 +162,26 @@ public final class RecordStore {
     }
 
     public synchronized byte[] getRecord(int recordId) throws RecordStoreException {
-        var data = copyRecord(recordId);
+        var data = compatibilityRecordView(copyRecord(recordId));
         DebugLog.log(
                 LogCategory.RMS,
                 RecordStore.class.getName(),
-                "getRecord(\"" + name + "\", id=" + recordId + ") -> " + data.length + " bytes"
+                "getRecord(\"" + name + "\", id=" + recordId + ") -> "
+                        + (data == null ? "null" : data.length + " bytes")
         );
         return data;
     }
 
     public synchronized int getRecord(int recordId, byte[] buffer, int offset) throws RecordStoreException {
-        byte[] record = copyRecord(recordId);
+        byte[] record = compatibilityRecordView(copyRecord(recordId));
+        if (record == null) {
+            DebugLog.log(
+                    LogCategory.RMS,
+                    RecordStore.class.getName(),
+                    "getRecord(\"" + name + "\", id=" + recordId + ", buffer) -> null"
+            );
+            return 0;
+        }
         System.arraycopy(record, 0, buffer, offset, record.length);
         DebugLog.log(
                 LogCategory.RMS,
@@ -183,7 +192,8 @@ public final class RecordStore {
     }
 
     public synchronized int getRecordSize(int recordId) throws RecordStoreException {
-        return getRecord(recordId).length;
+        byte[] record = getRecord(recordId);
+        return record == null ? 0 : record.length;
     }
 
     public synchronized int getNumRecords() {
@@ -232,6 +242,13 @@ public final class RecordStore {
 
     synchronized byte[] copyRecord(int recordId) throws RecordStoreException {
         return entryForId(recordId).data.clone();
+    }
+
+    private byte[] compatibilityRecordView(byte[] record) {
+        if (record != null && record.length == 0) {
+            return null;
+        }
+        return record;
     }
 
     synchronized List<Integer> snapshotRecordIds(RecordFilter filter, RecordComparator comparator) throws RecordStoreException {
