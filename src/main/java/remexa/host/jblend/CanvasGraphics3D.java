@@ -45,6 +45,8 @@ public final class CanvasGraphics3D extends Graphics implements Graphics3D {
         if (layout == null || effect == null || vertexCoords == null) {
             throw new NullPointerException();
         }
+        int translateX = getTranslateX();
+        int translateY = getTranslateY();
         DebugLog.log(
                 LogCategory.J3D,
                 CanvasGraphics3D.class.getName(),
@@ -61,12 +63,12 @@ public final class CanvasGraphics3D extends Graphics implements Graphics3D {
                 sceneDepth,
                 surfaceWidth,
                 surfaceHeight,
-                getClipX(),
-                getClipY(),
+                getClipX() + translateX,
+                getClipY() + translateY,
                 getClipWidth(),
                 getClipHeight(),
-                x,
-                y,
+                x + translateX,
+                y + translateY,
                 layout,
                 effect,
                 texture,
@@ -88,18 +90,20 @@ public final class CanvasGraphics3D extends Graphics implements Graphics3D {
         }
         // JSCL allows null slots in the texture array as long as the command
         // list does not select them via COMMAND_TEXTURE_INDEX.
+        int translateX = getTranslateX();
+        int translateY = getTranslateY();
         ensureSceneBuffers();
         if (SoftwareJ3dRenderer.renderCommandListToBuffers(
                 scenePixels,
                 sceneDepth,
                 surfaceWidth,
                 surfaceHeight,
-                getClipX(),
-                getClipY(),
+                getClipX() + translateX,
+                getClipY() + translateY,
                 getClipWidth(),
                 getClipHeight(),
-                x,
-                y,
+                x + translateX,
+                y + translateY,
                 layout,
                 effect,
                 textures,
@@ -129,7 +133,19 @@ public final class CanvasGraphics3D extends Graphics implements Graphics3D {
         if (!sceneDirty || scenePixels == null) {
             return;
         }
-        super.drawRGB(scenePixels, 0, surfaceWidth, 0, 0, surfaceWidth, surfaceHeight, true);
+        // Scene buffers are tracked in absolute surface coordinates. Cancel the
+        // current MIDP translation when blitting them back so we do not replay
+        // already-drawn 2D content at an extra offset.
+        super.drawRGB(
+                scenePixels,
+                0,
+                surfaceWidth,
+                -getTranslateX(),
+                -getTranslateY(),
+                surfaceWidth,
+                surfaceHeight,
+                true
+        );
         clearSceneBuffers();
     }
 
@@ -138,9 +154,11 @@ public final class CanvasGraphics3D extends Graphics implements Graphics3D {
         if (figure == null || layout == null) {
             return;
         }
+        int translateX = getTranslateX();
+        int translateY = getTranslateY();
         var affine = layout.getAffineTrans();
-        int centerX = x + (layout.hasExplicitCenter() ? layout.getCenterX() : surfaceWidth / 2);
-        int centerY = y + (layout.hasExplicitCenter() ? layout.getCenterY() : surfaceHeight / 2);
+        int centerX = x + translateX + (layout.hasExplicitCenter() ? layout.getCenterX() : surfaceWidth / 2);
+        int centerY = y + translateY + (layout.hasExplicitCenter() ? layout.getCenterY() : surfaceHeight / 2);
         boolean perspective = layout.isPerspective();
         int nearClip = 0;
         int farClip = 0;
@@ -189,8 +207,8 @@ public final class CanvasGraphics3D extends Graphics implements Graphics3D {
                 sceneDepth,
                 surfaceWidth,
                 surfaceHeight,
-                getClipX(),
-                getClipY(),
+                getClipX() + translateX,
+                getClipY() + translateY,
                 getClipWidth(),
                 getClipHeight(),
                 centerX,
