@@ -40,6 +40,8 @@ public final class SoftwareJ3dRenderer {
     private static final int PDATA_COLOR_PER_COMMAND = 0x0400;
     private static final int PDATA_COLOR_PER_FACE = 0x0800;
     private static final int PDATA_TEXCOORD_MASK = 0x3000;
+    private static final int PDATA_POINT_SPRITE_PARAMS_PER_COMMAND = 0x1000;
+    private static final int PDATA_POINT_SPRITE_PARAMS_PER_FACE = 0x2000;
     private static final int PDATA_TEXCOORD_PER_VERTEX = 0x3000;
     private static final int PRIMITIVE_POINTS = 0x01;
     private static final int PRIMITIVE_LINES = 0x02;
@@ -344,7 +346,13 @@ public final class SoftwareJ3dRenderer {
         int textureInts;
         if (primitiveType == PRIMITIVE_POINT_SPRITES) {
             int spriteMode = command & PDATA_TEXCOORD_MASK;
-            textureInts = spriteMode == 0 ? 0 : numPrimitives * 8;
+            if (spriteMode == PDATA_POINT_SPRITE_PARAMS_PER_COMMAND) {
+                textureInts = 8;
+            } else if (spriteMode == 0) {
+                textureInts = 0;
+            } else {
+                textureInts = numPrimitives * 8;
+            }
         } else {
             textureInts = (command & PDATA_TEXCOORD_MASK) == PDATA_TEXCOORD_PER_VERTEX
                     ? numPrimitives * verticesPerPrimitive * 2
@@ -1039,7 +1047,9 @@ public final class SoftwareJ3dRenderer {
                 }
                 argb = applySphereMap(argb, sphereMap, surfaceWidth, surfaceHeight, x, y);
                 pixels[index] = blend(argb, pixels[index], polygonBlendMode);
-                depthBuffer[index] = pixelDepth;
+                if (writesDepth(polygonBlendMode)) {
+                    depthBuffer[index] = pixelDepth;
+                }
             }
         }
     }
@@ -1444,7 +1454,10 @@ public final class SoftwareJ3dRenderer {
             }
             case PRIMITIVE_POINT_SPRITES -> {
                 int vertexInts = primitiveCount * 3;
-                int spriteInts = primitiveCount * 8;
+                int spriteMode = command & PDATA_TEXCOORD_MASK;
+                int spriteInts = spriteMode == PDATA_POINT_SPRITE_PARAMS_PER_COMMAND
+                        ? 8
+                        : (spriteMode == 0 ? 0 : primitiveCount * 8);
                 if (cursor + vertexInts + spriteInts > commandList.length) {
                     return commandIndex;
                 }
@@ -1458,7 +1471,7 @@ public final class SoftwareJ3dRenderer {
                 }
                 for (int i = 0; i < primitiveCount; i++) {
                     int vertexBase = i * 3;
-                    int spriteBase = i * 8;
+                    int spriteBase = spriteMode == PDATA_POINT_SPRITE_PARAMS_PER_COMMAND ? 0 : i * 8;
                     renderPointSprite(
                             pixels,
                             depthBuffer,
@@ -2003,7 +2016,9 @@ public final class SoftwareJ3dRenderer {
             return;
         }
         pixels[index] = blend(color, pixels[index], blendMode);
-        depthBuffer[index] = depth;
+        if (writesDepth(blendMode)) {
+            depthBuffer[index] = depth;
+        }
     }
 
     private static void rasterizeTriangleProjected(
@@ -2124,9 +2139,15 @@ public final class SoftwareJ3dRenderer {
                 }
                 argb = applySphereMap(argb, sphereMap, surfaceWidth, surfaceHeight, x, y);
                 pixels[index] = blend(argb, pixels[index], blendMode);
-                depthBuffer[index] = pixelDepth;
+                if (writesDepth(blendMode)) {
+                    depthBuffer[index] = pixelDepth;
+                }
             }
         }
+    }
+
+    private static boolean writesDepth(int blendMode) {
+        return blendMode == 0;
     }
 
     private static final class CommandState {
