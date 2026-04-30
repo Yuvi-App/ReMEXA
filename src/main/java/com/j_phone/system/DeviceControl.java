@@ -32,6 +32,8 @@ public class DeviceControl {
     public static final int STYLE_LANDSCAPE = 1;
     private static final com.j_phone.system.DeviceControl DEFAULT = new com.j_phone.system.DeviceControl();
     private final java.util.BitSet activeDevices = new java.util.BitSet();
+    private static final int DEFAULT_BATTERY_PERCENT = 100;
+    private static final int DEFAULT_FIELD_INTENSITY_PERCENT = 100;
 
     public static final com.j_phone.system.DeviceControl getDefaultDeviceControl () {
         remexa.probes.SdkStubSupport.log("com.j_phone.system.DeviceControl", "getDefaultDeviceControl");
@@ -47,7 +49,8 @@ public class DeviceControl {
             case FLIP_STATE -> FLIP_OPENED;
             case MEMORY_CARD -> MEMORY_CARD_OFF;
             case SPEAKER_STATE -> SPEAKER_INTERNAL;
-            case BATTERY, FIELD_INTENSITY -> 0;
+            case BATTERY -> DEFAULT_BATTERY_PERCENT;
+            case FIELD_INTENSITY -> DEFAULT_FIELD_INTENSITY_PERCENT;
             default -> throw new IllegalArgumentException("Unsupported device state: " + deviceNo);
         };
     }
