@@ -21,14 +21,12 @@ import javax.sound.midi.Transmitter;
 import javax.sound.sampled.AudioFormat;
 import javax.sound.sampled.AudioInputStream;
 import javax.sound.sampled.AudioSystem;
-import javax.sound.sampled.Clip;
-import javax.sound.sampled.FloatControl;
-import javax.sound.sampled.LineEvent;
-import javax.sound.sampled.LineUnavailableException;
 import javax.sound.sampled.UnsupportedAudioFileException;
 import javax.microedition.media.control.VolumeControl;
 import javax.microedition.media.decoders.WAVTools;
 import javax.microedition.media.decoders.WAVYamahaADPCMDecoder;
+import remexa.audio.pcm.RenderedPcmAudio;
+import remexa.audio.pcm.RenderedPcmPlayer;
 import remexa.audio.smaf.SmafPlayback;
 import remexa.host.runtime.MidletRuntime;
 
@@ -848,8 +846,10 @@ public final class Manager {
 
     private static final class WavPlayer extends AbstractPlayer {
         private final byte[] source;
-        private Clip clip;
-        private volatile boolean ignoreNextStopEvent;
+        private RenderedPcmAudio audio;
+        private RenderedPcmPlayer playback;
+        private volatile long playbackStartedAtNanos;
+        private volatile long cachedMediaTimeMillis;
 
         private WavPlayer(byte[] source, String contentType) {
             super(contentType);
@@ -859,8 +859,17 @@ public final class Manager {
         @Override
         protected synchronized void doRealize() throws MediaException {
             try {
-                clip = openClip(source);
-                clip.addLineListener(this::handleLineEvent);
+                audio = openRenderedAudio(source);
+                playback = new RenderedPcmPlayer(audio);
+                playback.setCompletionListener(() -> {
+                    long duration = durationMillis(audio);
+                    cachedMediaTimeMillis = duration <= 0L || loopsForever(loopCount())
+                            ? duration
+                            : duration * Math.max(1, loopCount());
+                    playbackStartedAtNanos = 0L;
+                    notifyEndOfMedia();
+                });
+                RenderedPcmPlayer.prewarm(audio.sampleRate(), audio.channelCount());
                 onVolumeChanged();
             } catch (MediaException exception) {
                 closeQuietly();
@@ -871,20 +880,15 @@ public final class Manager {
 
         @Override
         protected synchronized void doStart() throws MediaException {
-            if (clip == null) {
+            if (playback == null || audio == null || audio.frameCount() <= 0) {
                 notifyEndOfMediaSoon();
                 return;
             }
             try {
-                if (clip.getFramePosition() >= clip.getFrameLength()) {
-                    clip.setFramePosition(0);
-                }
                 onVolumeChanged();
-                if (loopsForever(loopCount()) || loopCount() > 1) {
-                    clip.loop(loopsForever(loopCount()) ? Clip.LOOP_CONTINUOUSLY : Math.max(0, loopCount() - 1));
-                } else {
-                    clip.start();
-                }
+                cachedMediaTimeMillis = 0L;
+                playbackStartedAtNanos = System.nanoTime();
+                playback.play(loopsForever(loopCount()) ? 0 : Math.max(1, loopCount()));
             } catch (RuntimeException exception) {
                 throw new MediaException("Failed to start WAV player.", exception);
             }
@@ -892,11 +896,13 @@ public final class Manager {
 
         @Override
         protected synchronized void doStop() throws MediaException {
-            if (clip == null) {
+            if (playback == null) {
                 return;
             }
             try {
-                stopClip(true);
+                playback.stop();
+                playbackStartedAtNanos = 0L;
+                cachedMediaTimeMillis = 0L;
             } catch (RuntimeException exception) {
                 throw new MediaException("Failed to stop WAV player.", exception);
             }
@@ -914,140 +920,106 @@ public final class Manager {
 
         @Override
         protected synchronized void onVolumeChanged() {
-            if (clip == null || !clip.isControlSupported(FloatControl.Type.MASTER_GAIN)) {
+            if (playback == null) {
                 return;
             }
-            FloatControl gain = (FloatControl) clip.getControl(FloatControl.Type.MASTER_GAIN);
-            if (muted() || volumeLevel() <= 0) {
-                gain.setValue(gain.getMinimum());
-                return;
-            }
-            float normalized = Math.max(0.0001f, volumeLevel() / 100.0f);
-            float gainDb = (float) (20.0 * Math.log10(normalized));
-            gain.setValue(Math.max(gain.getMinimum(), Math.min(gain.getMaximum(), gainDb)));
+            int level = muted() ? 0 : Math.round(Math.max(0, Math.min(100, volumeLevel())) * 127.0f / 100.0f);
+            playback.setVolume(level);
         }
 
         @Override
         protected synchronized boolean isStarted() {
-            return clip != null && clip.isRunning();
+            return playback != null && playback.getState() == RenderedPcmPlayer.PLAYING;
         }
 
         @Override
         protected synchronized long doSetMediaTime(long now) throws MediaException {
-            if (clip == null) {
+            if (playback == null) {
                 return 0L;
             }
-            long targetMicros = Math.max(0L, now) * 1000L;
-            long maxMicros = clip.getMicrosecondLength();
-            if (maxMicros > 0L) {
-                targetMicros = Math.min(targetMicros, maxMicros);
+            boolean wasStarted = isStarted();
+            playback.stop();
+            cachedMediaTimeMillis = 0L;
+            playbackStartedAtNanos = 0L;
+            if (wasStarted) {
+                playbackStartedAtNanos = System.nanoTime();
+                playback.play(loopsForever(loopCount()) ? 0 : Math.max(1, loopCount()));
             }
-            boolean wasRunning = clip.isRunning();
-            stopClip(false);
-            clip.setMicrosecondPosition(targetMicros);
-            if (wasRunning) {
-                if (loopsForever(loopCount()) || loopCount() > 1) {
-                    clip.loop(loopsForever(loopCount()) ? Clip.LOOP_CONTINUOUSLY : Math.max(0, loopCount() - 1));
-                } else {
-                    clip.start();
-                }
-            }
-            return clip.getMicrosecondPosition() / 1000L;
+            return 0L;
         }
 
         @Override
         protected synchronized long doGetMediaTime() {
-            return clip == null ? 0L : clip.getMicrosecondPosition() / 1000L;
+            if (playback == null || audio == null) {
+                return 0L;
+            }
+            long startedAt = playbackStartedAtNanos;
+            if (startedAt <= 0L || playback.getState() != RenderedPcmPlayer.PLAYING) {
+                return cachedMediaTimeMillis;
+            }
+            long elapsedMillis = Math.max(0L, (System.nanoTime() - startedAt) / 1_000_000L);
+            long durationMillis = durationMillis(audio);
+            if (durationMillis <= 0L) {
+                return elapsedMillis;
+            }
+            if (loopsForever(loopCount())) {
+                return elapsedMillis % durationMillis;
+            }
+            long totalMillis = durationMillis * Math.max(1, loopCount());
+            return Math.min(elapsedMillis, totalMillis);
         }
 
         @Override
         protected synchronized long doGetDuration() {
-            return clip == null ? TIME_UNKNOWN : clip.getMicrosecondLength() / 1000L;
-        }
-
-        private void handleLineEvent(LineEvent event) {
-            if (event.getType() != LineEvent.Type.STOP) {
-                return;
-            }
-            if (ignoreNextStopEvent) {
-                ignoreNextStopEvent = false;
-                return;
-            }
-            Clip currentClip = clip;
-            if (currentClip != null && currentClip.getFrameLength() > 0
-                    && currentClip.getFramePosition() >= currentClip.getFrameLength()) {
-                notifyEndOfMedia();
-            }
-        }
-
-        private void stopClip(boolean resetPosition) {
-            if (clip == null) {
-                return;
-            }
-            if (clip.isRunning()) {
-                ignoreNextStopEvent = true;
-                clip.stop();
-            }
-            if (resetPosition) {
-                clip.setFramePosition(0);
-            }
+            return audio == null ? TIME_UNKNOWN : durationMillis(audio);
         }
 
         private void closeQuietly() {
-            Clip currentClip = clip;
-            clip = null;
-            ignoreNextStopEvent = false;
-            if (currentClip != null) {
+            RenderedPcmPlayer currentPlayback = playback;
+            playback = null;
+            audio = null;
+            playbackStartedAtNanos = 0L;
+            cachedMediaTimeMillis = 0L;
+            if (currentPlayback != null) {
                 try {
-                    if (currentClip.isRunning()) {
-                        currentClip.stop();
-                    }
-                } catch (RuntimeException ignored) {
-                }
-                try {
-                    currentClip.close();
+                    currentPlayback.close();
                 } catch (RuntimeException ignored) {
                 }
             }
         }
 
-        private static Clip openClip(byte[] source) throws Exception {
+        private static RenderedPcmAudio openRenderedAudio(byte[] source) throws Exception {
             try {
-                return openClipWithAudioSystem(source);
-            } catch (UnsupportedAudioFileException | LineUnavailableException | IllegalArgumentException exception) {
+                return openRenderedAudioWithAudioSystem(source);
+            } catch (UnsupportedAudioFileException | IllegalArgumentException exception) {
                 byte[] decoded = decodeLegacyWav(source);
                 try {
-                    return openClipWithAudioSystem(decoded);
-                } catch (UnsupportedAudioFileException | LineUnavailableException | IllegalArgumentException fallbackException) {
+                    return openRenderedAudioWithAudioSystem(decoded);
+                } catch (UnsupportedAudioFileException | IllegalArgumentException fallbackException) {
                     fallbackException.addSuppressed(exception);
                     throw fallbackException;
                 }
             }
         }
 
-        private static Clip openClipWithAudioSystem(byte[] source)
-                throws IOException, UnsupportedAudioFileException, LineUnavailableException {
+        private static RenderedPcmAudio openRenderedAudioWithAudioSystem(byte[] source)
+                throws IOException, UnsupportedAudioFileException {
             try (AudioInputStream rawStream = AudioSystem.getAudioInputStream(new ByteArrayInputStream(source))) {
                 AudioFormat rawFormat = rawStream.getFormat();
-                AudioFormat targetFormat = clipFriendlyFormat(rawFormat);
-                if (!rawFormat.matches(targetFormat) && AudioSystem.isConversionSupported(targetFormat, rawFormat)) {
+                AudioFormat targetFormat = renderedFriendlyFormat(rawFormat);
+                if (requiresConversion(rawFormat, targetFormat)) {
+                    if (!AudioSystem.isConversionSupported(targetFormat, rawFormat)) {
+                        throw new UnsupportedAudioFileException("Unsupported WAV format: " + rawFormat);
+                    }
                     try (AudioInputStream converted = AudioSystem.getAudioInputStream(targetFormat, rawStream)) {
-                        Clip clip = AudioSystem.getClip();
-                        clip.open(converted);
-                        return clip;
+                        return readRenderedAudio(converted, targetFormat);
                     }
                 }
-                Clip clip = AudioSystem.getClip();
-                clip.open(rawStream);
-                return clip;
+                return readRenderedAudio(rawStream, targetFormat);
             }
         }
 
-        private static AudioFormat clipFriendlyFormat(AudioFormat rawFormat) {
-            if (AudioFormat.Encoding.PCM_SIGNED.equals(rawFormat.getEncoding())
-                    && rawFormat.getSampleSizeInBits() >= 16) {
-                return rawFormat;
-            }
+        private static AudioFormat renderedFriendlyFormat(AudioFormat rawFormat) {
             int channels = Math.max(1, rawFormat.getChannels());
             float sampleRate = rawFormat.getSampleRate() > 0 ? rawFormat.getSampleRate() : 44100.0f;
             return new AudioFormat(
@@ -1059,6 +1031,36 @@ public final class Manager {
                     sampleRate,
                     false
             );
+        }
+
+        private static boolean requiresConversion(AudioFormat rawFormat, AudioFormat targetFormat) {
+            return !AudioFormat.Encoding.PCM_SIGNED.equals(rawFormat.getEncoding())
+                    || rawFormat.getSampleSizeInBits() != 16
+                    || rawFormat.isBigEndian()
+                    || rawFormat.getChannels() != targetFormat.getChannels()
+                    || rawFormat.getFrameSize() != targetFormat.getFrameSize()
+                    || Float.compare(rawFormat.getSampleRate(), targetFormat.getSampleRate()) != 0;
+        }
+
+        private static RenderedPcmAudio readRenderedAudio(AudioInputStream input, AudioFormat format)
+                throws IOException {
+            byte[] pcm = readAllBytes(input);
+            int channels = Math.max(1, format.getChannels());
+            int frameSize = Math.max(1, channels * 2);
+            int usableLength = (pcm.length / frameSize) * frameSize;
+            if (usableLength != pcm.length) {
+                pcm = Arrays.copyOf(pcm, usableLength);
+            }
+            int frameCount = usableLength / frameSize;
+            int sampleRate = Math.max(1, Math.round(format.getSampleRate()));
+            return new RenderedPcmAudio(sampleRate, channels, frameCount, pcm);
+        }
+
+        private static long durationMillis(RenderedPcmAudio audio) {
+            if (audio == null || audio.sampleRate() <= 0) {
+                return TIME_UNKNOWN;
+            }
+            return Math.max(0L, Math.round(audio.frameCount() * 1000.0 / audio.sampleRate()));
         }
 
         private static byte[] decodeLegacyWav(byte[] source) throws MediaException {
