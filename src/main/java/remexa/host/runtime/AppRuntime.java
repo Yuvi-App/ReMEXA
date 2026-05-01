@@ -226,21 +226,30 @@ public final class AppRuntime {
         if (classLoader == null) {
             return;
         }
-        try {
-            var phrasePlayerClass = classLoader.loadClass("com.jblend.media.smaf.phrase.PhrasePlayer");
-            var getPlayer = phrasePlayerClass.getMethod("getPlayer");
-            var player = getPlayer.invoke(null);
-            var kill = phrasePlayerClass.getMethod("kill");
-            kill.invoke(player);
+        var disposed = false;
+        for (var phrasePlayerClassName : new String[]{
+                "com.j_phone.amuse.PhrasePlayer",
+                "com.jblend.media.smaf.phrase.PhrasePlayer"
+        }) {
+            try {
+                var phrasePlayerClass = classLoader.loadClass(phrasePlayerClassName);
+                var getPlayer = phrasePlayerClass.getMethod("getPlayer");
+                var player = getPlayer.invoke(null);
+                var kill = phrasePlayerClass.getMethod("kill");
+                kill.invoke(player);
+                disposed = true;
+            } catch (ClassNotFoundException ignored) {
+                // This app did not use this phrase player facade.
+            } catch (ReflectiveOperationException exception) {
+                DebugLog.log(
+                        LogCategory.HOST,
+                        AppRuntime.class.getName(),
+                        "Failed to dispose phrase player during shutdown (" + phrasePlayerClassName + "): " + exception.getMessage()
+                );
+            }
+        }
+        if (disposed) {
             DebugLog.log(LogCategory.HOST, AppRuntime.class.getName(), "Disposed phrase player during shutdown.");
-        } catch (ClassNotFoundException ignored) {
-            // This app did not use the phrase player classes.
-        } catch (ReflectiveOperationException exception) {
-            DebugLog.log(
-                    LogCategory.HOST,
-                    AppRuntime.class.getName(),
-                    "Failed to dispose phrase player during shutdown: " + exception.getMessage()
-            );
         }
     }
 

@@ -7,6 +7,10 @@ import remexa.host.runtime.LegacyRuntimeSupport;
 import remexa.host.runtime.MidletRuntime;
 
 public abstract class Canvas extends Displayable {
+    private static final int JPHONE_SOFT_LEFT = -21;
+    private static final int JPHONE_SOFT_RIGHT = -22;
+    private static final int JPHONE_SOFT_CENTER = -23;
+
     public static final int UP = 1;
     public static final int LEFT = 2;
     public static final int RIGHT = 5;
@@ -159,6 +163,9 @@ public abstract class Canvas extends Displayable {
             case SOFT1 -> "Soft1";
             case SOFT2 -> "Soft2";
             case SOFT3 -> "Soft3";
+            case JPHONE_SOFT_LEFT -> "SoftLeft";
+            case JPHONE_SOFT_RIGHT -> "SoftRight";
+            case JPHONE_SOFT_CENTER -> "SoftCenter";
             case '0' -> "0";
             case '1' -> "1";
             case '2' -> "2";
@@ -254,10 +261,21 @@ public abstract class Canvas extends Displayable {
         if (containsAnyKey(KEYCODE_FIRE, (int) '\n', FIRE, (int) '5')) {
             state |= 0x10000;
         }
-        // J-Phone JSCL reverses the MIDP convention: bit 0x20000 ("SK1" in the
-        // device key state) is the RIGHT softkey, 0x40000 is the LEFT softkey.
-        // Burning Fortress polls b(131072) for its primary "decide/start" action
-        // (right-softkey-labeled), confirming the swap vs. MIDP's SOFT1=left.
+        // Raw J-Phone key presses arrive as -21/-22/-23 for the physical
+        // left/right/center softkeys. Some titles poll DeviceControl.KEY_STATE
+        // directly instead of handling keyPressed callbacks, so expose those raw
+        // keys through the handset bitfield as well.
+        if (pressedKeys.contains(JPHONE_SOFT_LEFT)) {
+            state |= 0x20000;
+        }
+        if (pressedKeys.contains(JPHONE_SOFT_RIGHT)) {
+            state |= 0x40000;
+        }
+        if (pressedKeys.contains(JPHONE_SOFT_CENTER)) {
+            state |= 0x80000;
+        }
+        // MIDP softkey constants are kept for generic profiles and any titles
+        // that synthesize SOFT1/SOFT2/SOFT3 rather than raw handset codes.
         if (pressedKeys.contains(SOFT1)) {
             state |= 0x40000;
         }
