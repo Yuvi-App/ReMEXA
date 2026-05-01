@@ -8,6 +8,7 @@ import java.util.Optional;
 import java.util.jar.JarFile;
 import java.util.concurrent.locks.LockSupport;
 import java.util.function.Consumer;
+import javax.microedition.media.Manager;
 import remexa.host.input.HostTextInputRequest;
 import remexa.host.jad.JadDescriptor;
 import remexa.host.jad.JadManifestOverlay;
@@ -119,6 +120,7 @@ public final class AppRuntime {
         }
 
         shutdownPhrasePlayer(result.classLoader());
+        shutdownMediaPlayers(result.classLoader());
         shutdownAppThreads(result.classLoader());
         MidletRuntime.unregisterTextInputHandler(result.classLoader());
 
@@ -250,6 +252,22 @@ public final class AppRuntime {
         }
         if (disposed) {
             DebugLog.log(LogCategory.HOST, AppRuntime.class.getName(), "Disposed phrase player during shutdown.");
+        }
+    }
+
+    private void shutdownMediaPlayers(ClassLoader classLoader) {
+        if (classLoader == null) {
+            return;
+        }
+        try {
+            Manager.shutdownOwnedPlayers(classLoader);
+            DebugLog.log(LogCategory.HOST, AppRuntime.class.getName(), "Disposed media players during shutdown.");
+        } catch (RuntimeException exception) {
+            DebugLog.log(
+                    LogCategory.HOST,
+                    AppRuntime.class.getName(),
+                    "Failed to dispose media players during shutdown: " + exception.getMessage()
+            );
         }
     }
 

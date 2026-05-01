@@ -5,7 +5,10 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.Locale;
+import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import javax.sound.midi.InvalidMidiDataException;
 import javax.sound.midi.MidiChannel;
@@ -30,6 +33,8 @@ import remexa.audio.smaf.SmafPlayback;
 
 public final class Manager {
     private static final String CONTROL_PACKAGE = "javax.microedition.media.control.";
+    private static final Set<AbstractPlayer> ACTIVE_PLAYERS =
+            Collections.synchronizedSet(Collections.newSetFromMap(new IdentityHashMap<>()));
 
     private Manager() {
     }
@@ -51,6 +56,23 @@ public final class Manager {
             return new WavPlayer(source, normalizedType.isEmpty() ? "audio/x-wav" : normalizedType);
         }
         throw new MediaException("Unsupported media type: " + type);
+    }
+
+    public static void shutdownOwnedPlayers(ClassLoader ownerClassLoader) {
+        AbstractPlayer[] snapshot;
+        synchronized (ACTIVE_PLAYERS) {
+            snapshot = ACTIVE_PLAYERS.toArray(AbstractPlayer[]::new);
+        }
+        for (AbstractPlayer player : snapshot) {
+            if (player == null || !player.isOwnedBy(ownerClassLoader)) {
+                continue;
+            }
+            try {
+                player.close();
+            } catch (RuntimeException ignored) {
+                // Best-effort shutdown for app teardown.
+            }
+        }
     }
 
     private static String normalizeContentType(String type) {
@@ -110,6 +132,7 @@ public final class Manager {
 
     private abstract static class AbstractPlayer implements Player {
         private final String contentType;
+        private final ClassLoader ownerClassLoader;
         private final PlayerVolumeControl volumeControl = new PlayerVolumeControl(this);
         private final Control[] controls = new Control[]{volumeControl};
         private final CopyOnWriteArrayList<PlayerListener> listeners = new CopyOnWriteArrayList<>();
@@ -119,6 +142,8 @@ public final class Manager {
 
         private AbstractPlayer(String contentType) {
             this.contentType = contentType;
+            this.ownerClassLoader = Thread.currentThread().getContextClassLoader();
+            ACTIVE_PLAYERS.add(this);
         }
 
         @Override
@@ -194,6 +219,7 @@ public final class Manager {
             }
             doClose();
             state = CLOSED;
+            ACTIVE_PLAYERS.remove(this);
             notifyListeners(PlayerListener.CLOSED, null);
         }
 
@@ -302,6 +328,10 @@ public final class Manager {
 
         final boolean muted() {
             return volumeControl.getStoredMute();
+        }
+
+        final boolean isOwnedBy(ClassLoader candidate) {
+            return candidate == null || ownerClassLoader == candidate;
         }
 
         final void applyVolumeControl() throws MediaException {
