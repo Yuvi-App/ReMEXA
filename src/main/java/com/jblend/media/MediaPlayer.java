@@ -130,6 +130,18 @@ public abstract class MediaPlayer {
         return data;
     }
 
+    protected final byte[] currentRawData() {
+        return data == null ? null : data.rawData().clone();
+    }
+
+    protected final int loopCount() {
+        return repeatCount;
+    }
+
+    protected final boolean loopsForever() {
+        return repeatInfinite;
+    }
+
     private void startPlayback(int count, boolean infinite) {
         if (state == NO_DATA) {
             throw new IllegalStateException("MediaPlayer.play: no media data set.");
