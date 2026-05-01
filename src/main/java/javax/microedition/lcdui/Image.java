@@ -1,5 +1,8 @@
 package javax.microedition.lcdui;
 
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
+import java.awt.geom.AffineTransform;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
@@ -18,6 +21,23 @@ public class Image {
 
     public static Image createImage(int width, int height) {
         return new Image(new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB));
+    }
+
+    public static Image createImage(Image source) {
+        if (source == null) {
+            throw new NullPointerException("source");
+        }
+        return new Image(copyRegion(source.awtImage(), 0, 0, source.getWidth(), source.getHeight()));
+    }
+
+    public static Image createImage(Image source, int x, int y, int width, int height, int transform) {
+        if (source == null) {
+            throw new NullPointerException("source");
+        }
+        validateRegion(source, x, y, width, height);
+        validateTransform(transform);
+        BufferedImage region = copyRegion(source.awtImage(), x, y, width, height);
+        return new Image(transformRegion(region, transform));
     }
 
     public static Image fromBufferedImage(BufferedImage awtImage) {
@@ -104,5 +124,68 @@ public class Image {
 
     BufferedImage awtImage() {
         return awtImage;
+    }
+
+    private static void validateRegion(Image source, int x, int y, int width, int height) {
+        if (width <= 0 || height <= 0) {
+            throw new IllegalArgumentException("non-positive image region: " + width + "x" + height);
+        }
+        if (x < 0 || y < 0 || x + width > source.getWidth() || y + height > source.getHeight()) {
+            throw new IllegalArgumentException("image region outside source bounds");
+        }
+    }
+
+    private static void validateTransform(int transform) {
+        if (transform < 0 || transform > 7) {
+            throw new IllegalArgumentException("Unknown transform: " + transform);
+        }
+    }
+
+    private static BufferedImage copyRegion(BufferedImage source, int x, int y, int width, int height) {
+        BufferedImage copy = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D graphics = copy.createGraphics();
+        try {
+            graphics.drawImage(source, 0, 0, width, height, x, y, x + width, y + height, null);
+        } finally {
+            graphics.dispose();
+        }
+        return copy;
+    }
+
+    private static BufferedImage transformRegion(BufferedImage image, int transform) {
+        int sourceWidth = image.getWidth();
+        int sourceHeight = image.getHeight();
+        int targetWidth = swapsAxes(transform) ? sourceHeight : sourceWidth;
+        int targetHeight = swapsAxes(transform) ? sourceWidth : sourceHeight;
+        BufferedImage transformed = new BufferedImage(targetWidth, targetHeight, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D graphics = transformed.createGraphics();
+        try {
+            graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
+            graphics.transform(transformMatrix(transform, sourceWidth, sourceHeight));
+            graphics.drawImage(image, 0, 0, null);
+        } finally {
+            graphics.dispose();
+        }
+        return transformed;
+    }
+
+    private static boolean swapsAxes(int transform) {
+        return switch (transform) {
+            case 4, 5, 6, 7 -> true;
+            default -> false;
+        };
+    }
+
+    private static AffineTransform transformMatrix(int transform, int width, int height) {
+        return switch (transform) {
+            case 1 -> new AffineTransform(1, 0, 0, -1, 0, height);
+            case 2 -> new AffineTransform(-1, 0, 0, 1, width, 0);
+            case 3 -> new AffineTransform(-1, 0, 0, -1, width, height);
+            case 4 -> new AffineTransform(0, -1, -1, 0, height, width);
+            case 5 -> new AffineTransform(0, 1, -1, 0, height, 0);
+            case 6 -> new AffineTransform(0, -1, 1, 0, 0, width);
+            case 7 -> new AffineTransform(0, 1, 1, 0, 0, 0);
+            default -> new AffineTransform();
+        };
     }
 }
