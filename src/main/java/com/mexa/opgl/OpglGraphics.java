@@ -165,15 +165,15 @@ public class OpglGraphics {
     public static final int GL_MATRIX_MODE = 0;
     public static final int GL_MATRIX_PALETTE_OES = 34880;
     public static final int GL_MAX_CLIP_PLANES = 0;
-    public static final int GL_MAX_LIGHTS = 0;
+    public static final int GL_MAX_LIGHTS = 3377;
     public static final int GL_MAX_MODELVIEW_STACK_DEPTH = 0;
     public static final int GL_MAX_PALETTE_MATRICES_OES = 0;
     public static final int GL_MAX_PROJECTION_STACK_DEPTH = 0;
-    public static final int GL_MAX_TEXTURE_SIZE = 0;
+    public static final int GL_MAX_TEXTURE_SIZE = 3379;
     public static final int GL_MAX_TEXTURE_STACK_DEPTH = 0;
     public static final int GL_MAX_TEXTURE_UNITS = 0;
     public static final int GL_MAX_VERTEX_UNITS_OES = 0;
-    public static final int GL_MAX_VIEWPORT_DIMS = 0;
+    public static final int GL_MAX_VIEWPORT_DIMS = 3386;
     public static final int GL_MODELVIEW = 5888;
     public static final int GL_MODELVIEW_MATRIX = 2982;
     public static final int GL_MODELVIEW_MATRIX_FLOAT_AS_INT_BITS_OES = 0;
@@ -362,9 +362,9 @@ public class OpglGraphics {
     public static final int GL_UNPACK_ALIGNMENT = 3317;
     public static final int GL_UNSIGNED_BYTE = 5121;
     public static final int GL_UNSIGNED_SHORT = 5123;
-    public static final int GL_UNSIGNED_SHORT_4_4_4_4 = 0;
-    public static final int GL_UNSIGNED_SHORT_5_5_5_1 = 0;
-    public static final int GL_UNSIGNED_SHORT_5_6_5 = 0;
+    public static final int GL_UNSIGNED_SHORT_4_4_4_4 = 32819;
+    public static final int GL_UNSIGNED_SHORT_5_5_5_1 = 32820;
+    public static final int GL_UNSIGNED_SHORT_5_6_5 = 33635;
     public static final int GL_VENDOR = 7936;
     public static final int GL_VERSION = 7938;
     public static final int GL_VERTEX_ARRAY = 32884;
@@ -419,6 +419,10 @@ public class OpglGraphics {
     private int viewportY;
     private int viewportWidth;
     private int viewportHeight;
+    private int scissorX;
+    private int scissorY;
+    private int scissorWidth;
+    private int scissorHeight;
     private int boundTexture2d;
     private int currentColorArgb = 0xFFFFFFFF;
     private float currentColorR = 1.0f;
@@ -435,6 +439,8 @@ public class OpglGraphics {
     private int fogColorArgb = 0xFF000000;
     private float pointSize = 1.0f;
     private int depthFunc = GL_LESS;
+    private float depthRangeNear = 0.0f;
+    private float depthRangeFar = 1.0f;
     private int shadeModel = GL_SMOOTH;
     private int textureEnvMode = GL_MODULATE;
     private int currentPaletteMatrixIndex;
@@ -577,6 +583,12 @@ public class OpglGraphics {
             viewportY = 0;
             viewportWidth = surfaceWidth;
             viewportHeight = surfaceHeight;
+        }
+        if (scissorWidth <= 0 || scissorHeight <= 0) {
+            scissorX = 0;
+            scissorY = 0;
+            scissorWidth = surfaceWidth;
+            scissorHeight = surfaceHeight;
         }
     }
 
@@ -758,6 +770,9 @@ public class OpglGraphics {
 
     public void glDepthRangef (float zNear, float zFar) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glDepthRangef", zNear, zFar);
+        ensureBound();
+        depthRangeNear = clampUnit(zNear);
+        depthRangeFar = clampUnit(zFar);
     }
 
     public void glDisable (int cap) {
@@ -912,8 +927,37 @@ public class OpglGraphics {
 
     public void glGetIntegerv (int pname, int[] params) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glGetIntegerv", pname, params);
+        ensureBound();
         if (params == null) {
             throw new NullPointerException("params");
+        }
+        switch (pname) {
+            case GL_MAX_LIGHTS -> params[0] = 8;
+            case GL_MAX_TEXTURE_SIZE -> params[0] = 1024;
+            case GL_MAX_VIEWPORT_DIMS -> {
+                if (params.length > 0) {
+                    params[0] = surfaceWidth;
+                }
+                if (params.length > 1) {
+                    params[1] = surfaceHeight;
+                }
+            }
+            case GL_VIEWPORT -> {
+                if (params.length > 0) {
+                    params[0] = viewportX;
+                }
+                if (params.length > 1) {
+                    params[1] = viewportY;
+                }
+                if (params.length > 2) {
+                    params[2] = viewportWidth;
+                }
+                if (params.length > 3) {
+                    params[3] = viewportHeight;
+                }
+            }
+            default -> {
+            }
         }
     }
 
@@ -1111,6 +1155,11 @@ public class OpglGraphics {
 
     public void glScissor (int x, int y, int width, int height) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glScissor", x, y, width, height);
+        ensureBound();
+        scissorX = x;
+        scissorY = y;
+        scissorWidth = Math.max(0, width);
+        scissorHeight = Math.max(0, height);
     }
 
     public void glShadeModel (int mode) {
@@ -1173,13 +1222,13 @@ public class OpglGraphics {
     public void glTexImage2D (int target, int level, int internalformat, int width, int height, int border, int format, int type, com.mexa.opgl.Buffer pixels) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glTexImage2D", target, level, internalformat, width, height, border, format, type, pixels);
         ensureBound();
-        if (target != GL_TEXTURE_2D || !(pixels instanceof ByteBuffer byteBuffer)) {
+        if (target != GL_TEXTURE_2D || pixels == null) {
             return;
         }
         TextureState textureState = textureStates.computeIfAbsent(boundTexture2d, ignored -> new TextureState());
         textureState.width = width;
         textureState.height = height;
-        textureState.pixels = decodeRgbaTexture(byteBuffer, width, height);
+        textureState.pixels = decodeTexturePixels(pixels, width, height, format, type);
     }
 
     public void glTexParameterf (int target, int pname, float param) {
@@ -1886,7 +1935,8 @@ public class OpglGraphics {
         float ndcZ = vertex.clipZ() * invW;
         float screenX = viewportX + ((ndcX + 1.0f) * 0.5f * viewportWidth);
         float screenY = viewportY + ((1.0f - (ndcY + 1.0f) * 0.5f) * viewportHeight);
-        float screenZ = Math.max(0.0f, Math.min(1.0f, (ndcZ + 1.0f) * 0.5f));
+        float screenZ = depthRangeNear + ((ndcZ + 1.0f) * 0.5f * (depthRangeFar - depthRangeNear));
+        screenZ = Math.max(0.0f, Math.min(1.0f, screenZ));
         return new Vertex(
                 screenX,
                 screenY,
@@ -2094,6 +2144,9 @@ public class OpglGraphics {
         if (color == 0) {
             return;
         }
+        if (enabledCaps.contains(GL_SCISSOR_TEST) && !insideScissor(x, y)) {
+            return;
+        }
         int index = y * surfaceWidth + x;
         if (enabledCaps.contains(GL_DEPTH_TEST) && !passesDepthTest(depth, surfaceDepth[index])) {
             return;
@@ -2103,6 +2156,17 @@ public class OpglGraphics {
         if (depthWriteEnabled || !enabledCaps.contains(GL_DEPTH_TEST)) {
             surfaceDepth[index] = depth;
         }
+    }
+
+    private boolean insideScissor(int x, int y) {
+        if (scissorWidth <= 0 || scissorHeight <= 0) {
+            return false;
+        }
+        int minX = scissorX;
+        int maxX = scissorX + scissorWidth;
+        int minY = surfaceHeight - (scissorY + scissorHeight);
+        int maxY = surfaceHeight - scissorY;
+        return x >= minX && x < maxX && y >= minY && y < maxY;
     }
 
     private int blend(int src, int dst) {
@@ -2141,10 +2205,33 @@ public class OpglGraphics {
         return new float[] {1.0f, 1.0f, 1.0f, 1.0f};
     }
 
-    private int[] decodeRgbaTexture(ByteBuffer buffer, int width, int height) {
+    private int[] decodeTexturePixels(Buffer buffer, int width, int height, int format, int type) {
+        if (buffer instanceof ByteBuffer byteBuffer) {
+            return decodeRgbaTexture(byteBuffer, width, height, format, type);
+        }
+        if (buffer instanceof ShortBuffer shortBuffer) {
+            return decodeShortTexture(shortBuffer, width, height, format, type);
+        }
+        return new int[width * height];
+    }
+
+    private int[] decodeRgbaTexture(ByteBuffer buffer, int width, int height, int format, int type) {
+        if (type != GL_UNSIGNED_BYTE) {
+            return new int[width * height];
+        }
         byte[] data = buffer.rawData();
         int[] pixels = new int[width * height];
         int offset = buffer.boundedOffset();
+        if (format == GL_RGB) {
+            for (int i = 0; i < pixels.length; i++) {
+                int base = offset + i * 3;
+                int r = data[base] & 0xFF;
+                int g = data[base + 1] & 0xFF;
+                int b = data[base + 2] & 0xFF;
+                pixels[i] = 0xFF000000 | (r << 16) | (g << 8) | b;
+            }
+            return pixels;
+        }
         for (int i = 0; i < pixels.length; i++) {
             int base = offset + i * 4;
             int r = data[base] & 0xFF;
@@ -2154,6 +2241,60 @@ public class OpglGraphics {
             pixels[i] = (a << 24) | (r << 16) | (g << 8) | b;
         }
         return pixels;
+    }
+
+    private int[] decodeShortTexture(ShortBuffer buffer, int width, int height, int format, int type) {
+        short[] data = buffer.rawData();
+        int offset = buffer.boundedOffset();
+        int[] pixels = new int[width * height];
+        for (int i = 0; i < pixels.length; i++) {
+            int value = data[offset + i] & 0xFFFF;
+            pixels[i] = switch (type) {
+                case GL_UNSIGNED_SHORT_5_6_5 -> decodeRgb565(value);
+                case GL_UNSIGNED_SHORT_4_4_4_4 -> decodeRgba4444(value);
+                case GL_UNSIGNED_SHORT_5_5_5_1 -> decodeRgba5551(value);
+                case GL_UNSIGNED_SHORT -> (format == GL_RGB || format == GL_RGBA)
+                        ? decodeRgb565(value)
+                        : 0;
+                default -> 0;
+            };
+        }
+        return pixels;
+    }
+
+    private static int decodeRgb565(int value) {
+        int r = expand5((value >>> 11) & 0x1F);
+        int g = expand6((value >>> 5) & 0x3F);
+        int b = expand5(value & 0x1F);
+        return 0xFF000000 | (r << 16) | (g << 8) | b;
+    }
+
+    private static int decodeRgba4444(int value) {
+        int r = expand4((value >>> 12) & 0x0F);
+        int g = expand4((value >>> 8) & 0x0F);
+        int b = expand4((value >>> 4) & 0x0F);
+        int a = expand4(value & 0x0F);
+        return (a << 24) | (r << 16) | (g << 8) | b;
+    }
+
+    private static int decodeRgba5551(int value) {
+        int r = expand5((value >>> 11) & 0x1F);
+        int g = expand5((value >>> 6) & 0x1F);
+        int b = expand5((value >>> 1) & 0x1F);
+        int a = (value & 0x1) != 0 ? 0xFF : 0x00;
+        return (a << 24) | (r << 16) | (g << 8) | b;
+    }
+
+    private static int expand4(int value) {
+        return (value << 4) | value;
+    }
+
+    private static int expand5(int value) {
+        return (value << 3) | (value >>> 2);
+    }
+
+    private static int expand6(int value) {
+        return (value << 2) | (value >>> 4);
     }
 
     private int[] decodePaletteTexture(ByteBuffer buffer, int width, int height) {
