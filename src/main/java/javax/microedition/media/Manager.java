@@ -10,6 +10,9 @@ import java.util.IdentityHashMap;
 import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
+import com.vodafone.media.audio3d.Audio3DControl;
+import com.vodafone.media.audio3d.ExtendedAudioControl;
+import com.vodafone.media.audio3d.ReverbControl;
 import javax.sound.midi.InvalidMidiDataException;
 import javax.sound.midi.MidiChannel;
 import javax.sound.midi.MidiSystem;
@@ -137,7 +140,9 @@ public final class Manager {
         private final String contentType;
         private final ClassLoader ownerClassLoader;
         private final PlayerVolumeControl volumeControl = new PlayerVolumeControl(this);
-        private final Control[] controls = new Control[]{volumeControl};
+        private final PlayerAudio3DControl audio3DControl = new PlayerAudio3DControl();
+        private final PlayerReverbControl reverbControl = new PlayerReverbControl();
+        private final Control[] controls = new Control[]{volumeControl, audio3DControl, reverbControl};
         private final CopyOnWriteArrayList<PlayerListener> listeners = new CopyOnWriteArrayList<>();
 
         private int state = UNREALIZED;
@@ -311,7 +316,17 @@ public final class Manager {
                 throw new IllegalStateException("Player controls are not available in the current state.");
             }
             String normalized = controlType.indexOf('.') >= 0 ? controlType : CONTROL_PACKAGE + controlType;
-            return normalized.equals(VolumeControl.class.getName()) ? volumeControl : null;
+            if (normalized.equals(VolumeControl.class.getName())) {
+                return volumeControl;
+            }
+            if (normalized.equals(Audio3DControl.class.getName())
+                    || normalized.equals(ExtendedAudioControl.class.getName())) {
+                return audio3DControl;
+            }
+            if (normalized.equals(ReverbControl.class.getName())) {
+                return reverbControl;
+            }
+            return null;
         }
 
         @Override
@@ -502,6 +517,65 @@ public final class Manager {
 
         private synchronized boolean getStoredMute() {
             return muted;
+        }
+    }
+
+    private static final class PlayerAudio3DControl implements ExtendedAudioControl {
+        private int mode = MODE_DISABLE;
+        private int positionX;
+        private int positionY;
+        private int positionZ;
+        private int velocityX;
+        private int velocityY;
+        private int velocityZ;
+        private int minDistance;
+        private int maxDistance;
+        private int muteAfter;
+
+        @Override
+        public synchronized int getMode() {
+            return mode;
+        }
+
+        @Override
+        public synchronized void setMode(int mode) {
+            this.mode = mode;
+        }
+
+        @Override
+        public synchronized void setPosition(int x, int y, int z) {
+            positionX = x;
+            positionY = y;
+            positionZ = z;
+        }
+
+        @Override
+        public synchronized void setVelocity(int x, int y, int z) {
+            velocityX = x;
+            velocityY = y;
+            velocityZ = z;
+        }
+
+        @Override
+        public synchronized void setRolloff(int minDistance, int maxDistance, int muteAfter) {
+            this.minDistance = minDistance;
+            this.maxDistance = maxDistance;
+            this.muteAfter = muteAfter;
+        }
+    }
+
+    private static final class PlayerReverbControl implements ReverbControl {
+        private int level;
+
+        @Override
+        public synchronized int getLevel() {
+            return level;
+        }
+
+        @Override
+        public synchronized int setLevel(int level) {
+            this.level = Math.max(0, Math.min(100, level));
+            return this.level;
         }
     }
 
