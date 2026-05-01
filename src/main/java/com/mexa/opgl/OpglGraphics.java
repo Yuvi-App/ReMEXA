@@ -14,6 +14,7 @@ import remexa.host.jblend.CanvasGraphics3D;
 
 public class OpglGraphics {
     private static volatile OpglGraphics instance;
+    private static final int MAX_PALETTE_MATRICES = 32;
     public static final int GL_ACTIVE_TEXTURE = 0;
     public static final int GL_ADD = 0;
     public static final int GL_ADD_SIGNED = 0;
@@ -25,9 +26,9 @@ public class OpglGraphics {
     public static final int GL_ALPHA_TEST = 3008;
     public static final int GL_ALPHA_TEST_FUNC = 0;
     public static final int GL_ALPHA_TEST_REF = 0;
-    public static final int GL_ALWAYS = 0;
-    public static final int GL_AMBIENT = 0;
-    public static final int GL_AMBIENT_AND_DIFFUSE = 0;
+    public static final int GL_ALWAYS = 519;
+    public static final int GL_AMBIENT = 4608;
+    public static final int GL_AMBIENT_AND_DIFFUSE = 5634;
     public static final int GL_AND = 0;
     public static final int GL_AND_INVERTED = 0;
     public static final int GL_AND_REVERSE = 0;
@@ -60,7 +61,7 @@ public class OpglGraphics {
     public static final int GL_COLOR_BUFFER_BIT = 16384;
     public static final int GL_COLOR_CLEAR_VALUE = 0;
     public static final int GL_COLOR_LOGIC_OP = 0;
-    public static final int GL_COLOR_MATERIAL = 0;
+    public static final int GL_COLOR_MATERIAL = 2903;
     public static final int GL_COLOR_WRITEMASK = 0;
     public static final int GL_COMBINE = 0;
     public static final int GL_COMBINE_ALPHA = 0;
@@ -75,7 +76,7 @@ public class OpglGraphics {
     public static final int GL_CULL_FACE_MODE = 0;
     public static final int GL_CURRENT_COLOR = 0;
     public static final int GL_CURRENT_NORMAL = 0;
-    public static final int GL_CURRENT_PALETTE_MATRIX_OES = 0;
+    public static final int GL_CURRENT_PALETTE_MATRIX_OES = 34883;
     public static final int GL_CURRENT_TEXTURE_COORDS = 0;
     public static final int GL_CW = 2304;
     public static final int GL_DECAL = 0;
@@ -83,11 +84,11 @@ public class OpglGraphics {
     public static final int GL_DEPTH_BITS = 0;
     public static final int GL_DEPTH_BUFFER_BIT = 256;
     public static final int GL_DEPTH_CLEAR_VALUE = 0;
-    public static final int GL_DEPTH_FUNC = 0;
+    public static final int GL_DEPTH_FUNC = 2932;
     public static final int GL_DEPTH_RANGE = 0;
     public static final int GL_DEPTH_TEST = 2929;
     public static final int GL_DEPTH_WRITEMASK = 0;
-    public static final int GL_DIFFUSE = 0;
+    public static final int GL_DIFFUSE = 4609;
     public static final int GL_DITHER = 0;
     public static final int GL_DONT_CARE = 0;
     public static final int GL_DOT3_RGB = 0;
@@ -97,8 +98,8 @@ public class OpglGraphics {
     public static final int GL_DYNAMIC_DRAW = 35048;
     public static final int GL_ELEMENT_ARRAY_BUFFER = 34963;
     public static final int GL_ELEMENT_ARRAY_BUFFER_BINDING = 0;
-    public static final int GL_EMISSION = 0;
-    public static final int GL_EQUAL = 0;
+    public static final int GL_EMISSION = 5632;
+    public static final int GL_EQUAL = 514;
     public static final int GL_EQUIV = 0;
     public static final int GL_EXP = 0;
     public static final int GL_EXP2 = 0;
@@ -114,13 +115,13 @@ public class OpglGraphics {
     public static final int GL_FOG_HINT = 0;
     public static final int GL_FOG_MODE = 2917;
     public static final int GL_FOG_START = 2915;
-    public static final int GL_FRONT = 0;
-    public static final int GL_FRONT_AND_BACK = 0;
+    public static final int GL_FRONT = 1028;
+    public static final int GL_FRONT_AND_BACK = 1032;
     public static final int GL_FRONT_FACE = 0;
     public static final int GL_GENERATE_MIPMAP = 0;
     public static final int GL_GENERATE_MIPMAP_HINT = 0;
-    public static final int GL_GEQUAL = 0;
-    public static final int GL_GREATER = 0;
+    public static final int GL_GEQUAL = 518;
+    public static final int GL_GREATER = 516;
     public static final int GL_GREEN_BITS = 0;
     public static final int GL_INCR = 0;
     public static final int GL_INTERPOLATE = 0;
@@ -129,19 +130,19 @@ public class OpglGraphics {
     public static final int GL_INVALID_VALUE = 1281;
     public static final int GL_INVERT = 0;
     public static final int GL_KEEP = 0;
-    public static final int GL_LEQUAL = 0;
-    public static final int GL_LESS = 0;
-    public static final int GL_LIGHT_MODEL_AMBIENT = 0;
+    public static final int GL_LEQUAL = 515;
+    public static final int GL_LESS = 513;
+    public static final int GL_LIGHT_MODEL_AMBIENT = 2899;
     public static final int GL_LIGHT_MODEL_TWO_SIDE = 0;
-    public static final int GL_LIGHT0 = 0;
-    public static final int GL_LIGHT1 = 0;
+    public static final int GL_LIGHT0 = 16384;
+    public static final int GL_LIGHT1 = 16385;
     public static final int GL_LIGHT2 = 0;
     public static final int GL_LIGHT3 = 0;
     public static final int GL_LIGHT4 = 0;
     public static final int GL_LIGHT5 = 0;
     public static final int GL_LIGHT6 = 0;
     public static final int GL_LIGHT7 = 0;
-    public static final int GL_LIGHTING = 0;
+    public static final int GL_LIGHTING = 2896;
     public static final int GL_LINE_LOOP = 2;
     public static final int GL_LINE_SMOOTH = 0;
     public static final int GL_LINE_SMOOTH_HINT = 0;
@@ -174,16 +175,16 @@ public class OpglGraphics {
     public static final int GL_MAX_VERTEX_UNITS_OES = 0;
     public static final int GL_MAX_VIEWPORT_DIMS = 0;
     public static final int GL_MODELVIEW = 5888;
-    public static final int GL_MODELVIEW_MATRIX = 0;
+    public static final int GL_MODELVIEW_MATRIX = 2982;
     public static final int GL_MODELVIEW_MATRIX_FLOAT_AS_INT_BITS_OES = 0;
     public static final int GL_MODELVIEW_STACK_DEPTH = 0;
-    public static final int GL_MODULATE = 0;
+    public static final int GL_MODULATE = 8448;
     public static final int GL_MULTISAMPLE = 0;
     public static final int GL_NAND = 0;
     public static final int GL_NEAREST = 9728;
     public static final int GL_NEAREST_MIPMAP_LINEAR = 0;
     public static final int GL_NEAREST_MIPMAP_NEAREST = 0;
-    public static final int GL_NEVER = 0;
+    public static final int GL_NEVER = 512;
     public static final int GL_NICEST = 0;
     public static final int GL_NO_ERROR = 0;
     public static final int GL_NOOP = 0;
@@ -241,18 +242,18 @@ public class OpglGraphics {
     public static final int GL_POLYGON_OFFSET_FILL = 0;
     public static final int GL_POLYGON_OFFSET_UNITS = 0;
     public static final int GL_POLYGON_SMOOTH_HINT = 0;
-    public static final int GL_POSITION = 0;
+    public static final int GL_POSITION = 4611;
     public static final int GL_PREVIOUS = 0;
     public static final int GL_PRIMARY_COLOR = 0;
     public static final int GL_PROJECTION = 5889;
-    public static final int GL_PROJECTION_MATRIX = 0;
+    public static final int GL_PROJECTION_MATRIX = 2983;
     public static final int GL_PROJECTION_MATRIX_FLOAT_AS_INT_BITS_OES = 0;
     public static final int GL_PROJECTION_STACK_DEPTH = 0;
     public static final int GL_QUADRATIC_ATTENUATION = 0;
     public static final int GL_RED_BITS = 0;
     public static final int GL_RENDERER = 7937;
     public static final int GL_REPEAT = 10497;
-    public static final int GL_REPLACE = 0;
+    public static final int GL_REPLACE = 7681;
     public static final int GL_RESCALE_NORMAL = 0;
     public static final int GL_RGB = 0;
     public static final int GL_RGB_SCALE = 0;
@@ -273,7 +274,7 @@ public class OpglGraphics {
     public static final int GL_SMOOTH = 7425;
     public static final int GL_SMOOTH_LINE_WIDTH_RANGE = 0;
     public static final int GL_SMOOTH_POINT_SIZE_RANGE = 0;
-    public static final int GL_SPECULAR = 0;
+    public static final int GL_SPECULAR = 4610;
     public static final int GL_SPOT_CUTOFF = 0;
     public static final int GL_SPOT_DIRECTION = 0;
     public static final int GL_SPOT_EXPONENT = 0;
@@ -303,6 +304,9 @@ public class OpglGraphics {
     public static final int GL_SUBPIXEL_BITS = 0;
     public static final int GL_SUBTRACT = 0;
     public static final int GL_TEXTURE = 5890;
+    public static final int GL_TEXTURE_ENV = 8960;
+    public static final int GL_TEXTURE_ENV_MODE = 8704;
+    public static final int GL_TEXTURE_MATRIX = 2984;
     public static final int GL_TEXTURE_2D = 3553;
     public static final int GL_TEXTURE_BINDING_2D = 32873;
     public static final int GL_TEXTURE_COORD_ARRAY = 32888;
@@ -312,11 +316,8 @@ public class OpglGraphics {
     public static final int GL_TEXTURE_COORD_ARRAY_STRIDE = 0;
     public static final int GL_TEXTURE_COORD_ARRAY_TYPE = 0;
     public static final int GL_TEXTURE_CROP_RECT_OES = 35741;
-    public static final int GL_TEXTURE_ENV = 8960;
     public static final int GL_TEXTURE_ENV_COLOR = 8705;
-    public static final int GL_TEXTURE_ENV_MODE = 8704;
     public static final int GL_TEXTURE_MAG_FILTER = 10240;
-    public static final int GL_TEXTURE_MATRIX = 0;
     public static final int GL_TEXTURE_MATRIX_FLOAT_AS_INT_BITS_OES = 0;
     public static final int GL_TEXTURE_MIN_FILTER = 10241;
     public static final int GL_TEXTURE_STACK_DEPTH = 0;
@@ -394,6 +395,7 @@ public class OpglGraphics {
     private final Map<Integer, Integer> bufferSizes = new HashMap<>();
     private final Map<Integer, Integer> bufferUsages = new HashMap<>();
     private final Map<Integer, TextureState> textureStates = new HashMap<>();
+    private final Map<Integer, LightState> lightStates = new HashMap<>();
     private Object boundTarget;
     private BufferedImage boundBackingImage;
     private int boundArrayBuffer;
@@ -432,6 +434,16 @@ public class OpglGraphics {
     private float fogEnd = 1.0f;
     private int fogColorArgb = 0xFF000000;
     private float pointSize = 1.0f;
+    private int depthFunc = GL_LESS;
+    private int shadeModel = GL_SMOOTH;
+    private int textureEnvMode = GL_MODULATE;
+    private int currentPaletteMatrixIndex;
+    private int frontFaceMode = GL_CCW;
+    private int cullFaceMode = GL_BACK;
+    private final float[][] paletteMatrices = new float[MAX_PALETTE_MATRICES][16];
+    private final MaterialState frontMaterial = new MaterialState();
+    private final MaterialState backMaterial = new MaterialState();
+    private final float[] lightModelAmbient = new float[] {0.2f, 0.2f, 0.2f, 1.0f};
     private ClientArrayBinding colorArrayBinding;
     private ClientArrayBinding normalArrayBinding;
     private ClientArrayBinding texCoordArrayBinding;
@@ -481,6 +493,20 @@ public class OpglGraphics {
         private int magFilter = GL_NEAREST;
     }
 
+    private static final class LightState {
+        private final float[] ambient = new float[] {0.0f, 0.0f, 0.0f, 1.0f};
+        private final float[] diffuse = new float[] {1.0f, 1.0f, 1.0f, 1.0f};
+        private final float[] specular = new float[] {1.0f, 1.0f, 1.0f, 1.0f};
+        private final float[] position = new float[] {0.0f, 0.0f, 1.0f, 0.0f};
+    }
+
+    private static final class MaterialState {
+        private final float[] ambient = new float[] {0.2f, 0.2f, 0.2f, 1.0f};
+        private final float[] diffuse = new float[] {0.8f, 0.8f, 0.8f, 1.0f};
+        private final float[] emission = new float[] {0.0f, 0.0f, 0.0f, 1.0f};
+        private final float[] specular = new float[] {0.0f, 0.0f, 0.0f, 1.0f};
+    }
+
     private record ClipVertex(float clipX, float clipY, float clipZ, float clipW, float u, float v, float eyeDepth, int color) {
     }
 
@@ -488,6 +514,10 @@ public class OpglGraphics {
     }
 
     private OpglGraphics() {
+        for (var paletteMatrix : paletteMatrices) {
+            loadIdentity(paletteMatrix);
+        }
+        textureStates.put(0, new TextureState());
     }
 
     public static com.mexa.opgl.OpglGraphics getInstance () {
@@ -569,6 +599,9 @@ public class OpglGraphics {
 
     public void glAlphaFunc (int func, float ref) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glAlphaFunc", func, ref);
+        ensureBound();
+        alphaFunc = func;
+        alphaRef = clampUnit(ref);
     }
 
     public void glBindTexture (int target, int texture) {
@@ -666,7 +699,7 @@ public class OpglGraphics {
     public void glCompressedTexImage2D (int target, int level, int internalformat, int width, int height, int border, com.mexa.opgl.ByteBuffer data) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glCompressedTexImage2D", target, level, internalformat, width, height, border, data);
         ensureBound();
-        if (target != GL_TEXTURE_2D || boundTexture2d == 0 || data == null) {
+        if (target != GL_TEXTURE_2D || data == null) {
             return;
         }
         TextureState textureState = textureStates.computeIfAbsent(boundTexture2d, ignored -> new TextureState());
@@ -689,6 +722,8 @@ public class OpglGraphics {
 
     public void glCullFace (int mode) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glCullFace", mode);
+        ensureBound();
+        cullFaceMode = mode;
     }
 
     public void glDeleteTextures (int[] textures) {
@@ -711,6 +746,8 @@ public class OpglGraphics {
 
     public void glDepthFunc (int func) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glDepthFunc", func);
+        ensureBound();
+        depthFunc = func;
     }
 
     public void glDepthMask (boolean flag) {
@@ -840,6 +877,8 @@ public class OpglGraphics {
 
     public void glFrontFace (int mode) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glFrontFace", mode);
+        ensureBound();
+        frontFaceMode = mode;
     }
 
     public void glFrustumf (float left, float right, float bottom, float top, float zNear, float zFar) {
@@ -906,6 +945,13 @@ public class OpglGraphics {
 
     public void glLightModelfv (int pname, float[] params) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glLightModelfv", pname, params);
+        ensureBound();
+        if (params == null) {
+            throw new NullPointerException("params");
+        }
+        if (pname == GL_LIGHT_MODEL_AMBIENT) {
+            copyFloats(params, lightModelAmbient, 4);
+        }
     }
 
     public void glLightf (int light, int pname, float param) {
@@ -914,6 +960,19 @@ public class OpglGraphics {
 
     public void glLightfv (int light, int pname, float[] params) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glLightfv", light, pname, params);
+        ensureBound();
+        if (params == null) {
+            throw new NullPointerException("params");
+        }
+        var lightState = lightStates.computeIfAbsent(light, ignored -> new LightState());
+        switch (pname) {
+            case GL_AMBIENT -> copyFloats(params, lightState.ambient, 4);
+            case GL_DIFFUSE -> copyFloats(params, lightState.diffuse, 4);
+            case GL_SPECULAR -> copyFloats(params, lightState.specular, 4);
+            case GL_POSITION -> copyFloats(params, lightState.position, 4);
+            default -> {
+            }
+        }
     }
 
     public void glLineWidth (float width) {
@@ -948,6 +1007,11 @@ public class OpglGraphics {
 
     public void glMaterialfv (int face, int pname, float[] params) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glMaterialfv", face, pname, params);
+        ensureBound();
+        if (params == null) {
+            throw new NullPointerException("params");
+        }
+        applyMaterial(face, pname, params);
     }
 
     public void glMatrixMode (int mode) {
@@ -1051,6 +1115,8 @@ public class OpglGraphics {
 
     public void glShadeModel (int mode) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glShadeModel", mode);
+        ensureBound();
+        shadeModel = mode;
     }
 
     public void glStencilFunc (int func, int ref, int mask) {
@@ -1088,16 +1154,26 @@ public class OpglGraphics {
     public void glTexEnvf (int target, int pname, float param) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glTexEnvf", target, pname, param);
         ensureBound();
+        if (target == GL_TEXTURE_ENV && pname == GL_TEXTURE_ENV_MODE) {
+            textureEnvMode = Math.round(param);
+        }
     }
 
     public void glTexEnvfv (int target, int pname, float[] params) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glTexEnvfv", target, pname, params);
+        ensureBound();
+        if (params == null) {
+            throw new NullPointerException("params");
+        }
+        if (target == GL_TEXTURE_ENV && pname == GL_TEXTURE_ENV_MODE && params.length > 0) {
+            textureEnvMode = Math.round(params[0]);
+        }
     }
 
     public void glTexImage2D (int target, int level, int internalformat, int width, int height, int border, int format, int type, com.mexa.opgl.Buffer pixels) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glTexImage2D", target, level, internalformat, width, height, border, format, type, pixels);
         ensureBound();
-        if (target != GL_TEXTURE_2D || boundTexture2d == 0 || !(pixels instanceof ByteBuffer byteBuffer)) {
+        if (target != GL_TEXTURE_2D || !(pixels instanceof ByteBuffer byteBuffer)) {
             return;
         }
         TextureState textureState = textureStates.computeIfAbsent(boundTexture2d, ignored -> new TextureState());
@@ -1271,18 +1347,66 @@ public class OpglGraphics {
 
     public void glGetFloatv (int pname, float[] params) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glGetFloatv", pname, params);
+        ensureBound();
+        if (params == null) {
+            throw new NullPointerException("params");
+        }
+        switch (pname) {
+            case GL_MODELVIEW_MATRIX -> copyFloats(modelViewMatrix, params, Math.min(16, params.length));
+            case GL_PROJECTION_MATRIX -> copyFloats(projectionMatrix, params, Math.min(16, params.length));
+            case GL_TEXTURE_MATRIX -> copyFloats(textureMatrix, params, Math.min(16, params.length));
+            default -> {
+            }
+        }
     }
 
     public void glGetLightfv (int light, int pname, float[] params) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glGetLightfv", light, pname, params);
+        ensureBound();
+        if (params == null) {
+            throw new NullPointerException("params");
+        }
+        var lightState = lightStates.get(light);
+        if (lightState == null) {
+            return;
+        }
+        switch (pname) {
+            case GL_AMBIENT -> copyFloats(lightState.ambient, params, Math.min(4, params.length));
+            case GL_DIFFUSE -> copyFloats(lightState.diffuse, params, Math.min(4, params.length));
+            case GL_SPECULAR -> copyFloats(lightState.specular, params, Math.min(4, params.length));
+            case GL_POSITION -> copyFloats(lightState.position, params, Math.min(4, params.length));
+            default -> {
+            }
+        }
     }
 
     public void glGetMaterialfv (int face, int pname, float[] params) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glGetMaterialfv", face, pname, params);
+        ensureBound();
+        if (params == null) {
+            throw new NullPointerException("params");
+        }
+        var material = materialForFace(face);
+        switch (pname) {
+            case GL_AMBIENT -> copyFloats(material.ambient, params, Math.min(4, params.length));
+            case GL_DIFFUSE -> copyFloats(material.diffuse, params, Math.min(4, params.length));
+            case GL_EMISSION -> copyFloats(material.emission, params, Math.min(4, params.length));
+            case GL_SPECULAR -> copyFloats(material.specular, params, Math.min(4, params.length));
+            case GL_AMBIENT_AND_DIFFUSE -> copyFloats(material.diffuse, params, Math.min(4, params.length));
+            default -> {
+            }
+        }
     }
 
     public void glGetTexEnvfv (int env, int pname, float[] params) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glGetTexEnvfv", env, pname, params);
+        ensureBound();
+        if (params == null) {
+            throw new NullPointerException("params");
+        }
+        if (env == GL_TEXTURE_ENV && pname == GL_TEXTURE_ENV_MODE && params.length > 0) {
+            params[0] = textureEnvMode;
+        }
     }
 
     public void glGetTexParameterfv (int target, int pname, float[] params) {
@@ -1307,6 +1431,13 @@ public class OpglGraphics {
 
     public void glGetTexEnviv (int env, int pname, int[] params) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glGetTexEnviv", env, pname, params);
+        ensureBound();
+        if (params == null) {
+            throw new NullPointerException("params");
+        }
+        if (env == GL_TEXTURE_ENV && pname == GL_TEXTURE_ENV_MODE && params.length > 0) {
+            params[0] = textureEnvMode;
+        }
     }
 
     public void glGetTexParameteriv (int target, int pname, int[] params) {
@@ -1342,6 +1473,9 @@ public class OpglGraphics {
     public void glTexEnvi (int target, int pname, int param) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glTexEnvi", target, pname, param);
         ensureBound();
+        if (target == GL_TEXTURE_ENV && pname == GL_TEXTURE_ENV_MODE) {
+            textureEnvMode = param;
+        }
     }
 
     public void glTexEnviv (int target, int pname, int[] params) {
@@ -1385,11 +1519,13 @@ public class OpglGraphics {
     public void glCurrentPaletteMatrixOES (int index) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glCurrentPaletteMatrixOES", index);
         ensureBound();
+        currentPaletteMatrixIndex = Math.max(0, Math.min(MAX_PALETTE_MATRICES - 1, index));
     }
 
     public void glLoadPaletteFromModelViewMatrixOES () {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glLoadPaletteFromModelViewMatrixOES");
         ensureBound();
+        System.arraycopy(modelViewMatrix, 0, paletteMatrices[currentPaletteMatrixIndex], 0, 16);
     }
 
     public void glMatrixIndexPointerOES (int size, int type, int stride, com.mexa.opgl.Buffer pointer) {
@@ -1455,7 +1591,7 @@ public class OpglGraphics {
     }
 
     private void applyTextureParameter(int target, int pname, int param) {
-        if (target != GL_TEXTURE_2D || boundTexture2d == 0) {
+        if (target != GL_TEXTURE_2D) {
             return;
         }
         TextureState textureState = textureStates.computeIfAbsent(boundTexture2d, ignored -> new TextureState());
@@ -1468,6 +1604,35 @@ public class OpglGraphics {
         } else if (pname == GL_TEXTURE_MAG_FILTER) {
             textureState.magFilter = param;
         }
+    }
+
+    private void applyMaterial(int face, int pname, float[] params) {
+        if (face == GL_FRONT_AND_BACK) {
+            applyMaterial(GL_FRONT, pname, params);
+            applyMaterial(GL_BACK, pname, params);
+            return;
+        }
+        var material = materialForFace(face);
+        switch (pname) {
+            case GL_AMBIENT -> copyFloats(params, material.ambient, 4);
+            case GL_DIFFUSE -> copyFloats(params, material.diffuse, 4);
+            case GL_EMISSION -> copyFloats(params, material.emission, 4);
+            case GL_SPECULAR -> copyFloats(params, material.specular, 4);
+            case GL_AMBIENT_AND_DIFFUSE -> {
+                copyFloats(params, material.ambient, 4);
+                copyFloats(params, material.diffuse, 4);
+            }
+            default -> {
+            }
+        }
+    }
+
+    private MaterialState materialForFace(int face) {
+        return face == GL_BACK ? backMaterial : frontMaterial;
+    }
+
+    private static void copyFloats(float[] source, float[] destination, int count) {
+        System.arraycopy(source, 0, destination, 0, Math.min(Math.min(source.length, destination.length), count));
     }
 
     private void renderDrawArrays(int mode, int first, int count) {
@@ -1548,10 +1713,10 @@ public class OpglGraphics {
         float[] tex = texCoordArrayBinding == null || !enabledClientStates.contains(GL_TEXTURE_COORD_ARRAY)
                 ? new float[] {0.0f, 0.0f, 0.0f, 1.0f}
                 : readVertexComponents(texCoordArrayBinding, vertexIndex, 4, 1.0f);
-
-        float[] model = multiplyVec4(modelViewMatrix, pos[0], pos[1], pos[2], pos[3]);
+        float[] model = transformPosition(vertexIndex, pos);
         float[] clip = multiplyVec4(projectionMatrix, model[0], model[1], model[2], model[3]);
         float[] texCoord = multiplyVec4(textureMatrix, tex[0], tex[1], tex[2], tex[3]);
+        int vertexColor = resolveVertexColor(vertexIndex, model);
         return new ClipVertex(
                 clip[0],
                 clip[1],
@@ -1560,8 +1725,155 @@ public class OpglGraphics {
                 texCoord[0],
                 texCoord[1],
                 -model[2],
-                currentColorArgb
+                vertexColor
         );
+    }
+
+    private float[] transformPosition(int vertexIndex, float[] position) {
+        if (!usesMatrixPalette()) {
+            return multiplyVec4(modelViewMatrix, position[0], position[1], position[2], position[3]);
+        }
+        float[] indices = readVertexComponents(matrixIndexArrayBinding, vertexIndex, matrixIndexArrayBinding.componentCount, 0.0f);
+        float[] weights = readVertexComponents(weightArrayBinding, vertexIndex, weightArrayBinding.componentCount, 0.0f);
+        float[] accum = new float[4];
+        float totalWeight = 0.0f;
+        int limit = Math.min(indices.length, weights.length);
+        for (int i = 0; i < limit; i++) {
+            float weight = weights[i];
+            if (weight == 0.0f) {
+                continue;
+            }
+            totalWeight += weight;
+            float[] matrix = paletteMatrix((int) indices[i]);
+            float[] transformed = multiplyVec4(matrix, position[0], position[1], position[2], position[3]);
+            accum[0] += transformed[0] * weight;
+            accum[1] += transformed[1] * weight;
+            accum[2] += transformed[2] * weight;
+            accum[3] += transformed[3] * weight;
+        }
+        if (totalWeight <= 0.0f) {
+            return multiplyVec4(modelViewMatrix, position[0], position[1], position[2], position[3]);
+        }
+        if (totalWeight < 0.999f) {
+            float[] fallback = multiplyVec4(modelViewMatrix, position[0], position[1], position[2], position[3]);
+            float remaining = 1.0f - totalWeight;
+            accum[0] += fallback[0] * remaining;
+            accum[1] += fallback[1] * remaining;
+            accum[2] += fallback[2] * remaining;
+            accum[3] += fallback[3] * remaining;
+        }
+        return accum;
+    }
+
+    private float[] transformNormal(int vertexIndex) {
+        if (normalArrayBinding == null || !enabledClientStates.contains(GL_NORMAL_ARRAY)) {
+            return null;
+        }
+        float[] normal = readVertexComponents(normalArrayBinding, vertexIndex, 3, 0.0f);
+        float nx = normal[0];
+        float ny = normal[1];
+        float nz = normal[2];
+        float[] transformed;
+        if (usesMatrixPalette()) {
+            float[] indices = readVertexComponents(matrixIndexArrayBinding, vertexIndex, matrixIndexArrayBinding.componentCount, 0.0f);
+            float[] weights = readVertexComponents(weightArrayBinding, vertexIndex, weightArrayBinding.componentCount, 0.0f);
+            transformed = new float[4];
+            float totalWeight = 0.0f;
+            int limit = Math.min(indices.length, weights.length);
+            for (int i = 0; i < limit; i++) {
+                float weight = weights[i];
+                if (weight == 0.0f) {
+                    continue;
+                }
+                totalWeight += weight;
+                float[] matrix = paletteMatrix((int) indices[i]);
+                float[] weighted = multiplyVec4(matrix, nx, ny, nz, 0.0f);
+                transformed[0] += weighted[0] * weight;
+                transformed[1] += weighted[1] * weight;
+                transformed[2] += weighted[2] * weight;
+            }
+            if (totalWeight <= 0.0f) {
+                transformed = multiplyVec4(modelViewMatrix, nx, ny, nz, 0.0f);
+            }
+        } else {
+            transformed = multiplyVec4(modelViewMatrix, nx, ny, nz, 0.0f);
+        }
+        normalize3(transformed);
+        return transformed;
+    }
+
+    private int resolveVertexColor(int vertexIndex, float[] modelPosition) {
+        int baseColor = currentColorArgb;
+        if (colorArrayBinding != null && enabledClientStates.contains(GL_COLOR_ARRAY)) {
+            baseColor = readColor(vertexIndex);
+        }
+        if (!enabledCaps.contains(GL_LIGHTING)) {
+            return baseColor;
+        }
+        float[] normal = transformNormal(vertexIndex);
+        if (normal == null) {
+            return baseColor;
+        }
+        return applyLighting(normal, modelPosition);
+    }
+
+    private int readColor(int vertexIndex) {
+        if (colorArrayBinding == null) {
+            return currentColorArgb;
+        }
+        float[] components = readVertexComponents(colorArrayBinding, vertexIndex, 4, 1.0f);
+        if (colorArrayBinding.type == GL_FLOAT) {
+            return (clampColor(components[3]) << 24)
+                    | (clampColor(components[0]) << 16)
+                    | (clampColor(components[1]) << 8)
+                    | clampColor(components[2]);
+        }
+        return ((int) components[3] << 24)
+                | ((int) components[0] << 16)
+                | ((int) components[1] << 8)
+                | (int) components[2];
+    }
+
+    private int applyLighting(float[] normal, float[] modelPosition) {
+        float[] color = new float[] {
+                frontMaterial.emission[0] + lightModelAmbient[0] * frontMaterial.ambient[0],
+                frontMaterial.emission[1] + lightModelAmbient[1] * frontMaterial.ambient[1],
+                frontMaterial.emission[2] + lightModelAmbient[2] * frontMaterial.ambient[2],
+                frontMaterial.diffuse[3]
+        };
+        for (var entry : lightStates.entrySet()) {
+            if (!enabledCaps.contains(entry.getKey())) {
+                continue;
+            }
+            var light = entry.getValue();
+            color[0] += light.ambient[0] * frontMaterial.ambient[0];
+            color[1] += light.ambient[1] * frontMaterial.ambient[1];
+            color[2] += light.ambient[2] * frontMaterial.ambient[2];
+            float[] direction = lightDirection(light.position, modelPosition);
+            float diffuse = Math.max(0.0f, dot3(normal, direction));
+            color[0] += light.diffuse[0] * frontMaterial.diffuse[0] * diffuse;
+            color[1] += light.diffuse[1] * frontMaterial.diffuse[1] * diffuse;
+            color[2] += light.diffuse[2] * frontMaterial.diffuse[2] * diffuse;
+        }
+        return (clampColor(frontMaterial.diffuse[3]) << 24)
+                | (clampColor(color[0]) << 16)
+                | (clampColor(color[1]) << 8)
+                | clampColor(color[2]);
+    }
+
+    private boolean usesMatrixPalette() {
+        return enabledCaps.contains(GL_MATRIX_PALETTE_OES)
+                && matrixIndexArrayBinding != null
+                && weightArrayBinding != null
+                && enabledClientStates.contains(GL_MATRIX_INDEX_ARRAY_OES)
+                && enabledClientStates.contains(GL_WEIGHT_ARRAY_OES);
+    }
+
+    private float[] paletteMatrix(int index) {
+        if (index < 0 || index >= paletteMatrices.length) {
+            return modelViewMatrix;
+        }
+        return paletteMatrices[index];
     }
 
     private Vertex projectVertex(ClipVertex vertex) {
@@ -1640,6 +1952,12 @@ public class OpglGraphics {
         if (Math.abs(area) < 0.00001f) {
             return;
         }
+        if (enabledCaps.contains(GL_CULL_FACE)) {
+            boolean frontFacing = frontFacing(area);
+            if ((cullFaceMode == GL_BACK && !frontFacing) || (cullFaceMode == GL_FRONT && frontFacing)) {
+                return;
+            }
+        }
         int minX = Math.max(0, (int) Math.floor(Math.min(v0.x(), Math.min(v1.x(), v2.x()))));
         int maxX = Math.min(surfaceWidth - 1, (int) Math.ceil(Math.max(v0.x(), Math.max(v1.x(), v2.x()))));
         int minY = Math.max(0, (int) Math.floor(Math.min(v0.y(), Math.min(v1.y(), v2.y()))));
@@ -1665,7 +1983,10 @@ public class OpglGraphics {
                 float v = (w0 * v0.v() * invW0 + w1 * v1.v() * invW1 + w2 * v2.v() * invW2) / reciprocal;
                 float depth = w0 * v0.z() + w1 * v1.z() + w2 * v2.z();
                 float eyeDepth = w0 * v0.eyeDepth() + w1 * v1.eyeDepth() + w2 * v2.eyeDepth();
-                int color = shadeFragment(u, v, eyeDepth, v0.color());
+                int baseColor = shadeModel == GL_FLAT
+                        ? v0.color()
+                        : interpolateColor(v0.color(), v1.color(), v2.color(), w0, w1, w2);
+                int color = shadeFragment(u, v, eyeDepth, baseColor);
                 writePixel(x, y, depth, color);
             }
         }
@@ -1751,12 +2072,13 @@ public class OpglGraphics {
         if (enabledCaps.contains(GL_TEXTURE_2D)) {
             TextureState textureState = textureStates.get(boundTexture2d);
             if (textureState != null && textureState.pixels != null) {
-                color = modulateColor(color, sampleTexture(textureState, u, v));
+                int texel = sampleTexture(textureState, u, v);
+                color = textureEnvMode == GL_REPLACE ? texel : modulateColor(color, texel);
             }
         }
         if (enabledCaps.contains(GL_ALPHA_TEST)) {
             int alpha = (color >>> 24) & 0xFF;
-            if (alphaFunc == GL_NOTEQUAL && alpha == clampColor(alphaRef)) {
+            if (!passesAlphaTest(alpha)) {
                 return 0;
             }
         }
@@ -1773,7 +2095,7 @@ public class OpglGraphics {
             return;
         }
         int index = y * surfaceWidth + x;
-        if (enabledCaps.contains(GL_DEPTH_TEST) && depth > surfaceDepth[index] + 0.000001f) {
+        if (enabledCaps.contains(GL_DEPTH_TEST) && !passesDepthTest(depth, surfaceDepth[index])) {
             return;
         }
         int existing = surfacePixels[index];
@@ -1886,6 +2208,83 @@ public class OpglGraphics {
             }
         }
         return indices;
+    }
+
+    private boolean passesAlphaTest(int alpha) {
+        int ref = clampColor(alphaRef);
+        return compareInt(alphaFunc, alpha, ref);
+    }
+
+    private boolean passesDepthTest(float incomingDepth, float existingDepth) {
+        return switch (depthFunc) {
+            case GL_NEVER -> false;
+            case GL_EQUAL -> Math.abs(incomingDepth - existingDepth) <= 0.000001f;
+            case GL_LEQUAL -> incomingDepth <= existingDepth + 0.000001f;
+            case GL_LESS -> incomingDepth < existingDepth - 0.000001f;
+            case GL_GREATER -> incomingDepth > existingDepth + 0.000001f;
+            case GL_GEQUAL -> incomingDepth + 0.000001f >= existingDepth;
+            case GL_NOTEQUAL -> Math.abs(incomingDepth - existingDepth) > 0.000001f;
+            case GL_ALWAYS -> true;
+            default -> incomingDepth < existingDepth - 0.000001f;
+        };
+    }
+
+    private static boolean compareInt(int func, int left, int right) {
+        return switch (func) {
+            case GL_NEVER -> false;
+            case GL_EQUAL -> left == right;
+            case GL_LEQUAL -> left <= right;
+            case GL_LESS -> left < right;
+            case GL_GREATER -> left > right;
+            case GL_GEQUAL -> left >= right;
+            case GL_NOTEQUAL -> left != right;
+            case GL_ALWAYS -> true;
+            default -> left != right;
+        };
+    }
+
+    private boolean frontFacing(float signedArea) {
+        return frontFaceMode == GL_CW ? signedArea < 0.0f : signedArea > 0.0f;
+    }
+
+    private static int interpolateColor(int c0, int c1, int c2, float w0, float w1, float w2) {
+        float a = ((c0 >>> 24) & 0xFF) * w0 + ((c1 >>> 24) & 0xFF) * w1 + ((c2 >>> 24) & 0xFF) * w2;
+        float r = ((c0 >>> 16) & 0xFF) * w0 + ((c1 >>> 16) & 0xFF) * w1 + ((c2 >>> 16) & 0xFF) * w2;
+        float g = ((c0 >>> 8) & 0xFF) * w0 + ((c1 >>> 8) & 0xFF) * w1 + ((c2 >>> 8) & 0xFF) * w2;
+        float b = (c0 & 0xFF) * w0 + (c1 & 0xFF) * w1 + (c2 & 0xFF) * w2;
+        return (clampByte(a) << 24) | (clampByte(r) << 16) | (clampByte(g) << 8) | clampByte(b);
+    }
+
+    private static void normalize3(float[] vector) {
+        float length = (float) Math.sqrt(vector[0] * vector[0] + vector[1] * vector[1] + vector[2] * vector[2]);
+        if (length <= 0.000001f) {
+            vector[0] = 0.0f;
+            vector[1] = 0.0f;
+            vector[2] = 1.0f;
+            return;
+        }
+        vector[0] /= length;
+        vector[1] /= length;
+        vector[2] /= length;
+    }
+
+    private static float dot3(float[] left, float[] right) {
+        return left[0] * right[0] + left[1] * right[1] + left[2] * right[2];
+    }
+
+    private static float[] lightDirection(float[] position, float[] modelPosition) {
+        float[] direction;
+        if (position[3] == 0.0f) {
+            direction = new float[] {position[0], position[1], position[2]};
+        } else {
+            direction = new float[] {
+                    position[0] - modelPosition[0],
+                    position[1] - modelPosition[1],
+                    position[2] - modelPosition[2]
+            };
+        }
+        normalize3(direction);
+        return direction;
     }
 
     private float[] readVertexComponents(ClientArrayBinding binding, int vertexIndex, int components, float defaultW) {
