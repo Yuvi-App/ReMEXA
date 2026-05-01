@@ -109,17 +109,55 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
                 Integer.parseInt(System.getProperty("remexa.ma5PcmReferenceKey", "60"));
 
         /**
-         * Hardware envelope rate multipliers (Q30) extracted from
-         * {@code M5_EmuHw.dll} at {@code data_100c95c8} (the 48 kHz table).
-         * Indexed by 4-bit rate field. Per-sample env_level *= entry / 2^30.
-         * Rates 0-3 are 1.0 (no decay).
+         * Per-tick envelope rate coefficients at 32 kHz, transcribed verbatim
+         * from {@code M5_EmuHw.dll} at {@code 0x100292E0} (the table base
+         * stored at struct {@code +0x1934} by {@code sub_10006a90} when
+         * sample rate is 32000). The chip's PCM voice generator
+         * ({@code sub_100129a0}) multiplies the Q30 envelope value by this
+         * factor every 7 output samples in decay/sustain/release stages.
+         *
+         * <p>Indices 0-3 hold {@code 2.0f} which the chip treats as a no-op
+         * because the envelope is clamped at unity; the deepest (index 60+)
+         * entries reach ~3.8e-5 for near-instant decay. Rate fields (0..15)
+         * map to {@code idx = rate << 2}.</p>
          */
-        private static final int[] HW_RATE_TABLE_Q30 = {
-                0x40000000, 0x40000000, 0x40000000, 0x40000000,
-                0x3fffe98b, 0x3fffe3ee, 0x3fffde51, 0x3fffd8b4,
-                0x3fffd317, 0x3fffc7dc, 0x3fffbca2, 0x3fffb168,
-                0x3fffa62e, 0x3fff8fb9, 0x3fff7945, 0x3fff62d0,
+        private static final float[] HW_RATE_TABLE_32K = {
+                2.0000000f, 2.0000000f, 2.0000000f, 2.0000000f,
+                1.9989512f, 1.9979054f, 1.9968596f, 1.9958138f,
+                1.9947681f, 1.9926765f, 1.9905849f, 1.9884934f,
+                1.9864018f, 1.9843102f, 1.9801271f, 1.9759438f,
+                1.9717607f, 1.9675775f, 1.9591942f, 1.9508115f,
+                1.9424285f, 1.9340450f, 1.9172785f, 1.9005120f,
+                1.8837459f, 1.8669792f, 1.8334467f, 1.7999142f,
+                1.7663815f, 1.7328490f, 1.6657841f, 1.5987189f,
+                1.5316539f, 1.4645889f, 1.3304592f, 1.1963297f,
+                1.0623415f, 0.9329090f, 0.7975446f, 0.6622045f,
+                0.5854902f, 0.4774414f, 0.3496094f, 0.2218018f,
+                0.1387939f, 0.0840149f, 0.0524750f, 0.0335999f,
+                0.0207825f, 0.0125732f, 0.0080414f, 0.0049019f,
+                0.0028534f, 0.0019073f, 0.0009537f, 0.0006104f,
+                0.0003815f, 0.0002441f, 0.0001144f, 0.0000610f,
+                0.0000381f, 0.0000381f, 0.0000381f, 0.0000381f,
         };
+
+        /**
+         * The chip's envelope state machine ticks every 7 output samples at
+         * 32 kHz (struct {@code +0x1930}, set by {@code sub_10006a90}). At
+         * other output rates we preserve wall-clock tick rate by raising the
+         * coefficient to a fractional power.
+         */
+        private static final int ENV_TICK_INTERVAL_32K = 7;
+
+        /**
+         * LFO frequency in Hz for the 2-bit {@code lfo} index, decoded from
+         * the 44.1 kHz speed table at {@code data_100291d4}
+         * ({@code 0x29819, 0x5bc02, 0x8541b, 0x9d495} as Q32 phase increments
+         * → 1.74, 3.84, 5.45, 6.39 Hz). Frequencies are sample-rate
+         * independent, so the same Hz values apply at any output rate.
+         * Used when {@code vibratoEnabled} or {@code amplitudeModEnabled}
+         * is set on the PCM voice.
+         */
+        private static final float[] LFO_FREQ_HZ = {1.74f, 3.84f, 5.45f, 6.39f};
 
         private final Sampler sampler;
         private final float sampleRate;
@@ -399,6 +437,7 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
                     float sample = interpolatedWaveSample(wave, note.position)
                             * gain
                             * note.envelope()
+                            * note.amScale()
                             * note.releaseGain;
                     int output = offset + frame * 2;
                     samples[output] += sample * noteLeft;
@@ -406,6 +445,7 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
                     if (!note.holding) {
                         note.position += note.advance(pitchBendSemitones[note.channel]);
                     }
+                    note.advanceLfo();
 
                     if (note.releasing) {
                         note.release();
@@ -567,6 +607,9 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
             private final float sustainCoef;
             private final float releaseCoef;
             private final float sustainLevel;
+            private final float lfoPhasePerSample;
+            private final float vibratoDepthSemitones;
+            private final float amDepth;
             private float position;
             private float releaseGain = 1.0f;
             private boolean releasing;
@@ -574,6 +617,7 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
             private boolean finished;
             private EnvelopeStage envelopeStage = EnvelopeStage.ATTACK;
             private float envelopeLevel = 0.0f;
+            private float lfoPhase;
 
             private PcmNote(int channel, int key, float velocity, MA5PcmVoiceProgram voice, int[] wave, float outputSampleRate) {
                 this.channel = channel;
@@ -591,6 +635,17 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
                 this.sustainCoef = decayCoef(voice.sustainRate(), outputSampleRate);
                 this.releaseCoef = decayCoef(voice.releaseRate(), outputSampleRate);
                 this.sustainLevel = sustainLevel(voice.sustainLevel());
+                int lfoIdx = Math.max(0, Math.min(LFO_FREQ_HZ.length - 1, voice.lfo()));
+                this.lfoPhasePerSample = (float) (2.0 * Math.PI * LFO_FREQ_HZ[lfoIdx] / outputSampleRate);
+                // Voice depth fields are 2 bits (0..3). Map vibrato to ~1
+                // semitone peak swing at depth 3 (musically conservative;
+                // chip exact mapping requires the SMW driver tables not yet
+                // located). AM is one-sided attenuating per chip behavior:
+                // depth 3 trims to ~50% amplitude at the LFO trough.
+                this.vibratoDepthSemitones =
+                        voice.vibratoEnabled() ? voice.vibratoDepth() / 3.0f : 0.0f;
+                this.amDepth =
+                        voice.amplitudeModEnabled() ? voice.amplitudeModDepth() / 6.0f : 0.0f;
                 if (!PCM_ENVELOPE_ENABLED || voice.attackRate() <= 0) {
                     this.envelopeLevel = 1.0f;
                     this.envelopeStage = EnvelopeStage.DECAY;
@@ -605,6 +660,7 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
             }
 
             private float advance(float bendSemitones) {
+                float vibrato = vibratoSemitones();
                 if (voice.drumVoice()) {
                     // Drum-kit voices play at the authored natural rate. The
                     // MIDI note only selects WHICH drum (via the per-note
@@ -612,16 +668,48 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
                     // content out of the kick/tom thump range. Pitch bend
                     // still applies as a fine adjustment if the sequence
                     // sweeps a hit.
-                    if (bendSemitones == 0.0f) {
+                    float totalSemitones = bendSemitones + vibrato;
+                    if (totalSemitones == 0.0f) {
                         return baseAdvance;
                     }
-                    return baseAdvance * hardwarePitchRatio(bendSemitones);
+                    return baseAdvance * hardwarePitchRatio(totalSemitones);
                 }
                 // Melodic PCM transposes relative to a chip-defined center
                 // key. The voice's frequencySetting is calibrated for that
                 // key; above it plays faster, below it slower.
                 return baseAdvance
-                        * hardwarePitchRatio(key - PCM_REFERENCE_KEY + bendSemitones);
+                        * hardwarePitchRatio(key - PCM_REFERENCE_KEY + bendSemitones + vibrato);
+            }
+
+            private float vibratoSemitones() {
+                if (vibratoDepthSemitones == 0.0f) {
+                    return 0.0f;
+                }
+                return vibratoDepthSemitones * (float) Math.sin(lfoPhase);
+            }
+
+            /**
+             * Returns the amplitude scale for this sample frame from the
+             * voice's AM LFO. Chip AM is one-sided attenuating: it trims the
+             * carrier toward zero at the LFO peak, never boosts above unity.
+             * Returns {@code 1.0f} when AM is disabled or depth is zero.
+             */
+            private float amScale() {
+                if (amDepth == 0.0f) {
+                    return 1.0f;
+                }
+                float lfo01 = (1.0f + (float) Math.sin(lfoPhase)) * 0.5f;
+                return Math.max(0.0f, 1.0f - amDepth * lfo01);
+            }
+
+            private void advanceLfo() {
+                if (lfoPhasePerSample == 0.0f) {
+                    return;
+                }
+                lfoPhase += lfoPhasePerSample;
+                if (lfoPhase > (float) (2.0 * Math.PI)) {
+                    lfoPhase -= (float) (2.0 * Math.PI);
+                }
             }
 
             private static float hardwarePitchRatio(float semitones) {
@@ -714,18 +802,34 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
                 return (float) (1.0 / Math.max(1.0, seconds * outputSampleRate));
             }
 
+            /**
+             * Resolves a 4-bit rate field (0..15) into a per-output-sample
+             * envelope multiplier using the chip's 64-entry per-tick table.
+             *
+             * <p>The chip applies its rate at one tick every 7 samples at
+             * 32 kHz. We convert that to a per-sample coefficient so the
+             * existing per-sample envelope loop reaches the same wall-clock
+             * decay shape: {@code perSample = perTick ^ (32000 / (7 * SR))}.</p>
+             *
+             * <p>Table indices 0..3 hold {@code 2.0} which on the chip means
+             * "no envelope movement" (envelope is clamped at unity); we
+             * surface that as a coefficient of {@code 1.0} so {@code env *=
+             * coef} is a no-op.</p>
+             */
             private static float decayCoef(int rate, float outputSampleRate) {
                 if (rate <= 0) {
                     return 1.0f;
                 }
-                int idx = Math.min(rate, 15);
-                double coef48k = HW_RATE_TABLE_Q30[idx] / (double) (1 << 30);
-                if (Math.abs(outputSampleRate - 48_000.0f) < 1.0f) {
-                    return (float) coef48k;
+                int idx = Math.max(0, Math.min(15, rate)) << 2;
+                if (idx >= HW_RATE_TABLE_32K.length) {
+                    idx = HW_RATE_TABLE_32K.length - 1;
                 }
-                // Per-sample multiplier rescales as a power of the SR ratio
-                // so wall-clock decay times stay constant at non-48k outputs.
-                return (float) Math.pow(coef48k, 48_000.0 / outputSampleRate);
+                float perTick = HW_RATE_TABLE_32K[idx];
+                if (perTick >= 1.0f) {
+                    return 1.0f;
+                }
+                double exponent = 32_000.0 / (ENV_TICK_INTERVAL_32K * outputSampleRate);
+                return (float) Math.pow(perTick, exponent);
             }
 
             private static float sustainLevel(int sustainLevel) {
