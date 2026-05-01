@@ -16,6 +16,7 @@ public class Texture {
     private final int[] pixels;
     private final int[] indexedPixels;
     private final IndexColorModel indexedColorModel;
+    private final boolean indexedGreenColorKey;
     private final boolean forModel;
 
     protected Texture() {
@@ -25,6 +26,7 @@ public class Texture {
         this.pixels = new int[0];
         this.indexedPixels = null;
         this.indexedColorModel = null;
+        this.indexedGreenColorKey = false;
         this.forModel = true;
     }
 
@@ -47,6 +49,7 @@ public class Texture {
         image.getRGB(this.pixels, 0, width, x, y, width, height);
         this.indexedPixels = null;
         this.indexedColorModel = null;
+        this.indexedGreenColorKey = false;
         this.forModel = isForModel;
     }
 
@@ -61,6 +64,7 @@ public class Texture {
         image.getRGB(this.pixels, 0, width, 0, 0, width, height);
         this.indexedPixels = decoded.indexedPixels();
         this.indexedColorModel = decoded.indexedColorModel();
+        this.indexedGreenColorKey = isIndexedGreenColorKey(this.indexedColorModel);
         this.forModel = isForModel;
     }
 
@@ -89,7 +93,7 @@ public class Texture {
         if (indexedPixels != null && indexedColorModel != null) {
             int index = indexedPixels[y * width + x];
             int argb = indexedColorModel.getRGB(index);
-            if (transparent && (index == 0 || (argb >>> 24) == 0)) {
+            if ((transparent && index == 0) || (indexedGreenColorKey && index == 0) || (transparent && (argb >>> 24) == 0)) {
                 return 0;
             }
             if (!transparent && (argb >>> 24) == 0) {
@@ -157,6 +161,12 @@ public class Texture {
         }
         int wrapped = value % size;
         return wrapped < 0 ? wrapped + size : wrapped;
+    }
+
+    private static boolean isIndexedGreenColorKey(IndexColorModel colorModel) {
+        return colorModel != null
+                && colorModel.getMapSize() > 0
+                && (colorModel.getRGB(0) & 0x00FFFFFF) == 0x0000FF00;
     }
 
     private record DecodedTexture(Image image, int[] indexedPixels, IndexColorModel indexedColorModel) {

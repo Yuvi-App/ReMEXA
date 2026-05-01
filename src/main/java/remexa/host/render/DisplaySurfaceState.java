@@ -47,7 +47,8 @@ public final class DisplaySurfaceState {
                 virtualImage.getWidth(),
                 virtualImage.getHeight(),
                 true,
-                virtualImage
+                virtualImage,
+                true
         );
     }
 
@@ -58,7 +59,8 @@ public final class DisplaySurfaceState {
                 virtualImage.getWidth(),
                 virtualImage.getHeight(),
                 true,
-                virtualImage
+                virtualImage,
+                true
         );
     }
 
@@ -220,7 +222,8 @@ public final class DisplaySurfaceState {
                 virtualImage.getWidth(),
                 virtualImage.getHeight(),
                 false,
-                virtualImage
+                virtualImage,
+                true
         );
     }
 

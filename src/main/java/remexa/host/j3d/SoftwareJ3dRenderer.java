@@ -10,6 +10,7 @@ import javax.microedition.lcdui.Graphics;
 
 public final class SoftwareJ3dRenderer {
     private static final float DEPTH_EPSILON = 0.000001f;
+    private static final float TRANSLUCENT_DEPTH_BIAS = 32.0f;
     private static final int RASTER_SUBPIXEL_SHIFT = 4;
     private static final int RASTER_SUBPIXEL_SCALE = 1 << RASTER_SUBPIXEL_SHIFT;
     private static final int COMMAND_LIST_VERSION_1_0 = 0xFE000001;
@@ -52,6 +53,12 @@ public final class SoftwareJ3dRenderer {
     private SoftwareJ3dRenderer() {
     }
 
+    public enum RenderPass {
+        ALL,
+        OPAQUE,
+        TRANSLUCENT
+    }
+
     public static boolean renderPrimitivesToBuffers(
             int[] pixels,
             float[] depthBuffer,
@@ -72,6 +79,52 @@ public final class SoftwareJ3dRenderer {
             int[] normals,
             int[] textureCoords,
             int[] colors
+    ) {
+        return renderPrimitivesToBuffers(
+                pixels,
+                depthBuffer,
+                surfaceWidth,
+                surfaceHeight,
+                clipX,
+                clipY,
+                clipWidth,
+                clipHeight,
+                originX,
+                originY,
+                layout,
+                effect,
+                texture,
+                command,
+                numPrimitives,
+                vertexCoords,
+                normals,
+                textureCoords,
+                colors,
+                RenderPass.ALL
+        );
+    }
+
+    public static boolean renderPrimitivesToBuffers(
+            int[] pixels,
+            float[] depthBuffer,
+            int surfaceWidth,
+            int surfaceHeight,
+            int clipX,
+            int clipY,
+            int clipWidth,
+            int clipHeight,
+            int originX,
+            int originY,
+            com.jblend.graphics.j3d.FigureLayout layout,
+            Effect3D effect,
+            Texture texture,
+            int command,
+            int numPrimitives,
+            int[] vertexCoords,
+            int[] normals,
+            int[] textureCoords,
+            int[] colors,
+            RenderPass pass
     ) {
         if (pixels == null || depthBuffer == null || layout == null || effect == null || vertexCoords == null) {
             return false;
@@ -121,7 +174,8 @@ public final class SoftwareJ3dRenderer {
                 clipHeight,
                 state,
                 payload,
-                1
+                1,
+                pass
         ) > 1;
     }
 
@@ -141,6 +195,44 @@ public final class SoftwareJ3dRenderer {
             Texture[] textures,
             Texture fallbackTexture,
             int[] commandList
+    ) {
+        return renderCommandListToBuffers(
+                pixels,
+                depthBuffer,
+                surfaceWidth,
+                surfaceHeight,
+                clipX,
+                clipY,
+                clipWidth,
+                clipHeight,
+                originX,
+                originY,
+                layout,
+                effect,
+                textures,
+                fallbackTexture,
+                commandList,
+                RenderPass.ALL
+        );
+    }
+
+    public static boolean renderCommandListToBuffers(
+            int[] pixels,
+            float[] depthBuffer,
+            int surfaceWidth,
+            int surfaceHeight,
+            int clipX,
+            int clipY,
+            int clipWidth,
+            int clipHeight,
+            int originX,
+            int originY,
+            com.jblend.graphics.j3d.FigureLayout layout,
+            Effect3D effect,
+            Texture[] textures,
+            Texture fallbackTexture,
+            int[] commandList,
+            RenderPass pass
     ) {
         if (pixels == null || depthBuffer == null || layout == null || effect == null || commandList == null) {
             return false;
@@ -303,7 +395,8 @@ public final class SoftwareJ3dRenderer {
                         clipHeight,
                         state,
                         commandList,
-                        cursor - 1
+                        cursor - 1,
+                        pass
                 );
                 if (next <= cursor - 1) {
                     break;
@@ -444,7 +537,31 @@ public final class SoftwareJ3dRenderer {
                 affineTrans,
                 figure,
                 fallbackTexture,
-                effect
+                effect,
+                RenderPass.OPAQUE
+        );
+        renderFigureToBuffers(
+                pixels,
+                depthBuffer,
+                surfaceWidth,
+                surfaceHeight,
+                clipX,
+                clipY,
+                clipWidth,
+                clipHeight,
+                screenCenterX,
+                screenCenterY,
+                projectionScaleX,
+                projectionScaleY,
+                yDownProjection,
+                perspective,
+                nearClip,
+                farClip,
+                affineTrans,
+                figure,
+                fallbackTexture,
+                effect,
+                RenderPass.TRANSLUCENT
         );
         graphics.drawRGB(pixels, 0, surfaceWidth, 0, 0, surfaceWidth, surfaceHeight, true);
     }
@@ -470,6 +587,54 @@ public final class SoftwareJ3dRenderer {
             MascotFigure figure,
             Texture fallbackTexture,
             Effect3D effect
+    ) {
+        renderFigureToBuffers(
+                pixels,
+                depthBuffer,
+                surfaceWidth,
+                surfaceHeight,
+                clipX,
+                clipY,
+                clipWidth,
+                clipHeight,
+                screenCenterX,
+                screenCenterY,
+                projectionScaleX,
+                projectionScaleY,
+                yDownProjection,
+                perspective,
+                nearClip,
+                farClip,
+                affineTrans,
+                figure,
+                fallbackTexture,
+                effect,
+                RenderPass.ALL
+        );
+    }
+
+    public static void renderFigureToBuffers(
+            int[] pixels,
+            float[] depthBuffer,
+            int surfaceWidth,
+            int surfaceHeight,
+            int clipX,
+            int clipY,
+            int clipWidth,
+            int clipHeight,
+            int screenCenterX,
+            int screenCenterY,
+            float projectionScaleX,
+            float projectionScaleY,
+            boolean yDownProjection,
+            boolean perspective,
+            int nearClip,
+            int farClip,
+            AffineTrans affineTrans,
+            MascotFigure figure,
+            Texture fallbackTexture,
+            Effect3D effect,
+            RenderPass pass
     ) {
         if (pixels == null || depthBuffer == null || figure == null || figure.model() == null) {
             return;
@@ -531,6 +696,9 @@ public final class SoftwareJ3dRenderer {
             int polygonBlendMode = effect != null && !effect.isSemiTransparentEnabled()
                     ? 0
                     : polygon.blendMode();
+            if (!rendersInPass(polygonBlendMode, pass)) {
+                continue;
+            }
             if (perspective) {
                 rasterizePerspectivePolygon(
                         pixels,
@@ -1328,7 +1496,8 @@ public final class SoftwareJ3dRenderer {
             int clipHeight,
             CommandState state,
             int[] commandList,
-            int commandIndex
+            int commandIndex,
+            RenderPass pass
     ) {
         int command = commandList[commandIndex];
         int primitiveType = (command >>> 24) & 0xFF;
@@ -1371,42 +1540,44 @@ public final class SoftwareJ3dRenderer {
                         colors[i] = commandList[cursor++];
                     }
                 }
-                for (int i = 0; i < primitiveCount; i++) {
-                    int base = i * 6;
-                    ProjectedVertex v0 = transformAndProject(
-                            state,
-                            vertices[base],
-                            vertices[base + 1],
-                            vertices[base + 2],
-                            0.0f,
-                            0.0f
-                    );
-                    ProjectedVertex v1 = transformAndProject(
-                            state,
-                            vertices[base + 3],
-                            vertices[base + 4],
-                            vertices[base + 5],
-                            0.0f,
-                            0.0f
-                    );
-                    int colorValue = 0xFFFFFFFF;
-                    if (colors != null) {
-                        colorValue = (colors.length == 1 ? colors[0] : colors[i]) | 0xFF000000;
+                if (rendersInPass(blendMode, pass)) {
+                    for (int i = 0; i < primitiveCount; i++) {
+                        int base = i * 6;
+                        ProjectedVertex v0 = transformAndProject(
+                                state,
+                                vertices[base],
+                                vertices[base + 1],
+                                vertices[base + 2],
+                                0.0f,
+                                0.0f
+                        );
+                        ProjectedVertex v1 = transformAndProject(
+                                state,
+                                vertices[base + 3],
+                                vertices[base + 4],
+                                vertices[base + 5],
+                                0.0f,
+                                0.0f
+                        );
+                        int colorValue = 0xFFFFFFFF;
+                        if (colors != null) {
+                            colorValue = (colors.length == 1 ? colors[0] : colors[i]) | 0xFF000000;
+                        }
+                        drawLine(
+                                pixels,
+                                depthBuffer,
+                                surfaceWidth,
+                                surfaceHeight,
+                                effectiveClipX,
+                                effectiveClipY,
+                                effectiveClipWidth,
+                                effectiveClipHeight,
+                                v0,
+                                v1,
+                                colorValue,
+                                blendMode
+                        );
                     }
-                    drawLine(
-                            pixels,
-                            depthBuffer,
-                            surfaceWidth,
-                            surfaceHeight,
-                            effectiveClipX,
-                            effectiveClipY,
-                            effectiveClipWidth,
-                            effectiveClipHeight,
-                            v0,
-                            v1,
-                            colorValue,
-                            blendMode
-                    );
                 }
                 return cursor;
             }
@@ -1428,7 +1599,8 @@ public final class SoftwareJ3dRenderer {
                         3,
                         blendMode,
                         sphereMapEnabled ? state.sphereMap : null,
-                        colorKeyEnabled
+                        colorKeyEnabled,
+                        pass
                 );
             }
             case PRIMITIVE_QUADS -> {
@@ -1449,7 +1621,8 @@ public final class SoftwareJ3dRenderer {
                         4,
                         blendMode,
                         sphereMapEnabled ? state.sphereMap : null,
-                        colorKeyEnabled
+                        colorKeyEnabled,
+                        pass
                 );
             }
             case PRIMITIVE_POINT_SPRITES -> {
@@ -1469,28 +1642,30 @@ public final class SoftwareJ3dRenderer {
                 for (int i = 0; i < spriteInts; i++) {
                     spriteParams[i] = commandList[cursor++];
                 }
-                for (int i = 0; i < primitiveCount; i++) {
-                    int vertexBase = i * 3;
-                    int spriteBase = spriteMode == PDATA_POINT_SPRITE_PARAMS_PER_COMMAND ? 0 : i * 8;
-                    renderPointSprite(
-                            pixels,
-                            depthBuffer,
-                            surfaceWidth,
-                            surfaceHeight,
-                            effectiveClipX,
-                            effectiveClipY,
-                            effectiveClipWidth,
-                            effectiveClipHeight,
-                            state,
-                            vertices[vertexBase],
-                            vertices[vertexBase + 1],
-                            vertices[vertexBase + 2],
-                            spriteParams,
-                            spriteBase,
-                            blendMode,
-                            sphereMapEnabled ? state.sphereMap : null,
-                            colorKeyEnabled
-                    );
+                if (rendersInPass(blendMode, pass)) {
+                    for (int i = 0; i < primitiveCount; i++) {
+                        int vertexBase = i * 3;
+                        int spriteBase = spriteMode == PDATA_POINT_SPRITE_PARAMS_PER_COMMAND ? 0 : i * 8;
+                        renderPointSprite(
+                                pixels,
+                                depthBuffer,
+                                surfaceWidth,
+                                surfaceHeight,
+                                effectiveClipX,
+                                effectiveClipY,
+                                effectiveClipWidth,
+                                effectiveClipHeight,
+                                state,
+                                vertices[vertexBase],
+                                vertices[vertexBase + 1],
+                                vertices[vertexBase + 2],
+                                spriteParams,
+                                spriteBase,
+                                blendMode,
+                                sphereMapEnabled ? state.sphereMap : null,
+                                colorKeyEnabled
+                        );
+                    }
                 }
                 return cursor;
             }
@@ -1517,7 +1692,8 @@ public final class SoftwareJ3dRenderer {
             int verticesPerPrimitive,
             int blendMode,
             Texture sphereMap,
-            boolean colorKeyEnabled
+            boolean colorKeyEnabled,
+            RenderPass pass
     ) {
         int vertexInts = primitiveCount * verticesPerPrimitive * 3;
         if (cursor + vertexInts > commandList.length) {
@@ -1564,6 +1740,9 @@ public final class SoftwareJ3dRenderer {
             for (int i = 0; i < colorCount; i++) {
                 colors[i] = commandList[cursor++];
             }
+        }
+        if (!rendersInPass(blendMode, pass)) {
+            return cursor;
         }
         for (int i = 0; i < primitiveCount; i++) {
             int vertexBase = i * verticesPerPrimitive * 3;
@@ -2104,7 +2283,8 @@ public final class SoftwareJ3dRenderer {
                 float w2 = edgeFunction(x0, y0, x1, y1, px, py) / area;
                 float pixelDepth = (w0 * z0) + (w1 * z1) + (w2 * z2);
                 int index = y * surfaceWidth + x;
-                if (pixelDepth < depthBuffer[index] - DEPTH_EPSILON) {
+                float depthTest = blendMode == 0 ? pixelDepth : pixelDepth + TRANSLUCENT_DEPTH_BIAS;
+                if (depthTest < depthBuffer[index] - DEPTH_EPSILON) {
                     continue;
                 }
                 int argb;
@@ -2130,7 +2310,7 @@ public final class SoftwareJ3dRenderer {
                     // punches holes through the track. Blended command-list effects, however, rely on
                     // that same palette key for billboard/sprite backgrounds, so keep color-keying for
                     // additive/average/subtractive primitives.
-                    argb = sampleCommandTexture(texture, u, v, colorKeyEnabled);
+                    argb = sampleCommandTexture(texture, u, v, colorKeyEnabled || blendMode != 0);
                     if ((argb >>> 24) == 0) {
                         continue;
                     }
@@ -2148,6 +2328,13 @@ public final class SoftwareJ3dRenderer {
 
     private static boolean writesDepth(int blendMode) {
         return blendMode == 0;
+    }
+
+    private static boolean rendersInPass(int blendMode, RenderPass pass) {
+        if (pass == null || pass == RenderPass.ALL) {
+            return true;
+        }
+        return blendMode == 0 ? pass == RenderPass.OPAQUE : pass == RenderPass.TRANSLUCENT;
     }
 
     private static final class CommandState {

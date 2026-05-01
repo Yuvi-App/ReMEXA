@@ -132,6 +132,16 @@ public final class MascotFigure {
         return animatedPatternMask;
     }
 
+    public MascotFigure snapshot() {
+        MascotFigure copy = new MascotFigure(model);
+        System.arraycopy(vertices, 0, copy.vertices, 0, Math.min(vertices.length, copy.vertices.length));
+        copy.textures = textures.clone();
+        copy.selectedTexture = selectedTexture;
+        copy.selectedPatternMask = patternMask();
+        copy.animatedPatternMask = 0;
+        return copy;
+    }
+
     private void applyPose() {
         if (model == null) {
             return;

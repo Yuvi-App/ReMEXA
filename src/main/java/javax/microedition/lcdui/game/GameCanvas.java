@@ -29,7 +29,7 @@ public abstract class GameCanvas extends Canvas {
 
     public Graphics getGraphics() {
         ensureBackBuffer();
-        return backBuffer.getGraphics();
+        return backBuffer.getGraphics(true);
     }
 
     public void flushGraphics() {

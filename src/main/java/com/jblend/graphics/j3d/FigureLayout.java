@@ -49,8 +49,18 @@ public class FigureLayout {
 
     public void setAffineTransArray (com.jblend.graphics.j3d.AffineTrans[] at) {
         this.affineTransArray = at == null ? new AffineTrans[0] : at.clone();
-        this.selectedAffineIndex = this.affineTransArray.length == 0 ? -1 : Math.min(Math.max(selectedAffineIndex, 0), this.affineTransArray.length - 1);
-        remexa.probes.SdkStubSupport.log("com.jblend.graphics.j3d.FigureLayout", "setAffineTransArray", at);
+        if (this.affineTransArray.length == 0 || selectedAffineIndex >= this.affineTransArray.length) {
+            this.selectedAffineIndex = -1;
+        }
+        remexa.probes.SdkStubSupport.log("com.jblend.graphics.j3d.FigureLayout", "setAffineTransArray", (Object) at);
+    }
+
+    public com.jblend.graphics.j3d.AffineTrans[] getAffineTransArray() {
+        return affineTransArray.clone();
+    }
+
+    public int getSelectedAffineIndex() {
+        return selectedAffineIndex;
     }
 
     public void selectAffineTrans (int index) {
