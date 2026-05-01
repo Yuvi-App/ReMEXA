@@ -149,23 +149,35 @@ public final class Display {
     }
 
     private void drainSerialCallbacks() {
-        while (true) {
-            Runnable callback;
-            synchronized (pendingSerialCallbacks) {
-                callback = pendingSerialCallbacks.poll();
-                if (callback == null) {
-                    serialCallbackDrainScheduled = false;
-                    return;
-                }
-            }
-            try {
-                callback.run();
-            } catch (Throwable throwable) {
-                var message = "Display.callSerially callback failed";
-                SdkStubSupport.log(Display.class.getName(), "callSerially", message, throwable);
-                throw throwable;
+        Runnable callback;
+        synchronized (pendingSerialCallbacks) {
+            callback = pendingSerialCallbacks.poll();
+            if (callback == null) {
+                serialCallbackDrainScheduled = false;
+                return;
             }
         }
+
+        try {
+            callback.run();
+        } catch (Throwable throwable) {
+            var message = "Display.callSerially callback failed";
+            SdkStubSupport.log(Display.class.getName(), "callSerially", message, throwable);
+            throw throwable;
+        }
+
+        synchronized (pendingSerialCallbacks) {
+            if (pendingSerialCallbacks.isEmpty()) {
+                serialCallbackDrainScheduled = false;
+                return;
+            }
+        }
+
+        // A few games implement their frame loop by re-posting themselves from
+        // callSerially(). Yield between callbacks so Swing can process repaints
+        // and input instead of letting one self-rescheduling runnable monopolize
+        // the event thread.
+        SwingUtilities.invokeLater(this::drainSerialCallbacks);
     }
 
     private static void initializeDisplayable(Displayable displayable) {
