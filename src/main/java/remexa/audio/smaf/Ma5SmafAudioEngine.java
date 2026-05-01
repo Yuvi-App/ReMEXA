@@ -90,6 +90,27 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
                 Float.parseFloat(System.getProperty("remexa.ma5PcmGain", "0.35"));
         private static final float PCM_PHASE_REFERENCE_RATE = 48_000.0f;
         private static final float PCM_PHASE_FRACTION_SCALE = 65_536.0f;
+
+        /**
+         * Multiplier on the PCM phase increment to compensate for the unknown
+         * SMW-driver-side scaling of {@code frequencySetting} into chip
+         * register {@code +0x8040}.
+         *
+         * <p>The chip's phase increment (struct {@code +0x80b4}, written by
+         * {@code sub_10013a10} from {@code +0x8084} which {@code sub_100139c0}
+         * computes as {@code (freq * keyMul) >> 16} at chip rate 48 kHz)
+         * matches the {@code freq * 48000 / (outSR * 65536)} shape this
+         * engine uses, but the {@code keyMul} and the SMW driver's scaling
+         * of the SysEx {@code frequencySetting} field into {@code +0x8040}
+         * could not be located (driver DLL is stripped).</p>
+         *
+         * <p>Tunable via {@code -Dremexa.ma5PcmFreqScale=N} so the user can
+         * audition with values like 0.5, 2, 4, 8, 16 to find a calibration
+         * that brings FF4 melodic phrases into tune. Default {@code 1.0}
+         * preserves prior behavior.</p>
+         */
+        private static final float PCM_FREQ_SCALE =
+                Float.parseFloat(System.getProperty("remexa.ma5PcmFreqScale", "1.0"));
         private static final int[] PCM_SEMITONE_Q15 = {
                 0x8000, 0x78D7, 0x7215, 0x6BB3, 0x65AD, 0x5FFD,
                 0x5A9E, 0x558C, 0x50C3, 0x4C3F, 0x47FB, 0x43F4, 0x4027
@@ -625,9 +646,14 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
                 this.velocity = Math.max(0.0f, velocity);
                 this.voice = voice;
                 this.wave = wave;
-                // MA-5 PCM uses a 16.16-style phase step derived from a 48 kHz master rate.
+                // MA-5 PCM phase increment per output sample, in 16.16 wave-sample units.
+                // Derived from M5_EmuHw.dll: sub_10013a10 writes voice +0x80b4 from
+                // +0x8084 = (freq * keyMul) >> 16 at chip rate 48 kHz (sub_100139c0).
+                // The SMW driver's exact scaling of the SysEx frequencySetting field
+                // into chip register +0x8040 lives in stripped code; PCM_FREQ_SCALE
+                // exposes that calibration constant for empirical tuning.
                 this.baseAdvance = Math.max(0.001f,
-                        voice.frequencySetting() * PCM_PHASE_REFERENCE_RATE
+                        voice.frequencySetting() * PCM_PHASE_REFERENCE_RATE * PCM_FREQ_SCALE
                                 / (outputSampleRate * PCM_PHASE_FRACTION_SCALE));
                 this.totalLevelGain = PCM_ENVELOPE_ENABLED ? totalLevelGain(voice.totalLevel()) : 1.0f;
                 this.attackDelta = attackDelta(voice.attackRate(), outputSampleRate);
