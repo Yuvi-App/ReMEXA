@@ -542,6 +542,13 @@ public final class MascotLoader {
         return raw;
     }
 
+    private static int materialBlendMode(int material) {
+        int blendMode = material & MATERIAL_BLEND_MASK;
+        // MBAC material blend bits are compact material flags, not the full command-list
+        // blend constants. The combined flag is used by Mascot models for keyed textures.
+        return blendMode == MATERIAL_BLEND_MASK ? 0 : blendMode;
+    }
+
     private static final class Poly {
         private final int[] indices;
         private final float[] textureCoords;
@@ -569,7 +576,7 @@ public final class MascotLoader {
                     textureCoords,
                     0,
                     material,
-                    material & MATERIAL_BLEND_MASK,
+                    materialBlendMode(material),
                     (material & MATERIAL_DOUBLE_SIDED) != 0,
                     (material & MATERIAL_TRANSPARENT) != 0
             );
@@ -581,7 +588,7 @@ public final class MascotLoader {
                     null,
                     0xFF000000 | (red << 16) | (green << 8) | blue,
                     material,
-                    material & MATERIAL_BLEND_MASK,
+                    materialBlendMode(material),
                     (material & MATERIAL_DOUBLE_SIDED) != 0,
                     (material & MATERIAL_TRANSPARENT) != 0
             );
