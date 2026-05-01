@@ -21,6 +21,9 @@ import remexa.probes.LogCategory;
 import remexa.settings.RemexaPreferences;
 
 public final class RecordStore {
+    public static final int AUTHMODE_PRIVATE = 0;
+    public static final int AUTHMODE_ANY = 1;
+
     private static final int STORAGE_MAGIC = 0x524d5852;
 
     private final Path storePath;
@@ -81,6 +84,17 @@ public final class RecordStore {
         } catch (IOException exception) {
             throw new RecordStoreException("Unable to open record store: " + name, exception);
         }
+    }
+
+    public static RecordStore openRecordStore(String name, boolean createIfNecessary, int authmode, boolean writable)
+            throws RecordStoreException {
+        validateAuthMode(authmode);
+        return openRecordStore(name, createIfNecessary);
+    }
+
+    public static RecordStore openRecordStore(String name, String vendorName, String suiteName)
+            throws RecordStoreException {
+        return openRecordStore(name, false);
     }
 
     public static void deleteRecordStore(String name) throws RecordStoreException {
@@ -227,6 +241,15 @@ public final class RecordStore {
 
     public synchronized int getVersion() {
         return version;
+    }
+
+    public synchronized void setMode(int authmode, boolean writable) throws RecordStoreException {
+        validateAuthMode(authmode);
+        DebugLog.log(
+                LogCategory.RMS,
+                RecordStore.class.getName(),
+                "setMode(\"" + name + "\", authmode=" + authmode + ", writable=" + writable + ")"
+        );
     }
 
     public synchronized RecordEnumeration enumerateRecords(
@@ -517,6 +540,12 @@ public final class RecordStore {
 
     private static String sanitize(String name) {
         return name.replaceAll("[^A-Za-z0-9._-]", "_");
+    }
+
+    private static void validateAuthMode(int authmode) {
+        if (authmode != AUTHMODE_PRIVATE && authmode != AUTHMODE_ANY) {
+            throw new IllegalArgumentException("Unsupported record store auth mode: " + authmode);
+        }
     }
 
     private static Path rmsRoot() {
