@@ -47,21 +47,30 @@ public final class FileUtility {
             throw new IOException("FileUtility.play: media buffer only contains padding.");
         }
 
-        var mediaRoot = remexa.host.runtime.MidletRuntime.appStorageRoot().resolve("media-cache");
-        Files.createDirectories(mediaRoot);
         var mediaPath = Files.createTempFile(
-                mediaRoot,
-                sanitizeTitle(remexa.host.runtime.MidletRuntime.currentAppTitle()) + "-",
+                "remexa-" + sanitizeTitle(remexa.host.runtime.MidletRuntime.currentAppTitle()) + "-",
                 extensionForType(type)
         );
-        Files.write(mediaPath, Arrays.copyOf(data, payloadLength));
+        try {
+            Files.write(mediaPath, Arrays.copyOf(data, payloadLength));
 
-        remexa.probes.DebugLog.log(
-                remexa.probes.LogCategory.MEDIA,
-                FileUtility.class.getName(),
-                "Playing hosted media " + mediaPath.getFileName() + " (" + payloadLength + " bytes, type=" + type + ")"
-        );
-        hostFrame.playHostedVideoBlocking(mediaPath);
+            remexa.probes.DebugLog.log(
+                    remexa.probes.LogCategory.MEDIA,
+                    FileUtility.class.getName(),
+                    "Playing hosted media " + mediaPath.getFileName() + " (" + payloadLength + " bytes, type=" + type + ")"
+            );
+            hostFrame.playHostedVideoBlocking(mediaPath);
+        } finally {
+            try {
+                Files.deleteIfExists(mediaPath);
+            } catch (IOException exception) {
+                remexa.probes.DebugLog.log(
+                        remexa.probes.LogCategory.MEDIA,
+                        FileUtility.class.getName(),
+                        "Unable to remove hosted media temp file " + mediaPath.getFileName() + ": " + exception.getMessage()
+                );
+            }
+        }
     }
 
     private static int trimmedLength(byte[] data) {
