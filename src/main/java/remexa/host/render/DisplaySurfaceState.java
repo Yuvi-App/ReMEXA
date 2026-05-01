@@ -65,7 +65,7 @@ public final class DisplaySurfaceState {
     }
 
     public synchronized void createFrameBuffer(int width, int height) {
-        frameBuffer = createSurface(width, height);
+        frameBuffer = createTransparentSurface(width, height);
         ensureVirtualSurface();
     }
 
@@ -118,6 +118,7 @@ public final class DisplaySurfaceState {
         } finally {
             graphics.dispose();
         }
+        clearTransparent(frameBuffer);
     }
 
     public synchronized void presentFrameBuffer(int tx, int ty) {
@@ -131,6 +132,9 @@ public final class DisplaySurfaceState {
             graphics.drawImage(source, tx, ty, null);
         } finally {
             graphics.dispose();
+        }
+        if (frameBuffer != null) {
+            clearTransparent(frameBuffer);
         }
     }
 
@@ -237,7 +241,7 @@ public final class DisplaySurfaceState {
 
     private BufferedImage ensureFrameBuffer() {
         if (frameBuffer == null) {
-            frameBuffer = createSurface(displayMetrics.width(), displayMetrics.height());
+            frameBuffer = createTransparentSurface(displayMetrics.width(), displayMetrics.height());
         }
         return frameBuffer;
     }
@@ -260,6 +264,12 @@ public final class DisplaySurfaceState {
         return image;
     }
 
+    private static BufferedImage createTransparentSurface(int width, int height) {
+        var image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+        clearTransparent(image);
+        return image;
+    }
+
     private static BufferedImage copyOf(BufferedImage source) {
         var copy = createSurface(source.getWidth(), source.getHeight());
         var graphics = copy.createGraphics();
@@ -276,6 +286,16 @@ public final class DisplaySurfaceState {
         try {
             graphics.setComposite(AlphaComposite.Src);
             graphics.setColor(Color.BLACK);
+            graphics.fillRect(0, 0, image.getWidth(), image.getHeight());
+        } finally {
+            graphics.dispose();
+        }
+    }
+
+    private static void clearTransparent(BufferedImage image) {
+        var graphics = image.createGraphics();
+        try {
+            graphics.setComposite(AlphaComposite.Clear);
             graphics.fillRect(0, 0, image.getWidth(), image.getHeight());
         } finally {
             graphics.dispose();

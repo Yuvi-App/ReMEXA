@@ -351,6 +351,12 @@ public abstract class Canvas extends Displayable {
         }
     }
 
+    protected final boolean isHostPaintInProgress() {
+        synchronized (this) {
+            return paintInProgress;
+        }
+    }
+
     protected final boolean deferRepaintIfPainting(Runnable repaintAction) {
         synchronized (this) {
             if (!paintInProgress) {

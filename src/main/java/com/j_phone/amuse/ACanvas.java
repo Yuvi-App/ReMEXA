@@ -32,9 +32,6 @@ public abstract class ACanvas extends javax.microedition.lcdui.Canvas implements
         }
         int resolvedWidth = fw == 0 ? metrics.width() : fw;
         int resolvedHeight = fh == 0 ? metrics.height() : fh;
-        if (resolvedWidth > metrics.width() || resolvedHeight > metrics.height()) {
-            throw new IllegalArgumentException("ACanvas framebuffer size must not exceed the display size.");
-        }
         palette = new int[numPalettes];
         patterns = new byte[numPatterns][];
         // The ACanvas framebuffer is a separate off-screen surface. The real
@@ -162,6 +159,9 @@ public abstract class ACanvas extends javax.microedition.lcdui.Canvas implements
 
     @Override
     public void repaint() {
+        if (this instanceof Runnable && isHostPaintInProgress()) {
+            return;
+        }
         if (deferRepaintIfPainting(this::repaint)) {
             return;
         }
