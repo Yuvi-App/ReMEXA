@@ -134,6 +134,7 @@ public final class Font {
             return "";
         }
         return value
+                .replace("\u0000", "")
                 .replace("\r", "")
                 .replace('\t', ' ')
                 .replace('\ue24e', '\u00a9')
