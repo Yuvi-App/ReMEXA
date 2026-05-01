@@ -41,8 +41,9 @@ public final class MidletRuntime {
 
     // Original J3D-capable J-Phone/Vodafone handsets ran 3D titles at ~20 FPS;
     // most legacy frame loops were paced by paint cost rather than a clock.
-    // Capping serviceRepaints() to ~50ms/frame (20 FPS) prevents these games
-    // from running uncapped on modern hardware. Override via -Dremexa.frameIntervalMs.
+    // Capping non-sprite Canvas repaint presentation to ~50ms/frame (20 FPS)
+    // prevents these games from running uncapped on modern hardware.
+    // Override via -Dremexa.frameIntervalMs.
     private static final String FRAME_INTERVAL_PROPERTY = "remexa.frameIntervalMs";
     private static final long DEFAULT_FRAME_INTERVAL_NS = 50_000_000L;
 
@@ -260,6 +261,7 @@ public final class MidletRuntime {
             renderer.accept(graphics);
             if (!spriteCanvas) {
                 surface.presentCanvas();
+                paceFrame(canvas);
             }
         } finally {
             CURRENT_GRAPHICS.remove();
@@ -276,7 +278,6 @@ public final class MidletRuntime {
             return;
         }
         context.surfaceFor(canvas).presentCanvas();
-        paceFrame(canvas);
     }
 
     private static void paceFrame(Canvas canvas) {
