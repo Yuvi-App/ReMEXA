@@ -67,6 +67,10 @@ public final class Display {
         return 65536;
     }
 
+    public int numAlphaLevels() {
+        return 256;
+    }
+
     public boolean vibrate(int duration) {
         SdkStubSupport.log(Display.class.getName(), "vibrate", duration);
         if (duration <= 0) {
