@@ -237,8 +237,15 @@ public class MA3Sampler
         }
 
 
-        // Stop the previous note if necessary
-        if (note != null && (chan.isDrum || note.algorithm != algorithm))
+        // Stop the previous note unconditionally on any retrigger.
+        // The MA-3 hardware (YMU762) restarts the envelope to attack stage
+        // on every Note-On per Yamaha spec — confirmed via MA3SMWEMU.DLL
+        // sub_1000c890, which forwards a clean MIDI 0x9X message without
+        // any soft-retrigger bookkeeping. Initial D3's engine sound relies
+        // on this: a gate=2-tick note retriggered every 2-3 ticks would
+        // otherwise just update volume on the existing decaying note,
+        // producing a sustained tone instead of the buzzing engine pulse.
+        if (note != null)
         {
             this.keyOff(channel, key);
             note = null;

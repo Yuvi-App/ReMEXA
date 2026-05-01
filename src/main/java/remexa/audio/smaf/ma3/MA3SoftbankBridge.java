@@ -144,15 +144,15 @@ public final class MA3SoftbankBridge {
     }
 
     private static final class LegacyVoiceProgram {
-        private static final int CENTER_PANPOT = 15;
-
         private final int lfo;
         private final int algorithm;
+        private final int panpotByte;
         private final byte[] operatorBytes;
 
-        private LegacyVoiceProgram(int lfo, int algorithm, byte[] operatorBytes) {
+        private LegacyVoiceProgram(int lfo, int algorithm, int panpotByte, byte[] operatorBytes) {
             this.lfo = lfo;
             this.algorithm = algorithm;
+            this.panpotByte = panpotByte;
             this.operatorBytes = operatorBytes;
         }
 
@@ -177,7 +177,13 @@ public final class MA3SoftbankBridge {
                 }
                 System.arraycopy(decoded, 0, operators, i * 7, decoded.length);
             }
-            return new LegacyVoiceProgram((header0 >> 6) & 0x3, algorithm, operators);
+            // Panpot lives in payload byte 1 (= data[4] after the SysEx
+            // [type][bank][prog] header). Per MA3SMWEMU.DLL sub_10008830:
+            //   panpotByte = 0x80 | (payload[1] & 0x3)
+            // Bit 7 is the chip's "valid panpot" marker; bits[1:0] are the
+            // 2-bit pan code (0=center, 1=right, 2=left).
+            int panpotByte = 0x80 | (data[4] & 0x3);
+            return new LegacyVoiceProgram((header0 >> 6) & 0x3, algorithm, panpotByte, operators);
         }
 
         byte[] toMa3FmAlgorithmMessage(int bank, int program) {
@@ -194,7 +200,7 @@ public final class MA3SoftbankBridge {
             message[offset + 1] = (byte) bank;
             message[offset + 2] = (byte) program;
             message[offset + 3] = 0x00;
-            message[offset + 4] = (byte) (CENTER_PANPOT << 3);
+            message[offset + 4] = (byte) panpotByte;
             message[offset + 5] = (byte) (((lfo & 0x3) << 6) | (algorithm & 0x7));
             System.arraycopy(operatorBytes, 0, message, offset + 6, operatorBytes.length);
             return message;
