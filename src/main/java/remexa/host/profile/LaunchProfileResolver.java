@@ -35,6 +35,14 @@ public final class LaunchProfileResolver {
             "MIDxlet-API",
             "MIDlet-API"
     );
+    private static final List<String> MICROEDITION_PROFILE_KEYS = List.of(
+            "MicroEdition-Profile",
+            "microedition.profile"
+    );
+    private static final List<String> MICROEDITION_CONFIGURATION_KEYS = List.of(
+            "MicroEdition-Configuration",
+            "microedition.configuration"
+    );
     private static final List<String> WIDESCREEN_KEYS = List.of(
             "MIDxlet-WideScreen",
             "MIDlet-WideScreen"
@@ -235,12 +243,39 @@ public final class LaunchProfileResolver {
 
     private static AppProfile applyDescriptorCapabilityOverrides(JadDescriptor descriptor, AppProfile profile) {
         var overrides = new LinkedHashMap<String, String>();
+        resolveMicroEditionProperty(descriptor, MICROEDITION_PROFILE_KEYS)
+                .ifPresent(value -> overrides.put("microedition.profiles", normalizeMicroEditionValue(value)));
+        resolveMicroEditionProperty(descriptor, MICROEDITION_CONFIGURATION_KEYS)
+                .ifPresent(value -> overrides.put("microedition.configuration", normalizeMicroEditionValue(value)));
         for (var entry : JSCL_CAPABILITY_OVERRIDES.entrySet()) {
             descriptor.property(entry.getKey())
                     .flatMap(LaunchProfileResolver::parseDescriptorBoolean)
                     .ifPresent(value -> overrides.put(entry.getValue(), Boolean.toString(value)));
         }
         return profile.withSystemProperties(overrides);
+    }
+
+    private static Optional<String> resolveMicroEditionProperty(JadDescriptor descriptor, List<String> keys) {
+        for (var key : keys) {
+            var value = descriptor.property(key)
+                    .map(String::trim)
+                    .filter(candidate -> !candidate.isEmpty());
+            if (value.isPresent()) {
+                return value;
+            }
+        }
+        return Optional.empty();
+    }
+
+    private static String normalizeMicroEditionValue(String value) {
+        if (value == null) {
+            return "";
+        }
+        var trimmed = value.trim();
+        if (trimmed.endsWith(".0")) {
+            return trimmed.substring(0, trimmed.length() - 2);
+        }
+        return trimmed;
     }
 
     private static Optional<Boolean> parseDescriptorBoolean(String rawValue) {

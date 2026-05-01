@@ -13,6 +13,8 @@ public record AppProfile(
     private static final Set<String> MANAGED_SYSTEM_PROPERTY_KEYS = Set.of(
             "Platform",
             "microedition.platform",
+            "microedition.configuration",
+            "microedition.profiles",
             "jscl.system.mannermode",
             "jscl.system.offlinemode",
             "jscl.system.javasetting.volume",
@@ -112,6 +114,8 @@ public record AppProfile(
         return Map.ofEntries(
                 Map.entry("Platform", platformName),
                 Map.entry("microedition.platform", platformName),
+                Map.entry("microedition.configuration", "CLDC-1.0"),
+                Map.entry("microedition.profiles", "MIDP-1.0"),
                 Map.entry("jscl.system.mannermode", "false"),
                 Map.entry("jscl.system.offlinemode", "false"),
                 Map.entry("jscl.system.javasetting.volume", "5"),
