@@ -171,7 +171,11 @@ public class Displayable {
     }
 
     final void fireSizeChanged(int width, int height) {
-        if (sizeInitialized && this.width == width && this.height == height) {
+        fireSizeChanged(width, height, false);
+    }
+
+    final void fireSizeChanged(int width, int height, boolean force) {
+        if (!force && sizeInitialized && this.width == width && this.height == height) {
             return;
         }
         this.width = width;

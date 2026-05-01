@@ -47,7 +47,11 @@ public final class Manager {
         byte[] source = readAllBytes(stream);
         String normalizedType = normalizeContentType(type);
         if (isSmafType(normalizedType, source)) {
-            SmafPlayback.prewarm(source);
+            try {
+                SmafPlayback.prewarm(source);
+            } catch (RuntimeException ignored) {
+                // Prewarm is only an optimization; player creation must stay non-fatal.
+            }
             return new SmafPlayer(source, normalizedType.isEmpty() ? "application/x-smaf" : normalizedType);
         }
         if (isMidiType(normalizedType, source)) {
@@ -56,7 +60,7 @@ public final class Manager {
         if (isWavType(normalizedType, source)) {
             return new WavPlayer(source, normalizedType.isEmpty() ? "audio/x-wav" : normalizedType);
         }
-        throw new MediaException("Unsupported media type: " + type);
+        return new SilentPlayer(normalizedType.isEmpty() ? "application/octet-stream" : normalizedType);
     }
 
     public static void shutdownOwnedPlayers(ClassLoader ownerClassLoader) {
@@ -361,6 +365,27 @@ public final class Manager {
             notifyListeners(PlayerListener.END_OF_MEDIA, Long.valueOf(safeMediaTime()));
         }
 
+        protected final void notifyEndOfMediaSoon() {
+            Thread notifier = new Thread(() -> {
+                for (int attempt = 0; attempt < 50; attempt++) {
+                    synchronized (this) {
+                        if (state == STARTED || state == CLOSED) {
+                            break;
+                        }
+                    }
+                    try {
+                        Thread.sleep(1L);
+                    } catch (InterruptedException exception) {
+                        Thread.currentThread().interrupt();
+                        return;
+                    }
+                }
+                notifyEndOfMedia();
+            }, "remexa-silent-player-end");
+            notifier.setDaemon(true);
+            notifier.start();
+        }
+
         protected final void notifyError(Throwable throwable) {
             notifyListeners(PlayerListener.ERROR, throwable);
         }
@@ -482,6 +507,52 @@ public final class Manager {
         }
     }
 
+    private static final class SilentPlayer extends AbstractPlayer {
+        private SilentPlayer(String contentType) {
+            super(contentType);
+        }
+
+        @Override
+        protected void doRealize() {
+        }
+
+        @Override
+        protected void doStart() {
+            notifyEndOfMediaSoon();
+        }
+
+        @Override
+        protected void doStop() {
+        }
+
+        @Override
+        protected void doDeallocate() {
+        }
+
+        @Override
+        protected void doClose() {
+        }
+
+        @Override
+        protected void onVolumeChanged() {
+        }
+
+        @Override
+        protected boolean isStarted() {
+            return false;
+        }
+
+        @Override
+        protected long doGetMediaTime() {
+            return 0L;
+        }
+
+        @Override
+        protected long doGetDuration() {
+            return 0L;
+        }
+    }
+
     private static final class MidiPlayer extends AbstractPlayer {
         private final byte[] source;
         private Sequencer sequencer;
@@ -514,12 +585,15 @@ public final class Manager {
                 onVolumeChanged();
             } catch (MidiUnavailableException | InvalidMidiDataException | IOException exception) {
                 closeQuietly();
-                throw new MediaException("Failed to realize MIDI player.", exception);
             }
         }
 
         @Override
         protected synchronized void doStart() throws MediaException {
+            if (sequencer == null) {
+                notifyEndOfMediaSoon();
+                return;
+            }
             try {
                 if (sequencer.getMicrosecondPosition() >= sequencer.getMicrosecondLength()) {
                     sequencer.setMicrosecondPosition(0L);
@@ -534,6 +608,9 @@ public final class Manager {
 
         @Override
         protected synchronized void doStop() throws MediaException {
+            if (sequencer == null) {
+                return;
+            }
             try {
                 sequencer.stop();
             } catch (RuntimeException exception) {
@@ -666,14 +743,13 @@ public final class Manager {
                 onVolumeChanged();
             } catch (Exception exception) {
                 closeQuietly();
-                throw new MediaException("Failed to realize SMAF player.", exception);
             }
         }
 
         @Override
         protected synchronized void doPrefetch() throws MediaException {
             if (playback == null) {
-                throw new MediaException("SMAF player was not realized.");
+                return;
             }
             try {
                 playback.prefetch();
@@ -686,7 +762,8 @@ public final class Manager {
         @Override
         protected synchronized void doStart() throws MediaException {
             if (playback == null) {
-                throw new MediaException("SMAF player was not realized.");
+                notifyEndOfMediaSoon();
+                return;
             }
             try {
                 onVolumeChanged();
@@ -787,17 +864,16 @@ public final class Manager {
                 onVolumeChanged();
             } catch (MediaException exception) {
                 closeQuietly();
-                throw exception;
             } catch (Exception exception) {
                 closeQuietly();
-                throw new MediaException("Failed to realize WAV player.", exception);
             }
         }
 
         @Override
         protected synchronized void doStart() throws MediaException {
             if (clip == null) {
-                throw new MediaException("WAV player was not realized.");
+                notifyEndOfMediaSoon();
+                return;
             }
             try {
                 if (clip.getFramePosition() >= clip.getFrameLength()) {
@@ -1007,7 +1083,7 @@ public final class Manager {
                         default -> throw new MediaException("Unsupported PCM WAV bit depth: " + bitsPerSample);
                     };
                 }
-                if (audioFormat == 0x11) {
+                if (audioFormat == 0x11 || audioFormat == 0x20) {
                     return WAVYamahaADPCMDecoder.ADPCMBDecode(payload, sampleRate, channels);
                 }
                 throw new MediaException("Unsupported WAV encoding: " + audioFormat);

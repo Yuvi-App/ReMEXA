@@ -29,6 +29,7 @@ public abstract class Canvas extends Displayable {
     public static final int SOFT2 = -7;
     public static final int SOFT3 = -8;
     private final Set<Integer> pressedKeys = new HashSet<>();
+    private boolean fullScreenMode;
     private boolean paintInProgress;
     private boolean repaintQueued;
     private boolean shown;
@@ -94,6 +95,20 @@ public abstract class Canvas extends Displayable {
     }
 
     public void setFullScreenMode(boolean mode) {
+        if (fullScreenMode == mode) {
+            return;
+        }
+        fullScreenMode = mode;
+        if (!isShown()) {
+            return;
+        }
+
+        // Some handsets signal a mode transition even when the usable pixel
+        // bounds stay the same. A few games wait on this callback after asking
+        // for fullscreen, so force it instead of letting duplicate dimensions
+        // be coalesced.
+        fireSizeChanged(getWidth(), getHeight(), true);
+        repaint();
     }
 
     public void repaint() {
