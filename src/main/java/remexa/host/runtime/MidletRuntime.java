@@ -16,6 +16,7 @@ import javax.microedition.lcdui.Canvas;
 import javax.microedition.lcdui.Display;
 import javax.microedition.lcdui.Displayable;
 import javax.microedition.lcdui.DisplayableHostAccess;
+import javax.microedition.lcdui.Screen;
 import javax.microedition.midlet.MIDlet;
 import remexa.host.JadFrame;
 import remexa.host.LaunchConfig;
@@ -264,6 +265,8 @@ public final class MidletRuntime {
             DisplayableHostAccess.fireSizeChanged(displayable, displayMetrics);
             if (displayable instanceof Canvas canvas && canvas.isShown()) {
                 canvas.repaint();
+            } else if (displayable instanceof Screen screen && screen.isShown()) {
+                DisplayableHostAccess.repaintScreen(screen);
             }
         }
         DebugLog.log(
@@ -305,6 +308,23 @@ public final class MidletRuntime {
                 surface.presentCanvas();
                 paceFrame(canvas);
             }
+        } finally {
+            CURRENT_GRAPHICS.remove();
+        }
+    }
+
+    public static void renderScreen(Screen screen, Consumer<javax.microedition.lcdui.Graphics> renderer) {
+        ensureThreadActive();
+        var context = contextFor(screen).orElse(CURRENT_CONTEXT.get());
+        if (context == null) {
+            return;
+        }
+        var surface = context.surfaceFor(screen);
+        var graphics = surface.beginCanvasPaint(false);
+        CURRENT_GRAPHICS.set(graphics);
+        try {
+            renderer.accept(graphics);
+            surface.presentCanvas();
         } finally {
             CURRENT_GRAPHICS.remove();
         }
@@ -525,7 +545,9 @@ public final class MidletRuntime {
         var displayable = currentDisplayable();
         if (displayable instanceof Canvas canvas) {
             canvas.fireKeyPressed(keyCode);
+            return;
         }
+        DisplayableHostAccess.fireScreenKeyPressed(displayable, keyCode);
     }
 
     public static void dispatchKeyReleased(int keyCode) {
@@ -539,7 +561,9 @@ public final class MidletRuntime {
         var displayable = currentDisplayable();
         if (displayable instanceof Canvas canvas) {
             canvas.fireKeyRepeated(keyCode);
+            return;
         }
+        DisplayableHostAccess.fireScreenKeyRepeated(displayable, keyCode);
     }
 
     public static void dispatchPointerPressed(int x, int y) {

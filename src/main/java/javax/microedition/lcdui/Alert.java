@@ -146,6 +146,20 @@ public class Alert extends Screen {
         }
     }
 
+    @Override
+    protected void paintScreen(Graphics graphics) {
+        var bodyTop = paintChrome(graphics);
+        var lines = new java.util.ArrayList<String>();
+        if (image != null) {
+            lines.add("");
+        }
+        appendWrappedLines(text, Font.getDefaultFont(), bodyTextWidth(), lines);
+        paintLines(graphics, lines, bodyTop);
+        if (image != null) {
+            graphics.drawImage(image, getWidth() / 2, bodyTop + 4, Graphics.HCENTER | Graphics.TOP);
+        }
+    }
+
     private int effectiveCommandCount() {
         return Math.max(1, commandCountInternal());
     }

@@ -20,4 +20,28 @@ public final class DisplayableHostAccess {
         }
         displayable.fireSizeChanged(displayMetrics.width(), displayMetrics.height());
     }
+
+    public static boolean fireScreenKeyPressed(Displayable displayable, int keyCode) {
+        if (!(displayable instanceof Screen screen)) {
+            return false;
+        }
+        screen.fireScreenKeyPressed(keyCode);
+        return true;
+    }
+
+    public static boolean fireScreenKeyRepeated(Displayable displayable, int keyCode) {
+        if (!(displayable instanceof Screen screen)) {
+            return false;
+        }
+        screen.fireScreenKeyRepeated(keyCode);
+        return true;
+    }
+
+    public static boolean repaintScreen(Displayable displayable) {
+        if (!(displayable instanceof Screen screen)) {
+            return false;
+        }
+        screen.repaintHost();
+        return true;
+    }
 }

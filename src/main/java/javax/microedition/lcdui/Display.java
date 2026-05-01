@@ -202,6 +202,14 @@ public final class Display {
                     canvas.repaint();
                 }
             });
+            return;
+        }
+        if (displayable instanceof Screen screen && !(displayable instanceof TextBox)) {
+            SwingUtilities.invokeLater(() -> {
+                if (screen.isShown()) {
+                    screen.repaintHost();
+                }
+            });
         }
     }
 
