@@ -1,5 +1,7 @@
 package com.j_phone.amuse;
 
+import java.util.concurrent.atomic.AtomicBoolean;
+
 public abstract class ACanvas extends javax.microedition.lcdui.Canvas implements com.jblend.ui.SequenceInterface {
     private static final int PALETTE_BANK_SIZE = 32;
     private static final int PATTERN_MASK = 0x00FF;
@@ -9,6 +11,7 @@ public abstract class ACanvas extends javax.microedition.lcdui.Canvas implements
 
     private final int[] palette;
     private final byte[][] patterns;
+    private final AtomicBoolean hostPaintLoopStarted = new AtomicBoolean();
     private javax.microedition.lcdui.Graphics hostGraphics;
     protected ACanvas() {
         remexa.probes.SdkStubSupport.log("com.j_phone.amuse.ACanvas", "ACanvas");
@@ -187,16 +190,52 @@ public abstract class ACanvas extends javax.microedition.lcdui.Canvas implements
             return;
         }
         hostGraphics = remexa.host.runtime.MidletRuntime.beginAmuseVirtualGraphics(this);
+    }
+
+    public final void startHostPaintLoop() {
+        attachHostGraphics();
         if (hostGraphics == null) {
             return;
         }
+        // Some ACanvas titles own their repaint loop via Runnable. They still
+        // expect one initial paint after setCurrent() to seed cached Graphics
+        // fields, but a persistent auto paint-loop races the app-managed loop.
+        if (this instanceof Runnable) {
+            runHostPaintFrame();
+            return;
+        }
+        if (!hostPaintLoopStarted.compareAndSet(false, true)) {
+            return;
+        }
+        var paintThread = new Thread(this::runHostPaintFrame, "remexa-acanvas-paint-" + getClass().getName());
+        paintThread.setContextClassLoader(getClass().getClassLoader());
+        paintThread.setDaemon(true);
+        paintThread.start();
+    }
+
+    private void runHostPaintFrame() {
         beginHostPaint();
         try {
             hostGraphics.resetState();
             paint(hostGraphics);
+        } catch (Throwable throwable) {
+            if (!remexa.host.runtime.MidletRuntime.isExpectedShutdownThrowable(throwable)) {
+                rethrowUnchecked(throwable);
+            }
         } finally {
             endHostPaint();
+            hostPaintLoopStarted.set(false);
         }
+    }
+
+    private static void rethrowUnchecked(Throwable throwable) {
+        if (throwable instanceof RuntimeException runtimeException) {
+            throw runtimeException;
+        }
+        if (throwable instanceof Error error) {
+            throw error;
+        }
+        throw new RuntimeException(throwable);
     }
 
     private byte[] requirePattern(int patternNo) {

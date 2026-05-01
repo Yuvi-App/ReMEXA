@@ -180,6 +180,7 @@ public final class Display {
         if (displayable instanceof com.j_phone.amuse.ACanvas aCanvas) {
             aCanvas.attachHostGraphics();
             ((Canvas) aCanvas).fireShowNotify();
+            aCanvas.startHostPaintLoop();
             return;
         }
         if (displayable instanceof Canvas canvas) {
