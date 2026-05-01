@@ -176,7 +176,11 @@ public final class Display {
         }
         if (displayable instanceof Canvas canvas) {
             canvas.fireShowNotify();
-            canvas.repaint();
+            SwingUtilities.invokeLater(() -> {
+                if (canvas.isShown()) {
+                    canvas.repaint();
+                }
+            });
         }
     }
 
