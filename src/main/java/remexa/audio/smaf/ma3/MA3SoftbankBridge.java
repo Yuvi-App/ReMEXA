@@ -144,15 +144,29 @@ public final class MA3SoftbankBridge {
     }
 
     private static final class LegacyVoiceProgram {
+        /**
+         * MA-3 chip-internal panpot byte for "center". The synthesized SysEx
+         * emitted by {@link #toMa3FmAlgorithmMessage} stores
+         * {@code (panpot << 3) | basicOctave} in this slot; {@code panpot=15}
+         * decodes via {@link MA3Algorithm#initVolume()} to
+         * {@code volLeft = volRight = 0.5}.
+         *
+         * <p>VMA family-0x03 voices have no per-voice panpot field — the
+         * decompiled MA3SMWEMU's {@code (edi[4] & 3) | 0x80} write was a
+         * chip-side register-select marker, not a per-voice pan setting. Per
+         * the smaf825 canonical reference ({@code vmafm.go:206}), payload
+         * byte 1 is a constant {@code 0x01} marker. Channel-level pan
+         * arrives separately via MIDI CC10.</p>
+         */
+        private static final int CENTER_PANPOT_BYTE = 15 << 3;
+
         private final int lfo;
         private final int algorithm;
-        private final int panpotByte;
         private final byte[] operatorBytes;
 
-        private LegacyVoiceProgram(int lfo, int algorithm, int panpotByte, byte[] operatorBytes) {
+        private LegacyVoiceProgram(int lfo, int algorithm, byte[] operatorBytes) {
             this.lfo = lfo;
             this.algorithm = algorithm;
-            this.panpotByte = panpotByte;
             this.operatorBytes = operatorBytes;
         }
 
@@ -177,13 +191,7 @@ public final class MA3SoftbankBridge {
                 }
                 System.arraycopy(decoded, 0, operators, i * 7, decoded.length);
             }
-            // Panpot lives in payload byte 1 (= data[4] after the SysEx
-            // [type][bank][prog] header). Per MA3SMWEMU.DLL sub_10008830:
-            //   panpotByte = 0x80 | (payload[1] & 0x3)
-            // Bit 7 is the chip's "valid panpot" marker; bits[1:0] are the
-            // 2-bit pan code (0=center, 1=right, 2=left).
-            int panpotByte = 0x80 | (data[4] & 0x3);
-            return new LegacyVoiceProgram((header0 >> 6) & 0x3, algorithm, panpotByte, operators);
+            return new LegacyVoiceProgram((header0 >> 6) & 0x3, algorithm, operators);
         }
 
         byte[] toMa3FmAlgorithmMessage(int bank, int program) {
@@ -200,7 +208,7 @@ public final class MA3SoftbankBridge {
             message[offset + 1] = (byte) bank;
             message[offset + 2] = (byte) program;
             message[offset + 3] = 0x00;
-            message[offset + 4] = (byte) panpotByte;
+            message[offset + 4] = (byte) CENTER_PANPOT_BYTE;
             message[offset + 5] = (byte) (((lfo & 0x3) << 6) | (algorithm & 0x7));
             System.arraycopy(operatorBytes, 0, message, offset + 6, operatorBytes.length);
             return message;
@@ -214,35 +222,69 @@ public final class MA3SoftbankBridge {
             return algorithm < 2 ? 2 : 4;
         }
 
+        /**
+         * Translates a 5-byte VMA family-0x03 FM operator into the 7-byte
+         * MA-3 chip-internal operator layout consumed by
+         * {@link MA3Operator#MA3Operator(byte[], int, boolean)}.
+         *
+         * <p>VMA input layout (smaf825 reference {@code vmafm.go}):</p>
+         * <pre>
+         * +0 | MULT[7:4] | VIB | EGT | SUS | KSR |
+         * +1 | RR[7:4]   | DR[3:0]               |
+         * +2 | AR[7:4]   | SL[3:0]               |
+         * +3 | TL[7:2]   | KSL[1:0]              |
+         * +4 | DVB[7:6]  | DAM[5:4] | AM[3] | WS[2:0] |
+         * </pre>
+         *
+         * <p>MA-3 chip-internal output layout (matches {@code VM35FMOperator}
+         * in smaf825):</p>
+         * <pre>
+         * +0 | SR[7:4] | XOF | - | SUS | KSR |
+         * +1 | RR[7:4] | DR[3:0]              |
+         * +2 | AR[7:4] | SL[3:0]              |
+         * +3 | TL[7:2] | KSL[1:0]             |
+         * +4 | - | DAM | EAM | - | DVB[2:1] | EVB |
+         * +5 | MULT[7:4] | - | DT[2:0]            |
+         * +6 | WS[5:3] | FB[2:0]                  |
+         * </pre>
+         *
+         * <p>Per VMA→VM35 mapping in {@code vmafm.go ToVM35()}:
+         * {@code SR = EGT ? 0 : RR} (EGT means infinite sustain). XOF/DT
+         * have no VMA equivalent; emitted as zero. {@code FB} comes from the
+         * voice's shared bits and is only applied to operator 0.</p>
+         */
         private static byte[] decodeLegacyOperator(byte[] data, int offset, int sharedBits) {
             if (offset < 0 || offset + 5 > data.length) {
                 return null;
             }
-            int b0 = data[offset] & 0xff;
-            int b1 = data[offset + 1] & 0xff;
-            int b2 = data[offset + 2] & 0xff;
-            int b3 = data[offset + 3] & 0xff;
-            int b4 = data[offset + 4] & 0xff;
+            int b0 = data[offset] & 0xff;     // MULT|VIB|EGT|SUS|KSR
+            int b1 = data[offset + 1] & 0xff; // RR|DR
+            int b2 = data[offset + 2] & 0xff; // AR|SL
+            int b3 = data[offset + 3] & 0xff; // TL|KSL
+            int b4 = data[offset + 4] & 0xff; // DVB|DAM|AM|WS
 
-            int keyScaleRate = b0 & 0x1;
-            boolean zeroTotalLevel = (b0 & 0x4) != 0;
-            int releaseNibble = ((b0 & 0x2) != 0) ? 0x4 : (b1 >> 4);
-            int amplitudeDepth = (b4 >> 4) & 0x3;
-            int amplitudeEnabled = (b4 >> 3) & 0x1;
-            int vibratoDepth = (b4 >> 6) & 0x3;
-            int vibratoEnabled = (b0 >> 3) & 0x1;
+            int mult = (b0 >> 4) & 0xf;
+            int vib  = (b0 >> 3) & 0x1;
+            int egt  = (b0 >> 2) & 0x1;
+            int sus  = (b0 >> 1) & 0x1;
+            int ksr  =  b0       & 0x1;
+
+            int rr = (b1 >> 4) & 0xf;
+            int sr = (egt != 0) ? 0 : rr; // EGT → infinite sustain (SR=0)
+
+            int dam = (b4 >> 4) & 0x3;
+            int eam = (b4 >> 3) & 0x1;
+            int dvb = (b4 >> 6) & 0x3;
+            int ws  =  b4       & 0x07;   // VMA WS is 3 bits
 
             return new byte[]{
-                    (byte) ((((zeroTotalLevel ? 0 : (b1 >> 4)) & 0xf) << 4) | keyScaleRate),
-                    (byte) (((releaseNibble & 0xf) << 4) | (b1 & 0xf)),
-                    (byte) b2,
-                    (byte) b3,
-                    (byte) ((((amplitudeDepth & 0x3) << 5)
-                            | ((amplitudeEnabled & 0x1) << 4)
-                            | ((vibratoDepth & 0x3) << 1)
-                            | (vibratoEnabled & 0x1)) & 0xff),
-                    (byte) (b0 & 0xf0),
-                    (byte) ((((b4 & 0x7) << 3) | (sharedBits & 0x7)) & 0xff)
+                    (byte) ((sr << 4) | (sus << 1) | ksr),                  // +0 SR|XOF=0|-|SUS|KSR
+                    (byte) ((rr << 4) | (b1 & 0xf)),                        // +1 RR|DR
+                    (byte) b2,                                              // +2 AR|SL
+                    (byte) b3,                                              // +3 TL|KSL passthrough
+                    (byte) ((dam << 5) | (eam << 4) | (dvb << 1) | vib),    // +4 -|DAM|EAM|-|DVB|EVB
+                    (byte) (mult << 4),                                     // +5 MULT|DT=0
+                    (byte) ((ws << 3) | (sharedBits & 0x7))                 // +6 WS|FB
             };
         }
     }

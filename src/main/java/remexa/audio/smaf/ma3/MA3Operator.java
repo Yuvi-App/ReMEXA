@@ -376,9 +376,13 @@ class MA3Operator
         if (note == null)
             throw unexpectedState();
 
-        this.envRof =
-            (note.block << 1 | note.f_number >> 8 +
-                MA3SamplerProvider.NTS & 1) >> ((this.ksr ^ 1) << 1);
+        // KSN (key scale number) feeds the envelope rate offset. NTS=1
+        // selects f_number bit 9 as the high bit; NTS=0 selects bit 8.
+        // Original code relied on Java operator precedence; parenthesised
+        // here so behaviour is correct regardless of the NTS value.
+        int ksn = (note.block << 1)
+                | ((note.f_number >> (9 - MA3SamplerProvider.NTS)) & 1);
+        this.envRof = ksn >> ((this.ksr ^ 1) << 1);
         this.kslOut = Math.max(0,
             MA3SamplerProvider.KSL_B[this.ksl] * ((note.block << 3) -
                 MA3SamplerProvider.KSL_F[note.f_number >> 6]));
@@ -389,8 +393,8 @@ class MA3Operator
         // existing oscPhase advance.
         if (this.ymfDetune && this.dt != 0)
         {
-            int ksn = (note.block << 1) | (note.f_number >> 9 & 1);
-            double dtHz = MA3SamplerProvider.DT_COEF[this.dt][ksn];
+            int dtKsn = (note.block << 1) | (note.f_number >> 9 & 1);
+            double dtHz = MA3SamplerProvider.DT_COEF[this.dt][dtKsn];
             this.dtShift = (int)Math.round(
                 dtHz * MA3SamplerProvider.DT_PHASE_PER_HZ
                     * MA3SamplerProvider.MULTIS[this.multi] / 2.0);
