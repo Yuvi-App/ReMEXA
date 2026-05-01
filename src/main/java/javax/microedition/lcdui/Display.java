@@ -77,6 +77,14 @@ public final class Display {
         return true;
     }
 
+    public boolean flashBacklight(int duration) {
+        SdkStubSupport.log(Display.class.getName(), "flashBacklight", duration);
+        if (duration < 0) {
+            throw new IllegalArgumentException("Backlight flash duration must not be negative.");
+        }
+        return MidletRuntime.flashBacklight(midlet, duration);
+    }
+
     public void callSerially(Runnable runnable) {
         if (runnable == null) {
             throw new NullPointerException("Runnable must be non-null.");

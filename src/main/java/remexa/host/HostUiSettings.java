@@ -102,6 +102,14 @@ public final class HostUiSettings {
         RemexaPreferences.ui().putBoolean(RemexaPreferences.TOUCH_CONTROLS_ENABLED_KEY, enabled);
     }
 
+    public static boolean flashBacklightEnabled() {
+        return RemexaPreferences.ui().getBoolean(RemexaPreferences.FLASH_BACKLIGHT_ENABLED_KEY, true);
+    }
+
+    public static void setFlashBacklightEnabled(boolean enabled) {
+        RemexaPreferences.ui().putBoolean(RemexaPreferences.FLASH_BACKLIGHT_ENABLED_KEY, enabled);
+    }
+
     public static LaunchConfig.BluetoothBackend bluetoothBackend() {
         return LaunchConfig.BluetoothBackend.normalize(
                 RemexaPreferences.ui().get(

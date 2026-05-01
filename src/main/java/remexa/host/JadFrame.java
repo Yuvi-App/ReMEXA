@@ -1,6 +1,8 @@
 package remexa.host;
 
 import java.awt.BorderLayout;
+import java.awt.AlphaComposite;
+import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Font;
@@ -118,6 +120,7 @@ public final class JadFrame extends JFrame {
     private final AtomicBoolean fatalFailure = new AtomicBoolean();
     private final Object closeHandlerLock = new Object();
     private final int hostScale;
+    private volatile long backlightFlashUntilMs;
     private volatile ActiveTextInput activeTextInput;
     private volatile ActiveHostedVideo activeHostedVideo;
     private Runnable closeHandler;
@@ -233,6 +236,17 @@ public final class JadFrame extends JFrame {
             }
             throw new IOException("Hosted video playback failed.", cause);
         }
+    }
+
+    public void flashBacklight(int durationMs) {
+        if (disposed.get()) {
+            return;
+        }
+        var now = System.currentTimeMillis();
+        backlightFlashUntilMs = durationMs <= 0
+                ? 0L
+                : now + Math.min(Math.max(durationMs, 100), 2_000);
+        SwingUtilities.invokeLater(renderSurface::repaint);
     }
 
     public void setAppIcon(Image image) {
@@ -1146,12 +1160,43 @@ public final class JadFrame extends JFrame {
                         return;
                     }
                     g2.drawImage(frame, viewport.drawX(), viewport.drawY(), viewport.drawWidth(), viewport.drawHeight(), null);
+                    paintBacklightFlash(g2, viewport);
                 } finally {
                     g2.dispose();
                 }
             } catch (Throwable throwable) {
                 handleFatalFailure("render surface repaint", throwable);
             }
+        }
+    }
+
+    private void paintBacklightFlash(Graphics2D graphics, RenderViewport viewport) {
+        var flashUntil = backlightFlashUntilMs;
+        if (flashUntil <= 0L) {
+            return;
+        }
+        var remaining = flashUntil - System.currentTimeMillis();
+        if (remaining <= 0L) {
+            backlightFlashUntilMs = 0L;
+            return;
+        }
+
+        var originalStroke = graphics.getStroke();
+        var originalComposite = graphics.getComposite();
+        try {
+            float alpha = Math.min(0.9f, Math.max(0.35f, remaining / 250.0f));
+            graphics.setComposite(AlphaComposite.SrcOver.derive(alpha));
+            graphics.setColor(Color.WHITE);
+            graphics.setStroke(new BasicStroke(Math.max(2.0f, hostScale)));
+            graphics.drawRect(
+                    viewport.drawX() + 1,
+                    viewport.drawY() + 1,
+                    Math.max(1, viewport.drawWidth() - 3),
+                    Math.max(1, viewport.drawHeight() - 3)
+            );
+        } finally {
+            graphics.setComposite(originalComposite);
+            graphics.setStroke(originalStroke);
         }
     }
 

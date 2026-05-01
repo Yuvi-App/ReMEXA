@@ -291,6 +291,22 @@ public final class LauncherFrame extends JFrame {
         controlsMenu.add(touchControlsItem);
         settingsMenu.add(controlsMenu);
 
+        var phoneFeaturesMenu = new JMenu("Phone Features");
+        styleMenu(phoneFeaturesMenu);
+        var flashBacklightItem = new JCheckBoxMenuItem("Enable Flash Backlight", HostUiSettings.flashBacklightEnabled());
+        styleMenuItem(flashBacklightItem);
+        flashBacklightItem.addActionListener(event -> {
+            HostUiSettings.setFlashBacklightEnabled(flashBacklightItem.isSelected());
+            LaunchConfig.applyFlashBacklightEnabled(flashBacklightItem.isSelected());
+            DebugLog.log(
+                    LogCategory.FRONTEND,
+                    LauncherFrame.class.getName(),
+                    "Flash backlight set to " + flashBacklightItem.isSelected()
+            );
+        });
+        phoneFeaturesMenu.add(flashBacklightItem);
+        settingsMenu.add(phoneFeaturesMenu);
+
         var audioMenu = new JMenu("Audio");
         styleMenu(audioMenu);
         var audioTypeMenu = new JMenu("Audio Type");

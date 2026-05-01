@@ -9,6 +9,7 @@ import java.util.jar.JarFile;
 import java.util.concurrent.locks.LockSupport;
 import java.util.function.Consumer;
 import javax.microedition.media.Manager;
+import remexa.host.JadFrame;
 import remexa.host.input.HostTextInputRequest;
 import remexa.host.jad.JadDescriptor;
 import remexa.host.jad.JadManifestOverlay;
@@ -24,7 +25,8 @@ public final class AppRuntime {
             JadDescriptor descriptor,
             LaunchProfile launchProfile,
             Consumer<DisplayMetrics> displayListener,
-            HostTextInputRequest.Handler textInputHandler
+            HostTextInputRequest.Handler textInputHandler,
+            JadFrame hostFrame
     ) throws LaunchException {
         var jarPath = descriptor.resolveJarPath()
                 .orElseThrow(() -> new LaunchException("No JAR path was found in the JAD."));
@@ -52,6 +54,7 @@ public final class AppRuntime {
         try {
             classLoader = new LegacyJarClassLoader(jarPath.toUri().toURL(), getClass().getClassLoader());
             MidletRuntime.registerTextInputHandler(classLoader, textInputHandler);
+            MidletRuntime.registerHostFrame(classLoader, hostFrame);
             var appClass = classLoader.loadClass(resolvedEntryClass);
             Object instance;
             MIDlet midlet = null;
@@ -102,6 +105,7 @@ public final class AppRuntime {
         } finally {
             if (!launched && classLoader != null) {
                 MidletRuntime.unregisterTextInputHandler(classLoader);
+                MidletRuntime.unregisterHostFrame(classLoader);
             }
         }
     }

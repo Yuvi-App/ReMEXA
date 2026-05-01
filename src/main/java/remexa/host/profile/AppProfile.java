@@ -2,6 +2,7 @@ package remexa.host.profile;
 
 import java.util.Map;
 import java.util.Set;
+import java.util.Locale;
 
 public record AppProfile(
         String id,
@@ -12,6 +13,7 @@ public record AppProfile(
 ) {
     private static final Set<String> MANAGED_SYSTEM_PROPERTY_KEYS = Set.of(
             "Platform",
+            "microedition.locale",
             "microedition.platform",
             "microedition.configuration",
             "microedition.profiles",
@@ -51,7 +53,7 @@ public record AppProfile(
                 "Generic MIDP",
                 new DisplayMetrics(240, 320, "Generic fallback"),
                 0,
-                Map.of()
+                Map.of("microedition.locale", configuredLocale())
         );
     }
 
@@ -113,6 +115,7 @@ public record AppProfile(
     private static Map<String, String> jsclSystemProperties(String platformName) {
         return Map.ofEntries(
                 Map.entry("Platform", platformName),
+                Map.entry("microedition.locale", configuredLocale()),
                 Map.entry("microedition.platform", platformName),
                 Map.entry("microedition.configuration", "CLDC-1.0"),
                 Map.entry("microedition.profiles", "MIDP-1.0"),
@@ -150,6 +153,24 @@ public record AppProfile(
         properties.put("mexa.supports.transmissionrate", "false");
         properties.put("mexa.network.configuration", "0");
         return Map.copyOf(properties);
+    }
+
+    private static String configuredLocale() {
+        var configured = System.getProperty("remexa.microedition.locale");
+        if (configured != null && !configured.isBlank()) {
+            return configured.trim();
+        }
+
+        var locale = Locale.getDefault();
+        var language = locale.getLanguage();
+        if (language == null || language.isBlank()) {
+            return "en";
+        }
+        var country = locale.getCountry();
+        if (country == null || country.isBlank()) {
+            return language;
+        }
+        return language + "-" + country;
     }
 }
 

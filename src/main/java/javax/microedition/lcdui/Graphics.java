@@ -196,7 +196,9 @@ public class Graphics {
     }
 
     public void drawRegion(Image image, int xSrc, int ySrc, int width, int height, int transform, int xDest, int yDest, int anchor) {
-        drawRegion(image, xSrc, ySrc, width, height, transform, xDest, yDest, width, height, anchor);
+        int drawWidth = swapsAxes(transform) ? height : width;
+        int drawHeight = swapsAxes(transform) ? width : height;
+        drawRegion(image, xSrc, ySrc, width, height, transform, xDest, yDest, drawWidth, drawHeight, anchor);
     }
 
     public void drawRegion(Image image, int xSrc, int ySrc, int width, int height, int transform, int xDest, int yDest, int widthDest, int heightDest, int anchor) {

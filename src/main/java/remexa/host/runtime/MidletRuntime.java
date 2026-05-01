@@ -206,6 +206,24 @@ public final class MidletRuntime {
         return new HostTextInputRequest.Result(requestTextInput(resolvedRequest), true);
     }
 
+    public static boolean flashBacklight(MIDlet midlet, int duration) {
+        if (!LaunchConfig.resolveConfiguredFlashBacklightEnabled()) {
+            return true;
+        }
+        var hostFrame = currentHostFrame();
+        if (hostFrame == null && midlet != null) {
+            var context = CONTEXTS.get(midlet);
+            if (context != null) {
+                hostFrame = HOST_FRAMES.get(context.classLoader());
+            }
+        }
+        if (hostFrame == null) {
+            return false;
+        }
+        hostFrame.flashBacklight(duration);
+        return true;
+    }
+
     public static void bindDisplayable(MIDlet midlet, Displayable displayable) {
         var context = CONTEXTS.get(midlet);
         if (context != null && displayable != null) {
