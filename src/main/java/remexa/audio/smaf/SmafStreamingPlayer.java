@@ -15,8 +15,10 @@ import java.util.List;
 import java.util.Map;
 
 final class SmafStreamingPlayer implements SmafAudioPlayer {
-    private static final int CHUNK_FRAMES = 2_048;
-    private static final int LINE_BUFFER_FRAMES = CHUNK_FRAMES * 12;
+    private static final int TARGET_CHUNK_MILLIS = 20;
+    private static final int TARGET_LINE_BUFFER_MILLIS = 96;
+    private static final int MIN_CHUNK_FRAMES = 512;
+    private static final int MIN_BUFFER_CHUNKS = 4;
     private static final long IDLE_CLOSE_MILLIS = 3_000L;
     private static final Object ENGINE_REGISTRY_LOCK = new Object();
     private static final Map<OutputFormatKey, SharedEngine> ENGINES = new HashMap<>();
@@ -87,6 +89,8 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
         private final OutputFormatKey formatKey;
         private final Object engineLock = new Object();
         private final List<PlaybackHandle> handles = new ArrayList<>();
+        private final int chunkFrames;
+        private final int lineBufferFrames;
         private final float[] mixBuffer;
         private final float[] sessionBuffer;
         private final byte[] pcmBuffer;
@@ -98,9 +102,14 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
 
         private SharedEngine(OutputFormatKey formatKey) {
             this.formatKey = formatKey;
-            this.mixBuffer = new float[CHUNK_FRAMES * Math.max(1, formatKey.channelCount())];
-            this.sessionBuffer = new float[CHUNK_FRAMES * Math.max(1, formatKey.channelCount())];
-            this.pcmBuffer = new byte[CHUNK_FRAMES * Math.max(1, formatKey.channelCount()) * 2];
+            this.chunkFrames = Math.max(MIN_CHUNK_FRAMES, framesForMillis(formatKey.sampleRate(), TARGET_CHUNK_MILLIS));
+            this.lineBufferFrames = Math.max(
+                    chunkFrames * MIN_BUFFER_CHUNKS,
+                    framesForMillis(formatKey.sampleRate(), TARGET_LINE_BUFFER_MILLIS));
+            int channels = Math.max(1, formatKey.channelCount());
+            this.mixBuffer = new float[chunkFrames * channels];
+            this.sessionBuffer = new float[chunkFrames * channels];
+            this.pcmBuffer = new byte[chunkFrames * channels * 2];
         }
 
         PlaybackHandle open(SmafStreamingSession session, List<SMAFDecoder.SequenceUserEvent> userEvents) {
@@ -178,7 +187,7 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
                     Arrays.fill(sessionBuffer, 0.0f);
                     int frames;
                     try {
-                        frames = handle.renderInto(sessionBuffer, CHUNK_FRAMES, notifications);
+                        frames = handle.renderInto(sessionBuffer, chunkFrames, notifications);
                     } catch (RuntimeException exception) {
                         handle.failPlayback(exception);
                         continue;
@@ -201,10 +210,17 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
                         synchronized (engineLock) {
                             ensureLineLocked();
                         }
+                        SourceDataLine targetLine;
+                        synchronized (engineLock) {
+                            targetLine = line;
+                        }
+                        if (targetLine == null) {
+                            continue;
+                        }
                         int length = encodePcm(mixedFrames);
-                        line.write(pcmBuffer, 0, length);
+                        targetLine.write(pcmBuffer, 0, length);
                         writtenFrames += mixedFrames;
-                    } catch (LineUnavailableException | IllegalArgumentException exception) {
+                    } catch (LineUnavailableException | IllegalArgumentException | IllegalStateException exception) {
                         synchronized (engineLock) {
                             closeLineLocked();
                         }
@@ -248,6 +264,16 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
             }
         }
 
+        private void closeHandle(PlaybackHandle handle) {
+            synchronized (engineLock) {
+                pruneClosedHandlesLocked();
+                if (!handles.contains(handle) && !hasRunnableHandleLocked()) {
+                    closeLineLocked();
+                }
+                engineLock.notifyAll();
+            }
+        }
+
         private long idleWaitMillisLocked() {
             if (line == null) {
                 return -1L;
@@ -278,7 +304,7 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
                     true,
                     false);
             line = AudioSystem.getSourceDataLine(format);
-            line.open(format, LINE_BUFFER_FRAMES * format.getFrameSize());
+            line.open(format, lineBufferFrames * format.getFrameSize());
             line.start();
             writtenFrames = 0L;
         }
@@ -306,6 +332,10 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
                 mixBuffer[i] = 0.0f;
             }
             return output;
+        }
+
+        private static int framesForMillis(int sampleRate, int millis) {
+            return Math.max(1, (int) Math.ceil(sampleRate * (millis / 1000.0)));
         }
     }
 
@@ -524,7 +554,7 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
                 nextUserEventIndex = 0;
                 remainingLoops = 0;
             }
-            engine.wake();
+            engine.closeHandle(this);
         }
 
         void releaseResources() {

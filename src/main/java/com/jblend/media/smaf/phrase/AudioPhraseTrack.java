@@ -16,6 +16,7 @@
 */
 package com.jblend.media.smaf.phrase;
 
+import remexa.host.runtime.MidletRuntime;
 import remexa.probes.DebugLog;
 import remexa.probes.LogCategory;
 
@@ -49,12 +50,14 @@ public final class AudioPhraseTrack {
     }
 
     public void play() {
+        MidletRuntime.ensureThreadActive();
         DebugLog.log(LogCategory.MEDIA, AudioPhraseTrack.class.getName(), "Track " + getID() + " play(loop=1)");
         lastLoop = 1;
         delegate.play();
     }
 
     public void play(int loop) {
+        MidletRuntime.ensureThreadActive();
         DebugLog.log(LogCategory.MEDIA, AudioPhraseTrack.class.getName(), "Track " + getID() + " play(loop=" + loop + ")");
         lastLoop = loop;
         delegate.play(loop);

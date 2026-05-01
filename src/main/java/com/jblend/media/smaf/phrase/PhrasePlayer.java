@@ -6,6 +6,7 @@ import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
+import remexa.host.runtime.MidletRuntime;
 
 public final class PhrasePlayer {
     private static final PhrasePlayer INSTANCE = new PhrasePlayer();
@@ -35,6 +36,7 @@ public final class PhrasePlayer {
             PhraseTrack track = tracks.get(i);
             if (!reservedTracks.contains(track)) {
                 reservedTracks.add(track);
+                track.reserveFor(currentOwnerClassLoader());
                 return track;
             }
         }
@@ -44,6 +46,7 @@ public final class PhrasePlayer {
     public synchronized PhraseTrack getTrack(int index) {
         PhraseTrack track = tracks.get(index);
         reservedTracks.add(track);
+        track.reserveFor(currentOwnerClassLoader());
         return track;
     }
 
@@ -56,6 +59,7 @@ public final class PhrasePlayer {
             AudioPhraseTrack track = audioTracks.get(i);
             if (!reservedAudioTracks.contains(track)) {
                 reservedAudioTracks.add(track);
+                track.delegate().reserveFor(currentOwnerClassLoader());
                 return track;
             }
         }
@@ -65,6 +69,7 @@ public final class PhrasePlayer {
     public synchronized AudioPhraseTrack getAudioTrack(int index) {
         AudioPhraseTrack track = audioTracks.get(index);
         reservedAudioTracks.add(track);
+        track.delegate().reserveFor(currentOwnerClassLoader());
         return track;
     }
 
@@ -76,6 +81,7 @@ public final class PhrasePlayer {
         if (track != null) {
             track.stop();
             track.removePhrase();
+            track.clearOwner();
             reservedTracks.remove(track);
         }
     }
@@ -84,6 +90,7 @@ public final class PhrasePlayer {
         if (track != null) {
             track.stop();
             track.removePhrase();
+            track.delegate().clearOwner();
             reservedAudioTracks.remove(track);
         }
     }
@@ -101,6 +108,23 @@ public final class PhrasePlayer {
 
     public void kill() {
         disposePlayer();
+    }
+
+    public synchronized void disposePlayerOwnedBy(ClassLoader ownerClassLoader) {
+        for (PhraseTrack track : tracks) {
+            if (track.isOwnedBy(ownerClassLoader)) {
+                disposeTrack(track);
+            }
+        }
+        for (AudioPhraseTrack track : audioTracks) {
+            if (track.delegate().isOwnedBy(ownerClassLoader)) {
+                disposeAudioTrack(track);
+            }
+        }
+    }
+
+    public void killOwnedBy(ClassLoader ownerClassLoader) {
+        disposePlayerOwnedBy(ownerClassLoader);
     }
 
     public void pause() {
@@ -134,5 +158,9 @@ public final class PhrasePlayer {
                 }
             }
         }
+    }
+
+    private static ClassLoader currentOwnerClassLoader() {
+        return MidletRuntime.currentAppClassLoader();
     }
 }

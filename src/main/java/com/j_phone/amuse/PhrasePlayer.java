@@ -52,6 +52,11 @@ public class PhrasePlayer {
         delegate.kill();
     }
 
+    public void killOwnedBy (ClassLoader ownerClassLoader) {
+        remexa.probes.SdkStubSupport.log("com.j_phone.amuse.PhrasePlayer", "killOwnedBy", ownerClassLoader);
+        delegate.killOwnedBy(ownerClassLoader);
+    }
+
     public void pause () {
         remexa.probes.SdkStubSupport.log("com.j_phone.amuse.PhrasePlayer", "pause");
         delegate.pause();

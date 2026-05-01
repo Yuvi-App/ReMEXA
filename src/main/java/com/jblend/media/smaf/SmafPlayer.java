@@ -195,6 +195,11 @@ public class SmafPlayer extends com.jblend.media.MediaPlayer implements MediaIma
         }
     }
 
+    @Override
+    protected void onDispose() {
+        closePlayback();
+    }
+
     private SmafPlayback ensurePlayback() {
         if (playback != null) {
             return playback;

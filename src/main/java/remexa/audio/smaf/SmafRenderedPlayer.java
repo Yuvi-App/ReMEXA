@@ -187,10 +187,17 @@ public final class SmafRenderedPlayer implements SmafAudioPlayer {
                         synchronized (engineLock) {
                             ensureLineLocked();
                         }
+                        SourceDataLine targetLine;
+                        synchronized (engineLock) {
+                            targetLine = line;
+                        }
+                        if (targetLine == null) {
+                            continue;
+                        }
                         int length = encodePcm(mixedFrames);
-                        line.write(pcmBuffer, 0, length);
+                        targetLine.write(pcmBuffer, 0, length);
                         writtenFrames += mixedFrames;
-                    } catch (LineUnavailableException | IllegalArgumentException exception) {
+                    } catch (LineUnavailableException | IllegalArgumentException | IllegalStateException exception) {
                         synchronized (engineLock) {
                             closeLineLocked();
                         }
@@ -226,6 +233,16 @@ public final class SmafRenderedPlayer implements SmafAudioPlayer {
                 if (handles.get(i).isClosed()) {
                     handles.remove(i--);
                 }
+            }
+        }
+
+        private void closeHandle(PlaybackHandle handle) {
+            synchronized (engineLock) {
+                pruneClosedHandlesLocked();
+                if (!handles.contains(handle) && !hasRunnableHandleLocked()) {
+                    closeLineLocked();
+                }
+                engineLock.notifyAll();
             }
         }
 
@@ -408,7 +425,7 @@ public final class SmafRenderedPlayer implements SmafAudioPlayer {
                 remainingLoops = 0;
                 nextUserEventIndex = 0;
             }
-            engine.wake();
+            engine.closeHandle(this);
         }
 
         boolean hasWork() {

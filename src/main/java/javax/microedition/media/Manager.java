@@ -30,6 +30,7 @@ import javax.microedition.media.control.VolumeControl;
 import javax.microedition.media.decoders.WAVTools;
 import javax.microedition.media.decoders.WAVYamahaADPCMDecoder;
 import remexa.audio.smaf.SmafPlayback;
+import remexa.host.runtime.MidletRuntime;
 
 public final class Manager {
     private static final String CONTROL_PACKAGE = "javax.microedition.media.control.";
@@ -142,7 +143,7 @@ public final class Manager {
 
         private AbstractPlayer(String contentType) {
             this.contentType = contentType;
-            this.ownerClassLoader = Thread.currentThread().getContextClassLoader();
+            this.ownerClassLoader = MidletRuntime.currentAppClassLoader();
             ACTIVE_PLAYERS.add(this);
         }
 
@@ -171,6 +172,7 @@ public final class Manager {
 
         @Override
         public synchronized void start() throws MediaException {
+            MidletRuntime.ensureThreadActive();
             ensureNotClosed();
             if (state == STARTED) {
                 return;

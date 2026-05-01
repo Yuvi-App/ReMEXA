@@ -38,6 +38,10 @@ public final class MidletRuntime {
     private static final Map<Displayable, LaunchContext> DISPLAYABLES = Collections.synchronizedMap(new WeakHashMap<>());
     private static final Map<ClassLoader, HostTextInputRequest.Handler> TEXT_INPUT_HANDLERS = Collections.synchronizedMap(new WeakHashMap<>());
     private static final Map<ClassLoader, JadFrame> HOST_FRAMES = Collections.synchronizedMap(new WeakHashMap<>());
+    private static final java.util.Set<ClassLoader> SHUTTING_DOWN_CLASS_LOADERS =
+            Collections.synchronizedSet(Collections.newSetFromMap(new WeakHashMap<>()));
+    private static final StackWalker APP_CLASS_LOADER_WALKER =
+            StackWalker.getInstance(StackWalker.Option.RETAIN_CLASS_REFERENCE);
 
     // Original J3D-capable J-Phone/Vodafone handsets ran 3D titles at ~20 FPS;
     // most legacy frame loops were paced by paint cost rather than a clock.
@@ -140,6 +144,26 @@ public final class MidletRuntime {
             return;
         }
         HOST_FRAMES.remove(classLoader);
+    }
+
+    public static void beginShutdown(ClassLoader classLoader) {
+        if (classLoader != null) {
+            SHUTTING_DOWN_CLASS_LOADERS.add(classLoader);
+        }
+    }
+
+    public static ClassLoader currentAppClassLoader() {
+        var threadContext = Thread.currentThread().getContextClassLoader();
+        if (isKnownAppClassLoader(threadContext)) {
+            return threadContext;
+        }
+
+        var context = CURRENT_CONTEXT.get();
+        if (context != null) {
+            return context.classLoader();
+        }
+
+        return appClassLoaderFromStack().orElse(null);
     }
 
     public static JadFrame currentHostFrame() {
@@ -565,7 +589,9 @@ public final class MidletRuntime {
     }
 
     public static void ensureThreadActive() {
-        if (Thread.currentThread().isInterrupted()) {
+        var appClassLoader = currentAppClassLoader();
+        if (Thread.currentThread().isInterrupted()
+                || appClassLoader != null && SHUTTING_DOWN_CLASS_LOADERS.contains(appClassLoader)) {
             throw new AppShutdownError();
         }
     }
@@ -633,6 +659,39 @@ public final class MidletRuntime {
             }
         }
         return null;
+    }
+
+    private static Optional<ClassLoader> appClassLoaderFromStack() {
+        return APP_CLASS_LOADER_WALKER.walk(frames -> frames
+                .map(frame -> frame.getDeclaringClass().getClassLoader())
+                .filter(MidletRuntime::isKnownAppClassLoader)
+                .findFirst());
+    }
+
+    private static boolean isKnownAppClassLoader(ClassLoader candidate) {
+        if (candidate == null) {
+            return false;
+        }
+        if (TEXT_INPUT_HANDLERS.containsKey(candidate)
+                || HOST_FRAMES.containsKey(candidate)
+                || SHUTTING_DOWN_CLASS_LOADERS.contains(candidate)) {
+            return true;
+        }
+        synchronized (CONTEXTS) {
+            for (var context : CONTEXTS.values()) {
+                if (context != null && context.classLoader() == candidate) {
+                    return true;
+                }
+            }
+        }
+        synchronized (DISPLAYABLES) {
+            for (var context : DISPLAYABLES.values()) {
+                if (context != null && context.classLoader() == candidate) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private static HostTextInputRequest.Handler textInputHandlerForCurrentThread() {

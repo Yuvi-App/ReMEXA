@@ -1,5 +1,7 @@
 package com.jblend.media;
 
+import remexa.host.runtime.MidletRuntime;
+
 public abstract class MediaPlayer {
     public static final int NO_DATA = 0;
     public static final int READY = 1;
@@ -11,19 +13,42 @@ public abstract class MediaPlayer {
             remexa.host.runtime.MidletRuntime.getDisplayMetrics((javax.microedition.lcdui.Displayable) null).width();
     protected static final int REAL_HEIGHT =
             remexa.host.runtime.MidletRuntime.getDisplayMetrics((javax.microedition.lcdui.Displayable) null).height();
+    private static final java.util.Set<com.jblend.media.MediaPlayer> ACTIVE_PLAYERS =
+            java.util.Collections.synchronizedSet(
+                    java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>()));
 
     private final java.util.List<com.jblend.media.MediaPlayerListener> listeners = new java.util.concurrent.CopyOnWriteArrayList<>();
+    private final ClassLoader ownerClassLoader;
     private com.jblend.media.MediaData data;
     private int state = NO_DATA;
     private int repeatCount;
     private boolean repeatInfinite;
+    private boolean runtimeShutdown;
 
     public MediaPlayer () {
+        ownerClassLoader = MidletRuntime.currentAppClassLoader();
+        ACTIVE_PLAYERS.add(this);
         remexa.probes.SdkStubSupport.log("com.jblend.media.MediaPlayer", "MediaPlayer");
+    }
+
+    public static void shutdownOwnedPlayers(ClassLoader ownerClassLoader) {
+        com.jblend.media.MediaPlayer[] snapshot;
+        synchronized (ACTIVE_PLAYERS) {
+            snapshot = ACTIVE_PLAYERS.toArray(com.jblend.media.MediaPlayer[]::new);
+        }
+        for (com.jblend.media.MediaPlayer player : snapshot) {
+            if (player == null || !player.isOwnedBy(ownerClassLoader)) {
+                continue;
+            }
+            player.shutdownFromRuntime();
+        }
     }
 
     public void setData (com.jblend.media.MediaData data) {
         remexa.probes.SdkStubSupport.log("com.jblend.media.MediaPlayer", "setData", data);
+        if (runtimeShutdown) {
+            return;
+        }
         if (state == PLAYING || state == PAUSED) {
             throw new IllegalStateException("MediaPlayer.setData: cannot change data while playing or paused.");
         }
@@ -110,6 +135,10 @@ public abstract class MediaPlayer {
     protected void onResume() {
     }
 
+    /** Subclass hook invoked when the host tears down an appli runtime. */
+    protected void onDispose() {
+    }
+
     /** Subclasses invoke this when a single repeat iteration finishes. */
     protected final void notifyRepeatCompleted() {
         if (repeatInfinite || --repeatCount > 0) {
@@ -143,6 +172,10 @@ public abstract class MediaPlayer {
     }
 
     private void startPlayback(int count, boolean infinite) {
+        MidletRuntime.ensureThreadActive();
+        if (runtimeShutdown) {
+            return;
+        }
         if (state == NO_DATA) {
             throw new IllegalStateException("MediaPlayer.play: no media data set.");
         }
@@ -156,6 +189,33 @@ public abstract class MediaPlayer {
         repeatInfinite = infinite;
         onPlay();
         transitionTo(PLAYING);
+    }
+
+    private boolean isOwnedBy(ClassLoader candidate) {
+        return candidate == null || ownerClassLoader == candidate;
+    }
+
+    private synchronized void shutdownFromRuntime() {
+        if (!ACTIVE_PLAYERS.remove(this)) {
+            return;
+        }
+        try {
+            if (state == PLAYING || state == PAUSED) {
+                onStop();
+            }
+        } catch (RuntimeException ignored) {
+            // Runtime teardown is best effort; continue closing any native resources.
+        }
+        try {
+            onDispose();
+        } catch (RuntimeException ignored) {
+            // Keep shutdown resilient even if an emulated player is already half-closed.
+        }
+        runtimeShutdown = true;
+        data = null;
+        state = NO_DATA;
+        repeatCount = 0;
+        repeatInfinite = false;
     }
 
     private void transitionTo(int newState) {

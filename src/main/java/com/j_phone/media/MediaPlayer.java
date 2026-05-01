@@ -2,18 +2,25 @@ package com.j_phone.media;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.Locale;
+import java.util.Set;
 import javax.microedition.media.Manager;
 import javax.microedition.media.MediaException;
 import javax.microedition.media.Player;
 import javax.microedition.media.PlayerListener;
 import org.recompile.mobile.Mobile;
+import remexa.host.runtime.MidletRuntime;
 import remexa.probes.DebugLog;
 import remexa.probes.LogCategory;
 
 public class MediaPlayer extends javax.microedition.lcdui.Canvas {
     private static final String LOG_SOURCE = MediaPlayer.class.getName();
+    private static final Set<MediaPlayer> ACTIVE_PLAYERS =
+            Collections.synchronizedSet(Collections.newSetFromMap(new IdentityHashMap<>()));
 
+    private final ClassLoader ownerClassLoader;
     private byte[] mediaData;
     private String mediaUrl;
     private int contentX;
@@ -26,17 +33,35 @@ public class MediaPlayer extends javax.microedition.lcdui.Canvas {
     private boolean delegatePaused;
     private boolean fallbackMode;
     private boolean suppressDelegateStopEvent;
+    private boolean runtimeShutdown;
 
     protected MediaPlayer() {
+        ownerClassLoader = MidletRuntime.currentAppClassLoader();
+        ACTIVE_PLAYERS.add(this);
         remexa.probes.SdkStubSupport.log("com.j_phone.media.MediaPlayer", "MediaPlayer");
     }
 
+    public static void shutdownOwnedPlayers(ClassLoader ownerClassLoader) {
+        MediaPlayer[] snapshot;
+        synchronized (ACTIVE_PLAYERS) {
+            snapshot = ACTIVE_PLAYERS.toArray(MediaPlayer[]::new);
+        }
+        for (MediaPlayer player : snapshot) {
+            if (player == null || !player.isOwnedBy(ownerClassLoader)) {
+                continue;
+            }
+            player.shutdownFromRuntime();
+        }
+    }
+
     public MediaPlayer (byte[] data) {
+        this();
         remexa.probes.SdkStubSupport.log("com.j_phone.media.MediaPlayer", "MediaPlayer", data);
         this.mediaData = data;
     }
 
     public MediaPlayer (java.lang.String url) throws java.io.IOException {
+        this();
         remexa.probes.SdkStubSupport.log("com.j_phone.media.MediaPlayer", "MediaPlayer", url);
         this.mediaUrl = url;
     }
@@ -44,6 +69,9 @@ public class MediaPlayer extends javax.microedition.lcdui.Canvas {
 
     public void setMediaData (byte[] data) {
         remexa.probes.SdkStubSupport.log("com.j_phone.media.MediaPlayer", "setMediaData", data);
+        if (runtimeShutdown) {
+            return;
+        }
         releaseDelegate();
         this.mediaData = data;
         this.mediaUrl = null;
@@ -54,6 +82,9 @@ public class MediaPlayer extends javax.microedition.lcdui.Canvas {
 
     public void setMediaData (java.lang.String url) {
         remexa.probes.SdkStubSupport.log("com.j_phone.media.MediaPlayer", "setMediaData", url);
+        if (runtimeShutdown) {
+            return;
+        }
         releaseDelegate();
         this.mediaUrl = url;
         this.mediaData = null;
@@ -90,6 +121,10 @@ public class MediaPlayer extends javax.microedition.lcdui.Canvas {
 
     public void play () {
         remexa.probes.SdkStubSupport.log("com.j_phone.media.MediaPlayer", "play");
+        MidletRuntime.ensureThreadActive();
+        if (runtimeShutdown) {
+            return;
+        }
         if (startDelegatePlayback(false)) {
             return;
         }
@@ -98,6 +133,10 @@ public class MediaPlayer extends javax.microedition.lcdui.Canvas {
 
     public void play (boolean isRepeat) {
         remexa.probes.SdkStubSupport.log("com.j_phone.media.MediaPlayer", "play", isRepeat);
+        MidletRuntime.ensureThreadActive();
+        if (runtimeShutdown) {
+            return;
+        }
         if (startDelegatePlayback(isRepeat)) {
             return;
         }
@@ -175,6 +214,23 @@ public class MediaPlayer extends javax.microedition.lcdui.Canvas {
 
     boolean hasMedia() {
         return mediaData != null || (mediaUrl != null && !mediaUrl.isBlank());
+    }
+
+    private boolean isOwnedBy(ClassLoader candidate) {
+        return candidate == null || ownerClassLoader == candidate;
+    }
+
+    private synchronized void shutdownFromRuntime() {
+        if (!ACTIVE_PLAYERS.remove(this)) {
+            return;
+        }
+        releaseDelegate();
+        playing = false;
+        paused = false;
+        delegatePaused = false;
+        fallbackMode = false;
+        suppressDelegateStopEvent = false;
+        runtimeShutdown = true;
     }
 
     private boolean startDelegatePlayback(boolean repeat) {

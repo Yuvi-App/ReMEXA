@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import remexa.host.runtime.MidletRuntime;
 import remexa.probes.DebugLog;
 import remexa.probes.LogCategory;
 
@@ -22,12 +23,25 @@ public final class PhraseTrack {
     private PhraseTrack subjectTo;
     private PhraseTrackListener listener;
     private GroupLoopCoordinator loopCoordinator;
+    private ClassLoader ownerClassLoader;
     private int volume = 127;
     private int panpot = 64;
     private boolean muted;
 
     PhraseTrack(int id) {
         this.id = id;
+    }
+
+    void reserveFor(ClassLoader ownerClassLoader) {
+        this.ownerClassLoader = ownerClassLoader;
+    }
+
+    boolean isOwnedBy(ClassLoader candidate) {
+        return candidate == null || ownerClassLoader == candidate;
+    }
+
+    void clearOwner() {
+        ownerClassLoader = null;
     }
 
     public void setPhrase(Phrase phrase) {
@@ -105,10 +119,12 @@ public final class PhraseTrack {
     }
 
     public void play() {
+        MidletRuntime.ensureThreadActive();
         play(1);
     }
 
     public void play(int loop) {
+        MidletRuntime.ensureThreadActive();
         DebugLog.log(LogCategory.MEDIA, PhraseTrack.class.getName(), "Track " + id + " play(loop=" + loop + ")");
         if (subjectTo != null) {
             return;

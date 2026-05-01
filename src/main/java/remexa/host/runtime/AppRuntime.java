@@ -111,6 +111,10 @@ public final class AppRuntime {
             return;
         }
 
+        var classLoader = result.classLoader();
+        MidletRuntime.beginShutdown(classLoader);
+        shutdownAudioPlayers(classLoader);
+
         var midlet = result.midlet();
         if (midlet != null) {
             invokeLifecycle(midlet, "pauseApp");
@@ -119,12 +123,12 @@ public final class AppRuntime {
             MidletRuntime.detach(midlet);
         }
 
-        shutdownPhrasePlayer(result.classLoader());
-        shutdownMediaPlayers(result.classLoader());
-        shutdownAppThreads(result.classLoader());
-        MidletRuntime.unregisterTextInputHandler(result.classLoader());
+        shutdownAudioPlayers(classLoader);
+        shutdownAppThreads(classLoader);
+        shutdownAudioPlayers(classLoader);
+        MidletRuntime.unregisterTextInputHandler(classLoader);
 
-        if (result.classLoader() instanceof URLClassLoader urlClassLoader) {
+        if (classLoader instanceof URLClassLoader urlClassLoader) {
             try {
                 urlClassLoader.close();
             } catch (java.io.IOException exception) {
@@ -135,6 +139,16 @@ public final class AppRuntime {
                 );
             }
         }
+    }
+
+    private void shutdownAudioPlayers(ClassLoader classLoader) {
+        if (classLoader == null) {
+            return;
+        }
+        shutdownPhrasePlayer(classLoader);
+        shutdownJblendMediaPlayers(classLoader);
+        shutdownJphoneMediaPlayers(classLoader);
+        shutdownMediaPlayers(classLoader);
     }
 
     private void shutdownAppThreads(ClassLoader classLoader) {
@@ -148,7 +162,7 @@ public final class AppRuntime {
                 .stream()
                 .filter(thread -> thread != currentThread)
                 .filter(Thread::isAlive)
-                .filter(thread -> thread.getContextClassLoader() == classLoader)
+                .filter(thread -> isAppThread(thread, classLoader))
                 .toList();
 
         installExpectedShutdownHandlers(appThreads);
@@ -205,6 +219,29 @@ public final class AppRuntime {
         }
     }
 
+    private boolean isAppThread(Thread thread, ClassLoader classLoader) {
+        if (thread.getContextClassLoader() == classLoader) {
+            return true;
+        }
+        for (var frame : thread.getStackTrace()) {
+            if (isClassOwnedBy(frame.getClassName(), classLoader)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isClassOwnedBy(String className, ClassLoader classLoader) {
+        if (className == null || className.isBlank()) {
+            return false;
+        }
+        try {
+            return Class.forName(className, false, classLoader).getClassLoader() == classLoader;
+        } catch (LinkageError | ClassNotFoundException ignored) {
+            return false;
+        }
+    }
+
     private void installExpectedShutdownHandlers(java.util.List<Thread> appThreads) {
         for (var thread : appThreads) {
             var previousHandler = thread.getUncaughtExceptionHandler();
@@ -237,8 +274,7 @@ public final class AppRuntime {
                 var phrasePlayerClass = classLoader.loadClass(phrasePlayerClassName);
                 var getPlayer = phrasePlayerClass.getMethod("getPlayer");
                 var player = getPlayer.invoke(null);
-                var kill = phrasePlayerClass.getMethod("kill");
-                kill.invoke(player);
+                invokePhrasePlayerKill(phrasePlayerClass, player, classLoader);
                 disposed = true;
             } catch (ClassNotFoundException ignored) {
                 // This app did not use this phrase player facade.
@@ -252,6 +288,43 @@ public final class AppRuntime {
         }
         if (disposed) {
             DebugLog.log(LogCategory.HOST, AppRuntime.class.getName(), "Disposed phrase player during shutdown.");
+        }
+    }
+
+    private void invokePhrasePlayerKill(Class<?> phrasePlayerClass, Object player, ClassLoader classLoader)
+            throws ReflectiveOperationException {
+        try {
+            var killOwnedBy = phrasePlayerClass.getMethod("killOwnedBy", ClassLoader.class);
+            killOwnedBy.invoke(player, classLoader);
+            return;
+        } catch (NoSuchMethodException ignored) {
+            // Older facades only expose kill(); keep the compatibility fallback.
+        }
+        var kill = phrasePlayerClass.getMethod("kill");
+        kill.invoke(player);
+    }
+
+    private void shutdownJblendMediaPlayers(ClassLoader classLoader) {
+        try {
+            com.jblend.media.MediaPlayer.shutdownOwnedPlayers(classLoader);
+        } catch (RuntimeException exception) {
+            DebugLog.log(
+                    LogCategory.HOST,
+                    AppRuntime.class.getName(),
+                    "Failed to dispose JBlend media players during shutdown: " + exception.getMessage()
+            );
+        }
+    }
+
+    private void shutdownJphoneMediaPlayers(ClassLoader classLoader) {
+        try {
+            com.j_phone.media.MediaPlayer.shutdownOwnedPlayers(classLoader);
+        } catch (RuntimeException exception) {
+            DebugLog.log(
+                    LogCategory.HOST,
+                    AppRuntime.class.getName(),
+                    "Failed to dispose J-Phone media players during shutdown: " + exception.getMessage()
+            );
         }
     }
 
