@@ -1,6 +1,7 @@
 package javax.microedition.lcdui;
 
 import java.awt.Graphics2D;
+import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
@@ -120,6 +121,11 @@ final class BitmapFontBackend implements FontBackend {
             var cursorY = lineIndex * strike.lineHeight();
             var codePoints = lines[lineIndex].codePoints().toArray();
             for (var codePoint : codePoints) {
+                var iconWidth = iconWidthFor(codePoint);
+                if (iconWidth > 0) {
+                    cursorX += iconWidth;
+                    continue;
+                }
                 var advance = advanceFor(codePoint);
                 var glyphIndex = glyphIndexFor(codePoint);
                 if (glyphIndex >= 0) {
@@ -129,7 +135,31 @@ final class BitmapFontBackend implements FontBackend {
             }
         }
         image.setRGB(0, 0, width, height, pixels, 0, width);
+        drawInlineIcons(image, lines);
         return image;
+    }
+
+    private void drawInlineIcons(BufferedImage image, String[] lines) {
+        var graphics = image.createGraphics();
+        try {
+            graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
+            for (var lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+                var cursorX = 0;
+                var cursorY = lineIndex * strike.lineHeight();
+                for (var codePoint : lines[lineIndex].codePoints().toArray()) {
+                    var icon = JPhoneIconResources.imageFor(codePoint);
+                    var iconWidth = iconWidthFor(codePoint);
+                    if (icon != null && iconWidth > 0) {
+                        graphics.drawImage(icon, cursorX, cursorY, iconWidth, strike.lineHeight(), null);
+                        cursorX += iconWidth;
+                        continue;
+                    }
+                    cursorX += advanceFor(codePoint);
+                }
+            }
+        } finally {
+            graphics.dispose();
+        }
     }
 
     private void blitGlyph(
@@ -171,9 +201,18 @@ final class BitmapFontBackend implements FontBackend {
     private int lineWidth(String line) {
         var width = 0;
         for (var codePoint : line.codePoints().toArray()) {
+            var iconWidth = iconWidthFor(codePoint);
+            if (iconWidth > 0) {
+                width += iconWidth;
+                continue;
+            }
             width += advanceFor(codePoint);
         }
         return width;
+    }
+
+    private int iconWidthFor(int codePoint) {
+        return JPhoneIconResources.scaledWidthFor(codePoint, strike.lineHeight());
     }
 
     private int advanceFor(int codePoint) {

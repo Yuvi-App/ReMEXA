@@ -43,7 +43,12 @@ final class SystemFontBackend implements FontBackend {
         if (normalized.isEmpty()) {
             return 0;
         }
-        return metrics().stringWidth(normalized);
+        var metrics = metrics();
+        var width = 0;
+        for (var line : normalized.split("\\n", -1)) {
+            width = Math.max(width, lineWidth(metrics, line));
+        }
+        return width;
     }
 
     @Override
@@ -70,7 +75,73 @@ final class SystemFontBackend implements FontBackend {
         graphics.setFont(awtFont);
         graphics.setColor(new java.awt.Color(argbColor, true));
         graphics.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_OFF);
-        graphics.drawString(normalized, x, baselineY);
+        graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
+        if (!containsInlineIcons(normalized)) {
+            graphics.drawString(normalized, x, baselineY);
+            return;
+        }
+
+        var metrics = metrics();
+        var lines = normalized.split("\\n", -1);
+        var lineHeight = getHeight();
+        var lineTop = baselineY - getAscent();
+        for (var lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+            var baseline = baselineY + lineIndex * lineHeight;
+            var cursorX = x;
+            var segment = new StringBuilder();
+            var line = lines[lineIndex];
+            for (var offset = 0; offset < line.length(); ) {
+                var codePoint = line.codePointAt(offset);
+                offset += Character.charCount(codePoint);
+                var icon = JPhoneIconResources.imageFor(codePoint);
+                var iconWidth = iconWidthFor(codePoint, lineHeight);
+                if (icon != null && iconWidth > 0) {
+                    if (!segment.isEmpty()) {
+                        var textSegment = segment.toString();
+                        graphics.drawString(textSegment, cursorX, baseline);
+                        cursorX += metrics.stringWidth(textSegment);
+                        segment.setLength(0);
+                    }
+                    graphics.drawImage(icon, cursorX, lineTop + lineIndex * lineHeight, iconWidth, lineHeight, null);
+                    cursorX += iconWidth;
+                    continue;
+                }
+                segment.appendCodePoint(codePoint);
+            }
+            if (!segment.isEmpty()) {
+                graphics.drawString(segment.toString(), cursorX, baseline);
+            }
+        }
+    }
+
+    private int lineWidth(java.awt.FontMetrics metrics, String line) {
+        var width = 0;
+        for (var offset = 0; offset < line.length(); ) {
+            var codePoint = line.codePointAt(offset);
+            offset += Character.charCount(codePoint);
+            var iconWidth = iconWidthFor(codePoint, getHeight());
+            if (iconWidth > 0) {
+                width += iconWidth;
+                continue;
+            }
+            width += metrics.stringWidth(new String(Character.toChars(codePoint)));
+        }
+        return width;
+    }
+
+    private boolean containsInlineIcons(String value) {
+        for (var offset = 0; offset < value.length(); ) {
+            var codePoint = value.codePointAt(offset);
+            offset += Character.charCount(codePoint);
+            if (JPhoneIconResources.hasIcon(codePoint)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private int iconWidthFor(int codePoint, int targetHeight) {
+        return JPhoneIconResources.scaledWidthFor(codePoint, targetHeight);
     }
 
     private java.awt.FontMetrics metrics() {
