@@ -12,6 +12,7 @@ public class TextBox extends Screen {
     private CommandListener fallbackCommandListener;
     private boolean hostInputPresented;
     private boolean hostInputInFlight;
+    private String initialInputMode;
 
     protected TextBox() {
         this(null, "", 0, TextField.ANY);
@@ -38,6 +39,14 @@ public class TextBox extends Screen {
 
     public int getConstraints() {
         return constraints;
+    }
+
+    public void setInitialInputMode(String characterSubset) {
+        initialInputMode = characterSubset;
+    }
+
+    public String getInitialInputMode() {
+        return initialInputMode;
     }
 
     @Override
