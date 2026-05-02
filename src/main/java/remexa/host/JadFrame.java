@@ -624,7 +624,11 @@ public final class JadFrame extends JFrame {
             }
         }
 
-        var phoneKeyCode = HostKeyMapper.toPhoneKeyCode(awtKeyCode, inputProfile);
+        var phoneKeyCode = HostKeyMapper.toPhoneKeyCode(
+                awtKeyCode,
+                inputProfile,
+                launchProfile.rotateInputForWideScreen()
+        );
         if (phoneKeyCode == HostKeyMapper.NO_MAPPING) {
             if (dispatchCanvasSoftKeyCommand) {
                 MidletRuntime.dispatchSoftKey(softKeyIndex);

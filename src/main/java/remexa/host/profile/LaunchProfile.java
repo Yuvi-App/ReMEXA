@@ -2,6 +2,7 @@ package remexa.host.profile;
 
 public record LaunchProfile(
         AppProfile profile,
-        DisplayMetrics initialDisplay
+        DisplayMetrics initialDisplay,
+        boolean rotateInputForWideScreen
 ) {
 }

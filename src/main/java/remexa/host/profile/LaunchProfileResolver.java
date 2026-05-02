@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.jar.JarFile;
 import java.util.regex.Pattern;
+import remexa.host.input.InputProfile;
 import remexa.host.jad.JadDescriptor;
 import remexa.host.LaunchConfig;
 
@@ -69,7 +70,7 @@ public final class LaunchProfileResolver {
         var initialDisplay = resolveDisplayMetrics(descriptor, profile)
                 .map(displayMetrics -> applyWideScreen(displayMetrics, wideScreen))
                 .orElseGet(() -> applyWideScreen(profile.fallbackDisplay(), wideScreen));
-        return new LaunchProfile(profile, initialDisplay);
+        return new LaunchProfile(profile, initialDisplay, wideScreen && profile.inputProfile() == InputProfile.MEXA);
     }
 
     private static AppProfile resolveProfile(JadDescriptor descriptor) {
