@@ -54,12 +54,15 @@ public final class RecordStore {
             var legacyContainer = legacyContainerPath();
             if (legacyContainer.isPresent()) {
                 legacyContainerPath = legacyContainer.get();
-                legacyStore = readLegacyStore(legacyContainerPath, name);
+                if (Files.isRegularFile(legacyContainerPath)) {
+                    legacyStore = readLegacyStore(legacyContainerPath, name);
+                }
             }
             boolean storeFileExists = Files.exists(storePath);
             boolean legacyBacked = legacyContainerPath != null;
+            boolean legacyStoreExists = legacyStore != null;
 
-            if (legacyBacked && legacyStore == null && !createIfNecessary) {
+            if (legacyBacked && !legacyStoreExists && !storeFileExists && !createIfNecessary) {
                 throw new RecordStoreNotFoundException("RecordStore not found: " + name);
             }
             if (!legacyBacked && !storeFileExists && !createIfNecessary) {
@@ -72,6 +75,9 @@ public final class RecordStore {
             }
 
             var store = new RecordStore(name, storePath, legacyContainerPath, legacyBacked, legacyStore);
+            if (legacyBacked && createIfNecessary && !legacyStoreExists) {
+                store.persistPrimaryStore();
+            }
             DebugLog.log(
                     LogCategory.RMS,
                     RecordStore.class.getName(),
@@ -103,8 +109,12 @@ public final class RecordStore {
             Path root = rmsRoot();
             Path storePath = root.resolve(sanitize(name) + ".bin");
             if (legacyContainer.isPresent()) {
-                if (deleteLegacyStore(legacyContainer.get(), name)) {
+                if (Files.isRegularFile(legacyContainer.get()) && deleteLegacyStore(legacyContainer.get(), name)) {
                     Files.deleteIfExists(storePath);
+                    return;
+                }
+                if (Files.exists(storePath)) {
+                    Files.delete(storePath);
                     return;
                 }
                 throw new RecordStoreNotFoundException("RecordStore not found: " + name);
@@ -126,7 +136,7 @@ public final class RecordStore {
     public static String[] listRecordStores() throws RecordStoreException {
         try {
             var legacyContainer = legacyContainerPath();
-            if (legacyContainer.isPresent()) {
+            if (legacyContainer.isPresent() && Files.isRegularFile(legacyContainer.get())) {
                 var legacyNames = readLegacyStoreNames(legacyContainer.get());
                 return legacyNames.isEmpty() ? null : legacyNames.toArray(String[]::new);
             }
@@ -311,6 +321,10 @@ public final class RecordStore {
                     }
                     return;
                 }
+                if (Files.exists(storePath) && Files.size(storePath) > 0L) {
+                    loadBinaryStore();
+                    return;
+                }
                 lastModified = System.currentTimeMillis();
                 return;
             }
@@ -363,6 +377,22 @@ public final class RecordStore {
 
     private void flush() throws RecordStoreException {
         version++;
+        lastModified = System.currentTimeMillis();
+        try {
+            if (legacyBacked) {
+                writeLegacyStore();
+                if (dumpLegacyMirrorEnabled()) {
+                    writeBinaryStore();
+                }
+            } else {
+                writeBinaryStore();
+            }
+        } catch (IOException exception) {
+            throw new RecordStoreException("Unable to persist record store", exception);
+        }
+    }
+
+    private void persistPrimaryStore() throws RecordStoreException {
         lastModified = System.currentTimeMillis();
         try {
             if (legacyBacked) {
@@ -592,6 +622,9 @@ public final class RecordStore {
                 return Optional.of(candidate);
             }
         }
+        if (!candidates.isEmpty()) {
+            return Optional.of(candidates.iterator().next());
+        }
 
         try (Stream<Path> stream = Files.list(appDirectory)) {
             var rmsFiles = stream
@@ -713,6 +746,7 @@ public final class RecordStore {
                 }
             }
         }
+        Files.createDirectories(legacyContainer.getParent());
         Files.write(legacyContainer, out.toByteArray());
     }
 
