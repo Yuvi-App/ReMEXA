@@ -612,6 +612,8 @@ public final class JadFrame extends JFrame {
         var displayable = MidletRuntime.currentDisplayable();
         InputProfile inputProfile = launchProfile.profile().inputProfile();
         var softKeyIndex = HostKeyMapper.toSoftKeyIndex(awtKeyCode, inputProfile);
+        var dispatchCanvasSoftKeyCommand =
+                softKeyIndex >= 0 && !release && shouldDispatchCanvasSoftKeyCommand(displayable, softKeyIndex);
         if (softKeyIndex >= 0) {
             if (!(displayable instanceof javax.microedition.lcdui.Canvas)
                     && shouldDispatchSoftKeyAsCommand(displayable, softKeyIndex)) {
@@ -620,17 +622,20 @@ public final class JadFrame extends JFrame {
                 }
                 return;
             }
-            if (!release && shouldDispatchCanvasSoftKeyCommand(displayable, softKeyIndex)) {
-                MidletRuntime.dispatchSoftKey(softKeyIndex);
-            }
         }
 
         var phoneKeyCode = HostKeyMapper.toPhoneKeyCode(awtKeyCode, inputProfile);
         if (phoneKeyCode == HostKeyMapper.NO_MAPPING) {
+            if (dispatchCanvasSoftKeyCommand) {
+                MidletRuntime.dispatchSoftKey(softKeyIndex);
+            }
             return;
         }
 
         dispatchPhoneKey(phoneKeyCode, release);
+        if (dispatchCanvasSoftKeyCommand) {
+            MidletRuntime.dispatchSoftKey(softKeyIndex);
+        }
     }
 
     private static boolean shouldDispatchSoftKeyAsCommand(javax.microedition.lcdui.Displayable displayable, int softKeyIndex) {

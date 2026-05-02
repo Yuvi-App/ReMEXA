@@ -146,7 +146,6 @@ public class Displayable {
                 Comparator
                         .comparingInt((Command command) -> softKeyBucket(command.getCommandType()))
                         .thenComparingInt(Command::getPriority)
-                        .thenComparing(command -> command.getLabel() == null ? "" : command.getLabel(), String.CASE_INSENSITIVE_ORDER)
         );
         return ordered;
     }
