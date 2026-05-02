@@ -354,11 +354,13 @@ public final class SoftwareJ3dRenderer {
                 state.farClip = commandList[cursor++];
                 int width = commandList[cursor++];
                 int height = commandList[cursor++];
+                float perspectiveWidth = width / 4096.0f;
+                float perspectiveHeight = height / 4096.0f;
                 state.projectionScaleX = width > 0 && state.nearClip > 0
-                        ? (surfaceWidth * (float) state.nearClip) / width
+                        ? (surfaceWidth * (float) state.nearClip) / perspectiveWidth
                         : 0.0f;
                 state.projectionScaleY = height > 0 && state.nearClip > 0
-                        ? (surfaceHeight * (float) state.nearClip) / height
+                        ? (surfaceHeight * (float) state.nearClip) / perspectiveHeight
                         : 0.0f;
                 continue;
             }
@@ -2456,11 +2458,13 @@ public final class SoftwareJ3dRenderer {
             if (perspective) {
                 int nearClip = layout.getPerspectiveNear();
                 if (layout.getPerspectiveWidth() > 0 && layout.getPerspectiveHeight() > 0) {
+                    float perspectiveWidth = layout.getPerspectiveWidth() / 4096.0f;
+                    float perspectiveHeight = layout.getPerspectiveHeight() / 4096.0f;
                     projectionScaleX = nearClip > 0
-                            ? (surfaceWidth * (float) nearClip) / layout.getPerspectiveWidth()
+                            ? (surfaceWidth * (float) nearClip) / perspectiveWidth
                             : 0.0f;
                     projectionScaleY = nearClip > 0
-                            ? (surfaceHeight * (float) nearClip) / layout.getPerspectiveHeight()
+                            ? (surfaceHeight * (float) nearClip) / perspectiveHeight
                             : 0.0f;
                 } else {
                     float angleRadians = (float) (layout.getPerspectiveAngle() * (Math.PI * 2.0 / 4096.0));

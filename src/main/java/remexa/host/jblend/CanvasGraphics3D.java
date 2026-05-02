@@ -430,11 +430,13 @@ public final class CanvasGraphics3D extends Graphics implements Graphics3D {
                 nearClip = layout.getPerspectiveNear();
                 farClip = layout.getPerspectiveFar();
                 if (layout.getPerspectiveWidth() > 0 && layout.getPerspectiveHeight() > 0) {
+                    float perspectiveWidth = layout.getPerspectiveWidth() / 4096.0f;
+                    float perspectiveHeight = layout.getPerspectiveHeight() / 4096.0f;
                     projectionScaleX = nearClip > 0
-                            ? (surfaceWidth * (float) nearClip) / layout.getPerspectiveWidth()
+                            ? (surfaceWidth * (float) nearClip) / perspectiveWidth
                             : 0.0f;
                     projectionScaleY = nearClip > 0
-                            ? (surfaceHeight * (float) nearClip) / layout.getPerspectiveHeight()
+                            ? (surfaceHeight * (float) nearClip) / perspectiveHeight
                             : 0.0f;
                 } else {
                     float angleRadians = (float) (layout.getPerspectiveAngle() * (Math.PI * 2.0 / 4096.0));
