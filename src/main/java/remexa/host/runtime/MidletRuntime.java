@@ -443,7 +443,7 @@ public final class MidletRuntime {
 
     public static InputStream openResource(String resourceName) {
         ensureThreadActive();
-        var normalizedName = resourceName == null ? "" : resourceName.startsWith("/") ? resourceName.substring(1) : resourceName;
+        var normalizedName = normalizeResourceName(resourceName);
         var threadContext = Thread.currentThread().getContextClassLoader();
         if (threadContext != null) {
             var stream = threadContext.getResourceAsStream(normalizedName);
@@ -460,6 +460,24 @@ public final class MidletRuntime {
             return null;
         }
         return wrapLegacyResourceStream(context.classLoader().getResourceAsStream(normalizedName));
+    }
+
+    private static String normalizeResourceName(String resourceName) {
+        if (resourceName == null) {
+            return "";
+        }
+        var normalizedName = resourceName;
+        if (normalizedName.regionMatches(true, 0, "resource://", 0, "resource://".length())) {
+            normalizedName = normalizedName.substring("resource://".length());
+        } else if (normalizedName.regionMatches(true, 0, "resource:/", 0, "resource:/".length())) {
+            normalizedName = normalizedName.substring("resource:/".length());
+        } else if (normalizedName.regionMatches(true, 0, "resource:", 0, "resource:".length())) {
+            normalizedName = normalizedName.substring("resource:".length());
+        }
+        while (normalizedName.startsWith("/")) {
+            normalizedName = normalizedName.substring(1);
+        }
+        return normalizedName;
     }
 
     private static InputStream wrapLegacyResourceStream(InputStream stream) {

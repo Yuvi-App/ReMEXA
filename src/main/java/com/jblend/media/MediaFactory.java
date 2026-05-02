@@ -1,5 +1,7 @@
 package com.jblend.media;
 
+import remexa.host.runtime.MidletRuntime;
+
 public class MediaFactory {
     public static final int MEDIA_TYPE_SMAF = 1;
     public static final int MEDIA_TYPE_KARAOKE = 11;
@@ -70,18 +72,26 @@ public class MediaFactory {
         if (name == null) {
             throw new NullPointerException("MediaFactory.getMediaPlayer: resource name is null");
         }
-        var loader = Thread.currentThread().getContextClassLoader();
-        if (loader == null) {
-            loader = MediaFactory.class.getClassLoader();
-        }
-        var path = name.startsWith("/") ? name.substring(1) : name;
-        try (var stream = loader == null
-                ? ClassLoader.getSystemResourceAsStream(path)
-                : loader.getResourceAsStream(path)) {
+        try (var stream = MidletRuntime.openResource(normalizeResourceName(name))) {
             if (stream == null) {
                 throw new java.io.IOException("MediaFactory.getMediaPlayer: resource not found: " + name);
             }
             return stream.readAllBytes();
         }
+    }
+
+    private static String normalizeResourceName(String name) {
+        var normalized = name;
+        if (normalized.regionMatches(true, 0, "resource://", 0, "resource://".length())) {
+            normalized = normalized.substring("resource://".length());
+        } else if (normalized.regionMatches(true, 0, "resource:/", 0, "resource:/".length())) {
+            normalized = normalized.substring("resource:/".length());
+        } else if (normalized.regionMatches(true, 0, "resource:", 0, "resource:".length())) {
+            normalized = normalized.substring("resource:".length());
+        }
+        while (normalized.startsWith("/")) {
+            normalized = normalized.substring(1);
+        }
+        return normalized;
     }
 }
