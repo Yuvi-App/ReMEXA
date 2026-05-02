@@ -25,6 +25,8 @@ public final class RecordStore {
     public static final int AUTHMODE_ANY = 1;
 
     private static final int STORAGE_MAGIC = 0x524d5852;
+    private static final java.util.Set<RecordStore> OPEN_STORES =
+            java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
 
     private final Path storePath;
     private final String name;
@@ -75,6 +77,9 @@ public final class RecordStore {
             }
 
             var store = new RecordStore(name, storePath, legacyContainerPath, legacyBacked, legacyStore);
+            synchronized (OPEN_STORES) {
+                OPEN_STORES.add(store);
+            }
             if (legacyBacked && createIfNecessary && !legacyStoreExists) {
                 store.persistPrimaryStore();
             }
@@ -271,6 +276,34 @@ public final class RecordStore {
     }
 
     public void closeRecordStore() {
+        synchronized (OPEN_STORES) {
+            OPEN_STORES.remove(this);
+        }
+    }
+
+    public static void flushAll() throws RecordStoreException {
+        List<RecordStore> snapshot;
+        synchronized (OPEN_STORES) {
+            snapshot = new ArrayList<>(OPEN_STORES);
+        }
+        RecordStoreException firstFailure = null;
+        for (RecordStore store : snapshot) {
+            if (store == null) {
+                continue;
+            }
+            try {
+                synchronized (store) {
+                    store.persistPrimaryStore();
+                }
+            } catch (RecordStoreException exception) {
+                if (firstFailure == null) {
+                    firstFailure = exception;
+                }
+            }
+        }
+        if (firstFailure != null) {
+            throw firstFailure;
+        }
     }
 
     synchronized byte[] copyRecord(int recordId) throws RecordStoreException {

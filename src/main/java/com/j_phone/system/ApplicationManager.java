@@ -1,5 +1,8 @@
 package com.j_phone.system;
 
+import javax.microedition.rms.RecordStore;
+import javax.microedition.rms.RecordStoreException;
+
 public class ApplicationManager {
     public static final int F_MENU = 0;
     public static final int J_SKY_MENU = 1;
@@ -59,6 +62,11 @@ public class ApplicationManager {
 
     public void flushRMS () {
         remexa.probes.SdkStubSupport.log("com.j_phone.system.ApplicationManager", "flushRMS");
+        try {
+            RecordStore.flushAll();
+        } catch (RecordStoreException exception) {
+            throw new RuntimeException("Failed to flush RMS", exception);
+        }
     }
 
     public int pausedTransitMenu() {
