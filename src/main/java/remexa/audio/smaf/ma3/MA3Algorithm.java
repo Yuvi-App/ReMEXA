@@ -33,6 +33,8 @@
 
 package remexa.audio.smaf.ma3;
 
+import remexa.audio.smaf.SmafDebug;
+
 /**
  * Template algorithm for OPL synthesis
  */
@@ -213,7 +215,21 @@ class MA3Algorithm
         this.pe = (bits >> 5 & 1) != 0;
         this.alg = bits & 7;
         if (this.alg > 1 && type == 0x01)
-            throw new RuntimeException("Operator count mismatch");
+        {
+            // Voice declares a 4-operator algorithm (alg >= 2) but the SysEx
+            // record only carries 2 operators worth of data. Rather than
+            // crashing the entire render, degrade to the closest 2-op
+            // topology (alg=1, parallel carriers). The voice will sound
+            // simpler than authored but at least plays. Emits a debug log
+            // so callers can find the offending bank/program if needed.
+            if (SmafDebug.isEnabled("ma3", SmafDebug.Level.DEBUG))
+            {
+                SmafDebug.debug("ma3",
+                    "operator-count mismatch: type=1 (2-op) but alg=" + this.alg
+                        + " requires 4 ops; degrading to alg=1");
+            }
+            this.alg = 1;
+        }
         this.operators = new MA3Operator[this.alg < 2 ? 2 : 4];
         for (int x = 0; x < this.operators.length; x++, offset += 7)
             this.operators[x] = new MA3Operator(message, offset, true);
