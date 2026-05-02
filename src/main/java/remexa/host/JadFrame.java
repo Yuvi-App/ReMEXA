@@ -50,6 +50,7 @@ import javax.swing.text.JTextComponent;
 import javax.microedition.lcdui.Command;
 import remexa.host.input.HostKeyMapper;
 import remexa.host.input.HostTextInputRequest;
+import remexa.host.input.InputProfile;
 import remexa.host.jad.JadDescriptor;
 import remexa.host.media.VlcVideoWindow;
 import remexa.host.profile.DisplayMetrics;
@@ -609,14 +610,8 @@ public final class JadFrame extends JFrame {
 
     private void dispatchHostKey(int awtKeyCode, boolean release) {
         var displayable = MidletRuntime.currentDisplayable();
-        var profileId = launchProfile.profile().id();
-        var jPhoneDirectionalLayout =
-                profileId.startsWith("jsky-")
-                        || profileId.startsWith("vodafone-")
-                        || profileId.startsWith("mexa-")
-                        || displayable instanceof com.j_phone.amuse.ACanvas
-                        || displayable instanceof com.j_phone.amuse.j3d.Canvas3D;
-        var softKeyIndex = HostKeyMapper.toSoftKeyIndex(awtKeyCode);
+        InputProfile inputProfile = launchProfile.profile().inputProfile();
+        var softKeyIndex = HostKeyMapper.toSoftKeyIndex(awtKeyCode, inputProfile);
         if (softKeyIndex >= 0) {
             if (!(displayable instanceof javax.microedition.lcdui.Canvas)
                     && shouldDispatchSoftKeyAsCommand(displayable, softKeyIndex)) {
@@ -630,8 +625,8 @@ public final class JadFrame extends JFrame {
             }
         }
 
-        var phoneKeyCode = HostKeyMapper.toPhoneKeyCode(awtKeyCode, jPhoneDirectionalLayout);
-        if (phoneKeyCode == Integer.MIN_VALUE) {
+        var phoneKeyCode = HostKeyMapper.toPhoneKeyCode(awtKeyCode, inputProfile);
+        if (phoneKeyCode == HostKeyMapper.NO_MAPPING) {
             return;
         }
 

@@ -3,10 +3,12 @@ package remexa.host.profile;
 import java.util.Map;
 import java.util.Set;
 import java.util.Locale;
+import remexa.host.input.InputProfile;
 
 public record AppProfile(
         String id,
         String displayName,
+        InputProfile inputProfile,
         DisplayMetrics fallbackDisplay,
         int deviceStyle,
         Map<String, String> systemProperties
@@ -51,6 +53,7 @@ public record AppProfile(
         return new AppProfile(
                 "generic-midp",
                 "Generic MIDP",
+                InputProfile.GENERIC,
                 new DisplayMetrics(240, 320, "Generic fallback"),
                 0,
                 Map.of("microedition.locale", configuredLocale())
@@ -63,6 +66,7 @@ public record AppProfile(
         return new AppProfile(
                 "jsky-" + normalizedVersion.toLowerCase() + "-" + resolvedPhoneType.id(),
                 "JSKY / " + normalizedVersion + " / " + resolvedPhoneType.platformName(),
+                InputProfile.JSKY,
                 new DisplayMetrics(120, 130, "JSKY fallback"),
                 com.j_phone.system.DeviceControl.STYLE_PORTRAIT,
                 jsclSystemProperties(resolvedPhoneType.platformName())
@@ -78,6 +82,7 @@ public record AppProfile(
         return new AppProfile(
                 "vodafone-" + normalizedVersion.toLowerCase() + "-" + resolvedPhoneType.id(),
                 "Vodafone / " + normalizedVersion + " / " + resolvedPhoneType.platformName(),
+                InputProfile.VODAFONE,
                 fallbackDisplay,
                 com.j_phone.system.DeviceControl.STYLE_PORTRAIT,
                 jsclSystemProperties(resolvedPhoneType.platformName())
@@ -93,6 +98,7 @@ public record AppProfile(
         return new AppProfile(
                 "mexa-" + normalizedVersion.toLowerCase() + "-" + resolvedPhoneType.id(),
                 "MEXA / " + normalizedVersion + " / " + resolvedPhoneType.platformName(),
+                InputProfile.MEXA,
                 fallbackDisplay,
                 com.j_phone.system.DeviceControl.STYLE_PORTRAIT,
                 mexaSystemProperties(resolvedPhoneType.platformName())
@@ -109,7 +115,7 @@ public record AppProfile(
         }
         var merged = new java.util.LinkedHashMap<String, String>(systemProperties);
         merged.putAll(overrides);
-        return new AppProfile(id, displayName, fallbackDisplay, deviceStyle, Map.copyOf(merged));
+        return new AppProfile(id, displayName, inputProfile, fallbackDisplay, deviceStyle, Map.copyOf(merged));
     }
 
     private static Map<String, String> jsclSystemProperties(String platformName) {

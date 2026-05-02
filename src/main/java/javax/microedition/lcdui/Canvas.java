@@ -7,10 +7,6 @@ import remexa.host.runtime.LegacyRuntimeSupport;
 import remexa.host.runtime.MidletRuntime;
 
 public abstract class Canvas extends Displayable {
-    private static final int JPHONE_SOFT_LEFT = -21;
-    private static final int JPHONE_SOFT_RIGHT = -22;
-    private static final int JPHONE_SOFT_CENTER = -23;
-
     public static final int UP = 1;
     public static final int LEFT = 2;
     public static final int RIGHT = 5;
@@ -28,6 +24,9 @@ public abstract class Canvas extends Displayable {
     public static final int SOFT1 = -6;
     public static final int SOFT2 = -7;
     public static final int SOFT3 = -8;
+    public static final int JPHONE_SOFT_LEFT = -21;
+    public static final int JPHONE_SOFT_RIGHT = -22;
+    public static final int JPHONE_SOFT_CENTER = -23;
     private final Set<Integer> pressedKeys = new HashSet<>();
     private boolean fullScreenMode;
     private boolean paintInProgress;

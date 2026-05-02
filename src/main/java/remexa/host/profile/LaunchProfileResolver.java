@@ -1,10 +1,14 @@
 package remexa.host.profile;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.jar.JarFile;
 import java.util.regex.Pattern;
 import remexa.host.jad.JadDescriptor;
 import remexa.host.LaunchConfig;
@@ -51,6 +55,9 @@ public final class LaunchProfileResolver {
             Map.entry("MIDxlet-MSensor", "jscl.supports.msensor"),
             Map.entry("MIDlet-MSensor", "jscl.supports.msensor")
     );
+    private static final List<String> JPHONE_API_MARKERS = List.of("com/j_phone/", "com.j_phone.");
+    private static final List<String> VODAFONE_API_MARKERS = List.of("com/vodafone/", "com.vodafone.");
+    private static final List<String> MEXA_API_MARKERS = List.of("com/mexa/", "com.mexa.");
     private static final Pattern SIZE_PATTERN = Pattern.compile("(\\d+)\\D+(\\d+)");
 
     private LaunchProfileResolver() {
@@ -69,23 +76,106 @@ public final class LaunchProfileResolver {
         var platform = resolveDeclaredPlatform(descriptor).orElse("");
         var ocl = resolveDeclaredApi(descriptor).orElse("");
         var normalizedOcl = primaryOclToken(ocl);
-        if (hasMidxletProperties(descriptor)) {
-            return applyDescriptorCapabilityOverrides(descriptor, AppProfile.mexa(normalizedOcl, resolveMexaPhoneType(platform)));
+        var apiHints = scanJarApiHints(descriptor);
+        if (hasMidxletProperties(descriptor) || apiHints.mexaApi() || looksLikeMexaOcl(normalizedOcl)) {
+            return applyDescriptorCapabilityOverrides(
+                    descriptor,
+                    AppProfile.mexa(profileApiLabel(normalizedOcl, "MEXA-API"), resolveMexaPhoneType(platform))
+            );
         }
-        if (isJskyFamily(ocl)) {
+        if (isJskyFamily(ocl) || apiHints.jPhoneApi() || apiHints.vodafoneApi()) {
             AppProfile profile;
             if (looksLikeMexaPlatform(platform) || looksLikeMexaVendor(descriptor) || looksLikeMexaOcl(normalizedOcl)) {
-                profile = AppProfile.mexa(normalizedOcl, resolveMexaPhoneType(platform));
-            } else if (looksLikeVodafonePlatform(platform) || looksLikeVodafoneVendor(descriptor)) {
-                profile = AppProfile.vodafone(normalizedOcl, resolveVodafonePhoneType(platform));
+                profile = AppProfile.mexa(profileApiLabel(normalizedOcl, "MEXA-API"), resolveMexaPhoneType(platform));
+            } else if (looksLikeVodafonePlatform(platform) || looksLikeVodafoneVendor(descriptor) || apiHints.vodafoneApi()) {
+                profile = AppProfile.vodafone(profileApiLabel(normalizedOcl, "VODAFONE-API"), resolveVodafonePhoneType(platform));
             } else if (looksLikeVodafoneOcl(normalizedOcl)) {
-                profile = AppProfile.vodafone(normalizedOcl, resolveVodafonePhoneType(platform));
+                profile = AppProfile.vodafone(profileApiLabel(normalizedOcl, "VODAFONE-API"), resolveVodafonePhoneType(platform));
             } else {
-                profile = AppProfile.jsky(normalizedOcl, resolveJskyPhoneType(platform));
+                profile = AppProfile.jsky(profileApiLabel(normalizedOcl, "JPHONE-API"), resolveJskyPhoneType(platform));
             }
             return applyDescriptorCapabilityOverrides(descriptor, profile);
         }
+        if (looksLikeMexaPlatform(platform) || looksLikeMexaVendor(descriptor)) {
+            return applyDescriptorCapabilityOverrides(
+                    descriptor,
+                    AppProfile.mexa(profileApiLabel(normalizedOcl, "MEXA-API"), resolveMexaPhoneType(platform))
+            );
+        }
+        if (looksLikeVodafonePlatform(platform) || looksLikeVodafoneVendor(descriptor)) {
+            return applyDescriptorCapabilityOverrides(
+                    descriptor,
+                    AppProfile.vodafone(profileApiLabel(normalizedOcl, "VODAFONE-API"), resolveVodafonePhoneType(platform))
+            );
+        }
         return AppProfile.generic();
+    }
+
+    private static String profileApiLabel(String normalizedOcl, String fallback) {
+        if (normalizedOcl == null || normalizedOcl.isBlank()) {
+            return fallback;
+        }
+        return normalizedOcl;
+    }
+
+    private static ApiHints scanJarApiHints(JadDescriptor descriptor) {
+        var jarPath = descriptor.resolveJarPath();
+        if (jarPath.isEmpty() || !Files.exists(jarPath.get())) {
+            return ApiHints.NONE;
+        }
+        var jPhoneApi = false;
+        var vodafoneApi = false;
+        var mexaApi = false;
+        try (var jarFile = new JarFile(jarPath.get().toFile())) {
+            var entries = jarFile.entries();
+            while (entries.hasMoreElements()) {
+                var entry = entries.nextElement();
+                if (entry.isDirectory() || !entry.getName().endsWith(".class")) {
+                    continue;
+                }
+                try (var inputStream = jarFile.getInputStream(entry)) {
+                    var classBytes = inputStream.readAllBytes();
+                    jPhoneApi |= containsAnyMarker(classBytes, JPHONE_API_MARKERS);
+                    vodafoneApi |= containsAnyMarker(classBytes, VODAFONE_API_MARKERS);
+                    mexaApi |= containsAnyMarker(classBytes, MEXA_API_MARKERS);
+                }
+                if (jPhoneApi && vodafoneApi && mexaApi) {
+                    break;
+                }
+            }
+        } catch (IOException | SecurityException ignored) {
+            return ApiHints.NONE;
+        }
+        return new ApiHints(jPhoneApi, vodafoneApi, mexaApi);
+    }
+
+    private static boolean containsAnyMarker(byte[] bytes, List<String> markers) {
+        for (var marker : markers) {
+            if (containsBytes(bytes, marker.getBytes(StandardCharsets.ISO_8859_1))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean containsBytes(byte[] bytes, byte[] marker) {
+        if (bytes == null || marker == null || marker.length == 0 || bytes.length < marker.length) {
+            return false;
+        }
+        var limit = bytes.length - marker.length;
+        for (var index = 0; index <= limit; index++) {
+            var matched = true;
+            for (var markerIndex = 0; markerIndex < marker.length; markerIndex++) {
+                if (bytes[index + markerIndex] != marker[markerIndex]) {
+                    matched = false;
+                    break;
+                }
+            }
+            if (matched) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static boolean hasMidxletProperties(JadDescriptor descriptor) {
@@ -153,6 +243,9 @@ public final class LaunchProfileResolver {
             return false;
         }
         var normalized = ocl.trim().toUpperCase(Locale.ROOT);
+        if (normalized.startsWith("MEXA")) {
+            return true;
+        }
         if (!normalized.startsWith("JSCL-")) {
             return false;
         }
@@ -345,5 +438,9 @@ public final class LaunchProfileResolver {
                 displayMetrics.width(),
                 displayMetrics.source() + " (WideScreen)"
         );
+    }
+
+    private record ApiHints(boolean jPhoneApi, boolean vodafoneApi, boolean mexaApi) {
+        private static final ApiHints NONE = new ApiHints(false, false, false);
     }
 }
