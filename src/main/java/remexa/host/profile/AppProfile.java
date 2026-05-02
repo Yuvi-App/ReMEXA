@@ -19,6 +19,7 @@ public record AppProfile(
             "microedition.platform",
             "microedition.configuration",
             "microedition.profiles",
+            "microedition.m3g.version",
             "jscl.system.mannermode",
             "jscl.system.offlinemode",
             "jscl.system.javasetting.volume",
@@ -56,7 +57,10 @@ public record AppProfile(
                 InputProfile.GENERIC,
                 new DisplayMetrics(240, 320, "Generic fallback"),
                 0,
-                Map.of("microedition.locale", configuredLocale())
+                Map.of(
+                        "microedition.locale", configuredLocale(),
+                        "microedition.m3g.version", "1.1"
+                )
         );
     }
 
@@ -125,6 +129,7 @@ public record AppProfile(
                 Map.entry("microedition.platform", platformName),
                 Map.entry("microedition.configuration", "CLDC-1.0"),
                 Map.entry("microedition.profiles", "MIDP-1.0"),
+                Map.entry("microedition.m3g.version", "1.1"),
                 Map.entry("jscl.system.mannermode", "false"),
                 Map.entry("jscl.system.offlinemode", "false"),
                 Map.entry("jscl.system.javasetting.volume", "5"),

@@ -59,6 +59,17 @@ public class Image {
         return createImage(1, 1);
     }
 
+    public static Image createImage(InputStream stream) throws IOException {
+        if (stream == null) {
+            throw new NullPointerException("stream");
+        }
+        var decoded = ImageIO.read(stream);
+        if (decoded == null) {
+            throw new IOException("Unsupported image format");
+        }
+        return new Image(decoded);
+    }
+
     public static Image createRGBImage(int[] rgb, int width, int height, boolean processAlpha) {
         if (rgb == null) {
             throw new NullPointerException("rgb");
