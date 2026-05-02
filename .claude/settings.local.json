@@ -1,7 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "mcp__binary_ninja_mcp__list_binaries"
-    ]
-  }
-}
