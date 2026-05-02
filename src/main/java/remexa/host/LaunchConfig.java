@@ -12,6 +12,7 @@ public final class LaunchConfig {
     public static final String FRAME_INTERVAL_PROPERTY = "remexa.frameIntervalMs";
     public static final String TOUCH_CONTROLS_PROPERTY = "remexa.touchControls";
     public static final String FLASH_BACKLIGHT_PROPERTY = "remexa.flashBacklight";
+    public static final String CAMERA_INPUT_MODE_PROPERTY = "remexa.cameraInputMode";
     public static final String LIVE_TRANSLATION_PROPERTY = "remexa.liveTranslation";
     public static final String DEEPL_API_PLAN_PROPERTY = "remexa.deeplApiPlan";
     public static final String DEEPL_API_KEY_PROPERTY = "remexa.deeplApiKey";
@@ -445,6 +446,55 @@ public final class LaunchConfig {
 
     public static void applyFlashBacklightEnabled(Boolean enabled) {
         System.setProperty(FLASH_BACKLIGHT_PROPERTY, Boolean.toString(enabled == null || enabled));
+    }
+
+    public enum CameraInputMode {
+        DISABLED("disabled", "Disabled"),
+        FILE_PICKER("file-picker", "File Picker (MVP)");
+
+        private final String id;
+        private final String label;
+
+        CameraInputMode(String id, String label) {
+            this.id = id;
+            this.label = label;
+        }
+
+        public String id() {
+            return id;
+        }
+
+        @Override
+        public String toString() {
+            return label;
+        }
+
+        public static CameraInputMode fromId(String candidate) {
+            if (candidate == null) {
+                return null;
+            }
+            var normalized = candidate.trim().toLowerCase(Locale.ROOT);
+            for (var mode : values()) {
+                if (mode.id.equals(normalized) || mode.label.toLowerCase(Locale.ROOT).equals(normalized)) {
+                    return mode;
+                }
+            }
+            return null;
+        }
+
+        public static CameraInputMode normalize(String candidate) {
+            var mode = fromId(candidate);
+            return mode == null ? FILE_PICKER : mode;
+        }
+
+        public static CameraInputMode resolveConfigured() {
+            return normalize(System.getProperty(CAMERA_INPUT_MODE_PROPERTY, FILE_PICKER.id));
+        }
+    }
+
+    public static void applyCameraInputMode(CameraInputMode mode) {
+        var resolved = mode == null ? CameraInputMode.FILE_PICKER : mode;
+        System.setProperty(CAMERA_INPUT_MODE_PROPERTY, resolved.id());
     }
 
     public static boolean resolveConfiguredLiveTranslationEnabled() {

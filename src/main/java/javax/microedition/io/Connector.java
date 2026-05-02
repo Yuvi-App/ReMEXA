@@ -53,6 +53,9 @@ public final class Connector {
         if ("jar".equals(scheme)) {
             return new JarStoreConnection(target);
         }
+        if ("camera".equals(scheme)) {
+            return new com.j_phone.io.HostedCameraConnection();
+        }
         if ("file".equals(scheme)) {
             return new FileStorageConnection(target, mode);
         }

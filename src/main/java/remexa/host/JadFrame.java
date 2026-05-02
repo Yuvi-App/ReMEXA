@@ -5,33 +5,41 @@ import java.awt.AlphaComposite;
 import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Dimension;
+import java.awt.FileDialog;
 import java.awt.Font;
 import java.awt.FontMetrics;
+import java.awt.Frame;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
 import java.awt.Image;
+import java.awt.Dialog;
 import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.GridLayout;
 import java.awt.RenderingHints;
+import java.awt.image.BufferedImage;
 import java.io.IOException;
+import java.nio.file.Path;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
+import javax.imageio.ImageIO;
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
 import javax.swing.JComponent;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JDialog;
+import javax.swing.ImageIcon;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
@@ -48,6 +56,8 @@ import javax.swing.text.AttributeSet;
 import javax.swing.text.PlainDocument;
 import javax.swing.text.JTextComponent;
 import javax.microedition.lcdui.Command;
+import remexa.host.input.HostCameraCaptureRequest;
+import remexa.host.input.HostCameraCaptureResult;
 import remexa.host.input.HostKeyMapper;
 import remexa.host.input.HostTextInputRequest;
 import remexa.host.input.InputProfile;
@@ -202,6 +212,44 @@ public final class JadFrame extends JFrame {
         } catch (java.util.concurrent.ExecutionException exception) {
             return new HostTextInputRequest.Result(resolvedRequest.initialText(), false);
         }
+    }
+
+    public HostCameraCaptureResult requestCameraCapture(HostCameraCaptureRequest request) {
+        var resolvedRequest = request == null
+                ? new HostCameraCaptureRequest("Camera", 240, 320, "jpeg", false)
+                : request;
+        if (disposed.get()) {
+            return HostCameraCaptureResult.cancelled();
+        }
+
+        var result = new AtomicReference<>(HostCameraCaptureResult.cancelled());
+        Runnable showTask = () -> {
+            if (disposed.get() || activeTextInput != null || activeHostedVideo != null) {
+                result.set(HostCameraCaptureResult.cancelled());
+                return;
+            }
+            setHostInputBindingsEnabled(false);
+            refreshSoftKeyLabels();
+            try {
+                result.set(showCameraCaptureDialog(resolvedRequest));
+            } finally {
+                setHostInputBindingsEnabled(true);
+                refreshSoftKeyLabels();
+                getRootPane().requestFocusInWindow();
+            }
+        };
+
+        if (SwingUtilities.isEventDispatchThread()) {
+            showTask.run();
+            return result.get();
+        }
+
+        try {
+            SwingUtilities.invokeAndWait(showTask);
+        } catch (Exception exception) {
+            return HostCameraCaptureResult.cancelled();
+        }
+        return result.get();
     }
 
     public void playHostedVideoBlocking(java.nio.file.Path mediaPath) throws IOException {
@@ -915,6 +963,175 @@ public final class JadFrame extends JFrame {
         } else {
             session.completion().completeExceptionally(error);
         }
+    }
+
+    private HostCameraCaptureResult showCameraCaptureDialog(HostCameraCaptureRequest request) {
+        var dialog = new JDialog(this, request.title(), true);
+        dialog.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
+
+        var content = new JPanel(new BorderLayout(0, 14));
+        content.setBackground(RemexaTheme.CARD_BACKGROUND);
+        content.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(RemexaTheme.CARD_BORDER, 1),
+                new EmptyBorder(16, 16, 16, 16)
+        ));
+
+        var titleLabel = new JLabel(request.title());
+        titleLabel.setForeground(RemexaTheme.TEXT_PRIMARY);
+        titleLabel.setFont(new Font(Font.DIALOG, Font.BOLD, 16));
+        content.add(titleLabel, BorderLayout.NORTH);
+
+        var previewLabel = new JLabel("Choose an image to use as the captured photo.", SwingConstants.CENTER);
+        previewLabel.setOpaque(true);
+        previewLabel.setBackground(RemexaTheme.EDITOR_BACKGROUND);
+        previewLabel.setForeground(RemexaTheme.TEXT_SECONDARY);
+        previewLabel.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(RemexaTheme.CARD_BORDER, 1),
+                new EmptyBorder(12, 12, 12, 12)
+        ));
+        previewLabel.setPreferredSize(new Dimension(320, 240));
+        previewLabel.setVerticalTextPosition(SwingConstants.BOTTOM);
+        previewLabel.setHorizontalTextPosition(SwingConstants.CENTER);
+
+        String overlayLine = request.frameOverlayPresent()
+                ? "Frame overlay will be applied to the final image."
+                : "No frame overlay will be applied.";
+        var detailsLabel = new JLabel(
+                "<html><div style='width:320px;'>Target output: <b>"
+                        + request.targetWidth() + "x" + request.targetHeight()
+                        + "</b> in <b>" + request.format().toUpperCase() + "</b> format.<br><br>"
+                        + overlayLine
+                        + "</div></html>"
+        );
+        detailsLabel.setForeground(RemexaTheme.TEXT_SECONDARY);
+        detailsLabel.setFont(new Font(Font.DIALOG, Font.PLAIN, 13));
+
+        var body = new JPanel(new BorderLayout(0, 12));
+        body.setOpaque(false);
+        body.add(previewLabel, BorderLayout.CENTER);
+        body.add(detailsLabel, BorderLayout.SOUTH);
+        content.add(body, BorderLayout.CENTER);
+
+        var selectedPath = new AtomicReference<Path>();
+        var footer = new JPanel(new BorderLayout(8, 0));
+        footer.setOpaque(false);
+
+        var chooseButton = new JButton("Choose Image...");
+        chooseButton.setFocusable(false);
+        styleOverlayButton(chooseButton, false);
+
+        var buttonRow = new JPanel(new GridLayout(1, 3, 8, 0));
+        buttonRow.setOpaque(false);
+        var cancelButton = new JButton("Cancel");
+        cancelButton.setFocusable(false);
+        styleOverlayButton(cancelButton, false);
+        var captureButton = new JButton("Capture");
+        captureButton.setFocusable(false);
+        captureButton.setEnabled(false);
+        styleOverlayButton(captureButton, true);
+        buttonRow.add(chooseButton);
+        buttonRow.add(cancelButton);
+        buttonRow.add(captureButton);
+        footer.add(buttonRow, BorderLayout.EAST);
+        content.add(footer, BorderLayout.SOUTH);
+
+        chooseButton.addActionListener(event -> {
+            var chosen = chooseCameraImageFile(dialog);
+            if (chosen == null) {
+                return;
+            }
+            try {
+                var preview = ImageIO.read(chosen.toFile());
+                if (preview == null) {
+                    previewLabel.setIcon(null);
+                    previewLabel.setText("That file could not be decoded as an image.");
+                    previewLabel.setForeground(new Color(148, 72, 52));
+                    selectedPath.set(null);
+                    captureButton.setEnabled(false);
+                    return;
+                }
+                selectedPath.set(chosen);
+                previewLabel.setForeground(RemexaTheme.TEXT_PRIMARY);
+                previewLabel.setText("<html><div style='text-align:center;'>" + chosen.getFileName() + "</div></html>");
+                previewLabel.setIcon(createCameraPreviewIcon(preview, 296, 184));
+                captureButton.setEnabled(true);
+            } catch (IOException exception) {
+                previewLabel.setIcon(null);
+                previewLabel.setText("Unable to open the selected image.");
+                previewLabel.setForeground(new Color(148, 72, 52));
+                selectedPath.set(null);
+                captureButton.setEnabled(false);
+            }
+        });
+
+        final HostCameraCaptureResult[] result = new HostCameraCaptureResult[]{HostCameraCaptureResult.cancelled()};
+        cancelButton.addActionListener(event -> {
+            result[0] = HostCameraCaptureResult.cancelled();
+            dialog.dispose();
+        });
+        captureButton.addActionListener(event -> {
+            var chosen = selectedPath.get();
+            result[0] = chosen == null
+                    ? HostCameraCaptureResult.cancelled()
+                    : new HostCameraCaptureResult(chosen, true);
+            dialog.dispose();
+        });
+
+        dialog.setContentPane(content);
+        dialog.pack();
+        dialog.setResizable(false);
+        dialog.setLocationRelativeTo(this);
+        SwingUtilities.invokeLater(chooseButton::requestFocusInWindow);
+        dialog.setVisible(true);
+        return result[0];
+    }
+
+    private static Path chooseCameraImageFile(java.awt.Window owner) {
+        FileDialog dialog;
+        if (owner instanceof Dialog dialogOwner) {
+            dialog = new FileDialog(dialogOwner, "Choose Camera Image", FileDialog.LOAD);
+        } else if (owner instanceof Frame frameOwner) {
+            dialog = new FileDialog(frameOwner, "Choose Camera Image", FileDialog.LOAD);
+        } else {
+            dialog = new FileDialog((Frame) null, "Choose Camera Image", FileDialog.LOAD);
+        }
+        dialog.setDirectory(Path.of(System.getProperty("user.home")).toString());
+        dialog.setFilenameFilter((directory, name) -> {
+            if (name == null) {
+                return false;
+            }
+            var lower = name.toLowerCase();
+            return lower.endsWith(".png")
+                    || lower.endsWith(".jpg")
+                    || lower.endsWith(".jpeg")
+                    || lower.endsWith(".gif")
+                    || lower.endsWith(".bmp");
+        });
+        dialog.setVisible(true);
+        if (dialog.getFile() == null || dialog.getDirectory() == null) {
+            return null;
+        }
+        return Path.of(dialog.getDirectory(), dialog.getFile()).toAbsolutePath().normalize();
+    }
+
+    private static ImageIcon createCameraPreviewIcon(BufferedImage source, int maxWidth, int maxHeight) {
+        double scale = Math.min(
+                (double) maxWidth / Math.max(1, source.getWidth()),
+                (double) maxHeight / Math.max(1, source.getHeight())
+        );
+        scale = Math.min(1.0, scale);
+        int targetWidth = Math.max(1, (int) Math.round(source.getWidth() * scale));
+        int targetHeight = Math.max(1, (int) Math.round(source.getHeight() * scale));
+        var scaled = new BufferedImage(targetWidth, targetHeight, BufferedImage.TYPE_INT_ARGB);
+        var graphics = scaled.createGraphics();
+        try {
+            graphics.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+            graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+            graphics.drawImage(source, 0, 0, targetWidth, targetHeight, null);
+        } finally {
+            graphics.dispose();
+        }
+        return new ImageIcon(scaled);
     }
 
     private JComponent createEditorHost(HostTextInputRequest request, JTextComponent editor) {

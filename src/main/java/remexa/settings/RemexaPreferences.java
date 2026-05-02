@@ -20,6 +20,7 @@ public final class RemexaPreferences {
     public static final String FRAME_RATE_KEY = "frameRate";
     public static final String TOUCH_CONTROLS_ENABLED_KEY = "touchControlsEnabled";
     public static final String FLASH_BACKLIGHT_ENABLED_KEY = "flashBacklightEnabled";
+    public static final String CAMERA_INPUT_MODE_KEY = "cameraInputMode";
     public static final String LIVE_TRANSLATION_ENABLED_KEY = "liveTranslationEnabled";
     public static final String DEEPL_API_PLAN_KEY = "deeplApiPlan";
     public static final String DEEPL_API_KEY_KEY = "deeplApiKey";

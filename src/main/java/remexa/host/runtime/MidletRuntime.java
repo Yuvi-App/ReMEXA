@@ -20,6 +20,8 @@ import javax.microedition.lcdui.Screen;
 import javax.microedition.midlet.MIDlet;
 import remexa.host.JadFrame;
 import remexa.host.LaunchConfig;
+import remexa.host.input.HostCameraCaptureRequest;
+import remexa.host.input.HostCameraCaptureResult;
 import remexa.host.input.HostTextInputRequest;
 import remexa.host.jad.JadDescriptor;
 import remexa.host.profile.DisplayMetrics;
@@ -184,6 +186,17 @@ public final class MidletRuntime {
             return hostFrame.requestTextInputResult(resolvedRequest);
         }
         return new HostTextInputRequest.Result(requestTextInput(resolvedRequest), true);
+    }
+
+    public static HostCameraCaptureResult requestCameraCaptureResult(HostCameraCaptureRequest request) {
+        var resolvedRequest = request == null
+                ? new HostCameraCaptureRequest("Camera", 240, 320, "jpeg", false)
+                : request;
+        var hostFrame = currentHostFrame();
+        if (hostFrame != null) {
+            return hostFrame.requestCameraCapture(resolvedRequest);
+        }
+        return HostCameraCaptureResult.cancelled();
     }
 
     public static boolean flashBacklight(MIDlet midlet, int duration) {

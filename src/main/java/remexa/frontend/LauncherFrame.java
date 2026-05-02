@@ -329,6 +329,25 @@ public final class LauncherFrame extends JFrame {
             );
         });
         phoneFeaturesMenu.add(flashBacklightItem);
+        var cameraMenu = new JMenu("Camera");
+        styleMenu(cameraMenu);
+        var cameraGroup = new ButtonGroup();
+        for (var cameraMode : LaunchConfig.CameraInputMode.values()) {
+            var cameraItem = new JRadioButtonMenuItem(cameraMode.toString(), HostUiSettings.cameraInputMode() == cameraMode);
+            styleMenuItem(cameraItem);
+            cameraGroup.add(cameraItem);
+            cameraItem.addActionListener(event -> {
+                HostUiSettings.setCameraInputMode(cameraMode);
+                LaunchConfig.applyCameraInputMode(cameraMode);
+                DebugLog.log(
+                        LogCategory.FRONTEND,
+                        LauncherFrame.class.getName(),
+                        "Camera input mode set to " + cameraMode.id()
+                );
+            });
+            cameraMenu.add(cameraItem);
+        }
+        phoneFeaturesMenu.add(cameraMenu);
         settingsMenu.add(phoneFeaturesMenu);
 
         var audioMenu = new JMenu("Audio");

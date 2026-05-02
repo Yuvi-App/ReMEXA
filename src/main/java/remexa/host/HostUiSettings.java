@@ -124,6 +124,20 @@ public final class HostUiSettings {
         RemexaPreferences.ui().putBoolean(RemexaPreferences.FLASH_BACKLIGHT_ENABLED_KEY, enabled);
     }
 
+    public static LaunchConfig.CameraInputMode cameraInputMode() {
+        return LaunchConfig.CameraInputMode.normalize(
+                RemexaPreferences.ui().get(
+                        RemexaPreferences.CAMERA_INPUT_MODE_KEY,
+                        LaunchConfig.CameraInputMode.FILE_PICKER.id()
+                )
+        );
+    }
+
+    public static void setCameraInputMode(LaunchConfig.CameraInputMode mode) {
+        var resolved = mode == null ? LaunchConfig.CameraInputMode.FILE_PICKER : mode;
+        RemexaPreferences.ui().put(RemexaPreferences.CAMERA_INPUT_MODE_KEY, resolved.id());
+    }
+
     public static boolean liveTranslationEnabled() {
         return RemexaPreferences.ui().getBoolean(RemexaPreferences.LIVE_TRANSLATION_ENABLED_KEY, false);
     }

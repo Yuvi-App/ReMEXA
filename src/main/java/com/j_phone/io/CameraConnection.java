@@ -1,13 +1,13 @@
 package com.j_phone.io;
 
 public interface CameraConnection extends com.j_phone.io.OpticalDeviceConnection {
-    public static final int CHKTYPE_FORMAT_JPEG = 0;
-    public static final int CHKTYPE_FORMAT_PNG = 0;
-    public static final int QUALITY_NORMAL = 0;
-    public static final int QUALITY_FINE = 0;
-    public static final int QUALITY_SUPERFINE = 0;
-    public static final int FORMAT_JPEG = 0;
-    public static final int FORMAT_PNG = 0;
+    public static final int CHKTYPE_FORMAT_JPEG = 1;
+    public static final int CHKTYPE_FORMAT_PNG = 16;
+    public static final int QUALITY_NORMAL = 1;
+    public static final int QUALITY_FINE = 2;
+    public static final int QUALITY_SUPERFINE = 3;
+    public static final int FORMAT_JPEG = 1;
+    public static final int FORMAT_PNG = 2;
 
     public boolean isSupported (int chkType) throws java.lang.IllegalArgumentException;
     public int countAvailablePictureSizes ();
