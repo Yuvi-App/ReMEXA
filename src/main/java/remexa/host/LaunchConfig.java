@@ -9,6 +9,7 @@ public final class LaunchConfig {
     public static final String MEXA_PHONE_TYPE_PROPERTY = "remexa.mexaPhoneType";
     public static final String SMAF_SYNTH_PROPERTY = "remexa.smafSynth";
     public static final String HOST_SCALE_PROPERTY = "remexa.hostScale";
+    public static final String FRAME_INTERVAL_PROPERTY = "remexa.frameIntervalMs";
     public static final String TOUCH_CONTROLS_PROPERTY = "remexa.touchControls";
     public static final String FLASH_BACKLIGHT_PROPERTY = "remexa.flashBacklight";
     public static final String LIVE_TRANSLATION_PROPERTY = "remexa.liveTranslation";
@@ -332,6 +333,102 @@ public final class LaunchConfig {
     public static void applyHostScale(Integer hostScale) {
         var resolved = hostScale == null ? 3 : clampHostScale(hostScale);
         System.setProperty(HOST_SCALE_PROPERTY, Integer.toString(resolved));
+    }
+
+    public enum FrameRateOption {
+        UNCAPPED("uncapped", "Uncapped", 0),
+        FPS_5("5", "5 FPS", 200),
+        FPS_10("10", "10 FPS", 100),
+        FPS_15("15", "15 FPS", 67),
+        FPS_20("20", "20 FPS", 50),
+        FPS_30("30", "30 FPS", 33),
+        FPS_60("60", "60 FPS", 17);
+
+        private final String id;
+        private final String label;
+        private final int frameIntervalMs;
+
+        FrameRateOption(String id, String label, int frameIntervalMs) {
+            this.id = id;
+            this.label = label;
+            this.frameIntervalMs = frameIntervalMs;
+        }
+
+        public String id() {
+            return id;
+        }
+
+        public int frameIntervalMs() {
+            return frameIntervalMs;
+        }
+
+        @Override
+        public String toString() {
+            return label;
+        }
+
+        public static FrameRateOption fromId(String candidate) {
+            if (candidate == null) {
+                return null;
+            }
+            var normalized = candidate.trim().toLowerCase(Locale.ROOT);
+            for (var option : values()) {
+                if (option.id.equals(normalized) || option.label.toLowerCase(Locale.ROOT).equals(normalized)) {
+                    return option;
+                }
+            }
+            return null;
+        }
+
+        public static FrameRateOption fromFrameIntervalMs(int frameIntervalMs) {
+            for (var option : values()) {
+                if (option.frameIntervalMs == frameIntervalMs) {
+                    return option;
+                }
+            }
+            return frameIntervalMs <= 0 ? UNCAPPED : FPS_20;
+        }
+
+        public static FrameRateOption normalize(String candidate) {
+            var option = fromId(candidate);
+            return option == null ? FPS_20 : option;
+        }
+
+        public static FrameRateOption resolveConfigured() {
+            var configured = System.getProperty(FRAME_INTERVAL_PROPERTY);
+            if (configured != null && !configured.isBlank()) {
+                var parsed = parseFrameRateOption(configured);
+                if (parsed != null) {
+                    return parsed;
+                }
+            }
+            return FPS_20;
+        }
+    }
+
+    public static FrameRateOption parseFrameRateOption(String candidate) {
+        if (candidate == null) {
+            return null;
+        }
+        var option = FrameRateOption.fromId(candidate);
+        if (option != null) {
+            return option;
+        }
+        try {
+            var parsed = Integer.parseInt(candidate.trim());
+            return FrameRateOption.fromFrameIntervalMs(parsed);
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
+    public static void applyFrameRateOption(FrameRateOption option) {
+        var resolved = option == null ? FrameRateOption.FPS_20 : option;
+        System.setProperty(FRAME_INTERVAL_PROPERTY, Integer.toString(resolved.frameIntervalMs()));
+    }
+
+    public static long resolveConfiguredFrameIntervalNanos() {
+        return (long) FrameRateOption.resolveConfigured().frameIntervalMs() * 1_000_000L;
     }
 
     public static boolean resolveConfiguredTouchControlsEnabled() {

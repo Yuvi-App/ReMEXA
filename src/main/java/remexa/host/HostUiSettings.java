@@ -94,6 +94,20 @@ public final class HostUiSettings {
         );
     }
 
+    public static LaunchConfig.FrameRateOption frameRateOption() {
+        return LaunchConfig.FrameRateOption.normalize(
+                RemexaPreferences.ui().get(
+                        RemexaPreferences.FRAME_RATE_KEY,
+                        LaunchConfig.FrameRateOption.FPS_20.id()
+                )
+        );
+    }
+
+    public static void setFrameRateOption(LaunchConfig.FrameRateOption option) {
+        var resolved = option == null ? LaunchConfig.FrameRateOption.FPS_20 : option;
+        RemexaPreferences.ui().put(RemexaPreferences.FRAME_RATE_KEY, resolved.id());
+    }
+
     public static boolean touchControlsEnabled() {
         return RemexaPreferences.ui().getBoolean(RemexaPreferences.TOUCH_CONTROLS_ENABLED_KEY, false);
     }

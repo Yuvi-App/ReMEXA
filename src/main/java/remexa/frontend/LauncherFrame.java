@@ -214,6 +214,28 @@ public final class LauncherFrame extends JFrame {
             hostScaleMenu.add(scaleItem);
         }
         displayMenu.add(hostScaleMenu);
+        var frameRateMenu = new JMenu("Frame Rate");
+        styleMenu(frameRateMenu);
+        var frameRateGroup = new ButtonGroup();
+        for (var frameRateOption : LaunchConfig.FrameRateOption.values()) {
+            var frameRateItem = new JRadioButtonMenuItem(
+                    frameRateOption.toString(),
+                    HostUiSettings.frameRateOption() == frameRateOption
+            );
+            styleMenuItem(frameRateItem);
+            frameRateGroup.add(frameRateItem);
+            frameRateItem.addActionListener(event -> {
+                HostUiSettings.setFrameRateOption(frameRateOption);
+                LaunchConfig.applyFrameRateOption(frameRateOption);
+                DebugLog.log(
+                        LogCategory.FRONTEND,
+                        LauncherFrame.class.getName(),
+                        "Frame rate set to " + frameRateOption.id()
+                );
+            });
+            frameRateMenu.add(frameRateItem);
+        }
+        displayMenu.add(frameRateMenu);
         settingsMenu.add(displayMenu);
 
         var deviceMenu = new JMenu("Device");

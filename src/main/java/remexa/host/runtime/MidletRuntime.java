@@ -30,7 +30,6 @@ import remexa.probes.LogCategory;
 
 public final class MidletRuntime {
     private static final DisplayMetrics DEFAULT_DISPLAY = new DisplayMetrics(240, 320, "MIDP default");
-    private static final long FRAME_INTERVAL_NS = resolveFrameIntervalNanos();
     private static final Map<Canvas, Long> NEXT_FRAME_DEADLINE_NS = Collections.synchronizedMap(new WeakHashMap<>());
     private static final ThreadLocal<LaunchContext> CURRENT_CONTEXT = new ThreadLocal<>();
     private static final ThreadLocal<javax.microedition.lcdui.Graphics> CURRENT_GRAPHICS = new ThreadLocal<>();
@@ -44,28 +43,8 @@ public final class MidletRuntime {
     private static final StackWalker APP_CLASS_LOADER_WALKER =
             StackWalker.getInstance(StackWalker.Option.RETAIN_CLASS_REFERENCE);
 
-    // Original J3D-capable J-Phone/Vodafone handsets ran 3D titles at ~20 FPS;
-    // most legacy frame loops were paced by paint cost rather than a clock.
-    // Capping non-sprite Canvas repaint presentation to ~50ms/frame (20 FPS)
-    // prevents these games from running uncapped on modern hardware.
-    // Override via -Dremexa.frameIntervalMs.
-    private static final String FRAME_INTERVAL_PROPERTY = "remexa.frameIntervalMs";
-    private static final long DEFAULT_FRAME_INTERVAL_NS = 50_000_000L;
 
     private MidletRuntime() {
-    }
-
-    private static long resolveFrameIntervalNanos() {
-        var configured = System.getProperty(FRAME_INTERVAL_PROPERTY);
-        if (configured == null || configured.isBlank()) {
-            return DEFAULT_FRAME_INTERVAL_NS;
-        }
-        try {
-            var ms = Long.parseLong(configured.trim());
-            return Math.max(0L, ms) * 1_000_000L;
-        } catch (NumberFormatException ignored) {
-            return DEFAULT_FRAME_INTERVAL_NS;
-        }
     }
 
     public static void beginInstantiation(
@@ -343,7 +322,9 @@ public final class MidletRuntime {
     }
 
     private static void paceFrame(Canvas canvas) {
-        if (FRAME_INTERVAL_NS <= 0L) {
+        var frameIntervalNs = LaunchConfig.resolveConfiguredFrameIntervalNanos();
+        if (frameIntervalNs <= 0L) {
+            NEXT_FRAME_DEADLINE_NS.remove(canvas);
             return;
         }
         var now = System.nanoTime();
@@ -364,10 +345,10 @@ public final class MidletRuntime {
         }
         // Anchor the next deadline on the previous one when we're running on time;
         // if we fell behind by more than a frame, restart from now to avoid catch-up bursts.
-        var nextAnchor = deadline == null || now - deadline > FRAME_INTERVAL_NS
+        var nextAnchor = deadline == null || now - deadline > frameIntervalNs
                 ? now
                 : deadline;
-        NEXT_FRAME_DEADLINE_NS.put(canvas, nextAnchor + FRAME_INTERVAL_NS);
+        NEXT_FRAME_DEADLINE_NS.put(canvas, nextAnchor + frameIntervalNs);
     }
 
     public static void createSpriteFrameBuffer(Displayable displayable, int width, int height) {

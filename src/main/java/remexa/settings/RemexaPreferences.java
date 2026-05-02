@@ -17,6 +17,7 @@ public final class RemexaPreferences {
     public static final String MEXA_PHONE_TYPE_KEY = "mexaPhoneType";
     public static final String SMAF_SYNTH_TYPE_KEY = "smafSynthType";
     public static final String HOST_SCALE_KEY = "hostScale";
+    public static final String FRAME_RATE_KEY = "frameRate";
     public static final String TOUCH_CONTROLS_ENABLED_KEY = "touchControlsEnabled";
     public static final String FLASH_BACKLIGHT_ENABLED_KEY = "flashBacklightEnabled";
     public static final String LIVE_TRANSLATION_ENABLED_KEY = "liveTranslationEnabled";
