@@ -122,7 +122,6 @@ public final class DisplaySurfaceState {
     }
 
     public synchronized void presentFrameBuffer(int tx, int ty) {
-        clear(displayImage);
         var source = frameBuffer == null ? virtualImage : frameBuffer;
         if (source == null) {
             return;
