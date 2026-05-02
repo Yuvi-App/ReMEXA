@@ -10,7 +10,10 @@ import java.io.OutputStream;
 import java.io.RandomAccessFile;
 import java.io.ByteArrayInputStream;
 import java.net.HttpURLConnection;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.URL;
+import java.awt.Desktop;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -18,6 +21,7 @@ import java.util.Locale;
 import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
+import com.j_phone.io.BrowserConnection;
 import com.j_phone.io.InputRandomAccess;
 import com.j_phone.io.StorageConnection;
 import javax.microedition.rms.RecordStore;
@@ -55,6 +59,9 @@ public final class Connector {
         }
         if ("camera".equals(scheme)) {
             return new com.j_phone.io.HostedCameraConnection();
+        }
+        if ("url".equals(scheme) || "urls".equals(scheme)) {
+            return new BrowserConnectionAdapter(target);
         }
         if ("file".equals(scheme)) {
             return new FileStorageConnection(target, mode);
@@ -156,6 +163,48 @@ public final class Connector {
                 throw new IOException("Missing resource: " + resourceName);
             }
             return wrapLegacyResourceStream(input);
+        }
+
+        @Override
+        public void close() {
+            closed = true;
+        }
+
+        private void ensureOpen() throws IOException {
+            if (closed) {
+                throw new IOException("Connection is closed.");
+            }
+        }
+    }
+
+    private static final class BrowserConnectionAdapter implements BrowserConnection {
+        private final String target;
+        private boolean closed;
+        private boolean connected;
+
+        private BrowserConnectionAdapter(String target) {
+            this.target = target;
+        }
+
+        @Override
+        public void connect() throws IOException {
+            ensureOpen();
+            String resolvedUrl = switch (extractScheme(target)) {
+                case "url" -> "http:" + target.substring("url:".length());
+                case "urls" -> "https:" + target.substring("urls:".length());
+                default -> throw new IOException("Unsupported browser target: " + target);
+            };
+
+            if (!Desktop.isDesktopSupported() || !Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
+                throw new IOException("Platform browsing is not supported: " + resolvedUrl);
+            }
+
+            try {
+                Desktop.getDesktop().browse(new URI(resolvedUrl));
+                connected = true;
+            } catch (IllegalArgumentException | SecurityException | URISyntaxException exception) {
+                throw new IOException("Platform cannot handle URL: " + resolvedUrl, exception);
+            }
         }
 
         @Override
