@@ -7,6 +7,7 @@ import java.awt.Rectangle;
 import java.awt.RenderingHints;
 import java.awt.geom.AffineTransform;
 import java.awt.image.BufferedImage;
+import remexa.host.translate.AutoTranslate;
 
 public class Graphics {
     public static final int HCENTER = 1;
@@ -153,7 +154,7 @@ public class Graphics {
     }
 
     public void drawString(String string, int x, int y, int anchor) {
-        var text = string == null ? "" : string;
+        var text = AutoTranslate.translateForRender(string == null ? "" : string);
         var drawX = anchoredX(x + translateX, anchor, font.stringWidth(text));
         var drawY = anchoredY(y + translateY, anchor, font.getAscent(), font.getHeight());
         font.drawString(delegate, text, drawX, drawY, argbColor);

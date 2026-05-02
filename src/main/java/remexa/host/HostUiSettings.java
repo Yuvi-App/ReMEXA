@@ -110,6 +110,55 @@ public final class HostUiSettings {
         RemexaPreferences.ui().putBoolean(RemexaPreferences.FLASH_BACKLIGHT_ENABLED_KEY, enabled);
     }
 
+    public static boolean liveTranslationEnabled() {
+        return RemexaPreferences.ui().getBoolean(RemexaPreferences.LIVE_TRANSLATION_ENABLED_KEY, false);
+    }
+
+    public static void setLiveTranslationEnabled(boolean enabled) {
+        RemexaPreferences.ui().putBoolean(RemexaPreferences.LIVE_TRANSLATION_ENABLED_KEY, enabled);
+    }
+
+    public static LaunchConfig.DeepLApiPlan deepLApiPlan() {
+        return LaunchConfig.DeepLApiPlan.normalize(
+                RemexaPreferences.ui().get(
+                        RemexaPreferences.DEEPL_API_PLAN_KEY,
+                        LaunchConfig.DeepLApiPlan.FREE.id()
+                )
+        );
+    }
+
+    public static void setDeepLApiPlan(LaunchConfig.DeepLApiPlan plan) {
+        var resolved = plan == null ? LaunchConfig.DeepLApiPlan.FREE : plan;
+        RemexaPreferences.ui().put(RemexaPreferences.DEEPL_API_PLAN_KEY, resolved.id());
+    }
+
+    public static String deepLApiKey() {
+        return LaunchConfig.normalizeDeepLApiKey(
+                RemexaPreferences.ui().get(RemexaPreferences.DEEPL_API_KEY_KEY, "")
+        );
+    }
+
+    public static void setDeepLApiKey(String apiKey) {
+        RemexaPreferences.ui().put(
+                RemexaPreferences.DEEPL_API_KEY_KEY,
+                LaunchConfig.normalizeDeepLApiKey(apiKey)
+        );
+    }
+
+    public static LaunchConfig.TranslationTargetLanguage translationTargetLanguage() {
+        return LaunchConfig.TranslationTargetLanguage.normalize(
+                RemexaPreferences.ui().get(
+                        RemexaPreferences.DEEPL_TARGET_LANGUAGE_KEY,
+                        LaunchConfig.TranslationTargetLanguage.ENGLISH_US.code()
+                )
+        );
+    }
+
+    public static void setTranslationTargetLanguage(LaunchConfig.TranslationTargetLanguage language) {
+        var resolved = language == null ? LaunchConfig.TranslationTargetLanguage.ENGLISH_US : language;
+        RemexaPreferences.ui().put(RemexaPreferences.DEEPL_TARGET_LANGUAGE_KEY, resolved.code());
+    }
+
     public static LaunchConfig.BluetoothBackend bluetoothBackend() {
         return LaunchConfig.BluetoothBackend.normalize(
                 RemexaPreferences.ui().get(

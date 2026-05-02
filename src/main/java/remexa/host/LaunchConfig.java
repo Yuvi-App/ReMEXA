@@ -11,6 +11,10 @@ public final class LaunchConfig {
     public static final String HOST_SCALE_PROPERTY = "remexa.hostScale";
     public static final String TOUCH_CONTROLS_PROPERTY = "remexa.touchControls";
     public static final String FLASH_BACKLIGHT_PROPERTY = "remexa.flashBacklight";
+    public static final String LIVE_TRANSLATION_PROPERTY = "remexa.liveTranslation";
+    public static final String DEEPL_API_PLAN_PROPERTY = "remexa.deeplApiPlan";
+    public static final String DEEPL_API_KEY_PROPERTY = "remexa.deeplApiKey";
+    public static final String DEEPL_TARGET_LANGUAGE_PROPERTY = "remexa.deeplTargetLanguage";
     public static final String BLUETOOTH_BACKEND_PROPERTY = "remexa.bluetoothBackend";
     public static final String BLUETOOTH_ROLE_PROPERTY = "remexa.bluetoothRole";
     public static final String BLUETOOTH_LOCAL_NAME_PROPERTY = "remexa.bluetoothLocalName";
@@ -344,6 +348,142 @@ public final class LaunchConfig {
 
     public static void applyFlashBacklightEnabled(Boolean enabled) {
         System.setProperty(FLASH_BACKLIGHT_PROPERTY, Boolean.toString(enabled == null || enabled));
+    }
+
+    public static boolean resolveConfiguredLiveTranslationEnabled() {
+        return Boolean.parseBoolean(System.getProperty(LIVE_TRANSLATION_PROPERTY, Boolean.FALSE.toString()));
+    }
+
+    public static void applyLiveTranslationEnabled(Boolean enabled) {
+        System.setProperty(LIVE_TRANSLATION_PROPERTY, Boolean.toString(enabled != null && enabled));
+    }
+
+    public enum DeepLApiPlan {
+        FREE("free", "Free API", "https://api-free.deepl.com/v2/translate"),
+        PRO("pro", "Pro API", "https://api.deepl.com/v2/translate");
+
+        private final String id;
+        private final String label;
+        private final String endpoint;
+
+        DeepLApiPlan(String id, String label, String endpoint) {
+            this.id = id;
+            this.label = label;
+            this.endpoint = endpoint;
+        }
+
+        public String id() {
+            return id;
+        }
+
+        public String endpoint() {
+            return endpoint;
+        }
+
+        @Override
+        public String toString() {
+            return label;
+        }
+
+        public static DeepLApiPlan fromId(String candidate) {
+            if (candidate == null) {
+                return null;
+            }
+            var normalized = candidate.trim().toLowerCase(Locale.ROOT);
+            for (var plan : values()) {
+                if (plan.id.equals(normalized) || plan.label.toLowerCase(Locale.ROOT).equals(normalized)) {
+                    return plan;
+                }
+            }
+            return null;
+        }
+
+        public static DeepLApiPlan normalize(String candidate) {
+            var plan = fromId(candidate);
+            return plan == null ? FREE : plan;
+        }
+
+        public static DeepLApiPlan resolveConfigured() {
+            return normalize(System.getProperty(DEEPL_API_PLAN_PROPERTY, FREE.id));
+        }
+    }
+
+    public static void applyDeepLApiPlan(DeepLApiPlan plan) {
+        var resolved = plan == null ? DeepLApiPlan.FREE : plan;
+        System.setProperty(DEEPL_API_PLAN_PROPERTY, resolved.id());
+    }
+
+    public static String normalizeDeepLApiKey(String candidate) {
+        return candidate == null ? "" : candidate.trim();
+    }
+
+    public static String resolveConfiguredDeepLApiKey() {
+        return normalizeDeepLApiKey(System.getProperty(DEEPL_API_KEY_PROPERTY, ""));
+    }
+
+    public static void applyDeepLApiKey(String apiKey) {
+        System.setProperty(DEEPL_API_KEY_PROPERTY, normalizeDeepLApiKey(apiKey));
+    }
+
+    public enum TranslationTargetLanguage {
+        ENGLISH_US("EN-US", "English (US)"),
+        ENGLISH_GB("EN-GB", "English (UK)"),
+        GERMAN("DE", "German"),
+        FRENCH("FR", "French"),
+        ITALIAN("IT", "Italian"),
+        SPANISH("ES", "Spanish"),
+        PORTUGUESE_BR("PT-BR", "Portuguese (Brazil)"),
+        PORTUGUESE_PT("PT-PT", "Portuguese (Portugal)"),
+        DUTCH("NL", "Dutch"),
+        POLISH("PL", "Polish"),
+        RUSSIAN("RU", "Russian"),
+        KOREAN("KO", "Korean"),
+        CHINESE_SIMPLIFIED("ZH-HANS", "Chinese (Simplified)"),
+        CHINESE_TRADITIONAL("ZH-HANT", "Chinese (Traditional)");
+
+        private final String code;
+        private final String label;
+
+        TranslationTargetLanguage(String code, String label) {
+            this.code = code;
+            this.label = label;
+        }
+
+        public String code() {
+            return code;
+        }
+
+        @Override
+        public String toString() {
+            return label;
+        }
+
+        public static TranslationTargetLanguage fromCode(String candidate) {
+            if (candidate == null) {
+                return null;
+            }
+            var normalized = candidate.trim().toUpperCase(Locale.ROOT);
+            for (var language : values()) {
+                if (language.code.equals(normalized) || language.label.toUpperCase(Locale.ROOT).equals(normalized)) {
+                    return language;
+                }
+            }
+            return null;
+        }
+
+        public static TranslationTargetLanguage normalize(String candidate) {
+            var language = fromCode(candidate);
+            return language == null ? ENGLISH_US : language;
+        }
+
+        public static TranslationTargetLanguage resolveConfigured() {
+            return normalize(System.getProperty(DEEPL_TARGET_LANGUAGE_PROPERTY, ENGLISH_US.code));
+        }
+    }
+
+    public static void applyTranslationTargetLanguage(TranslationTargetLanguage language) {
+        var resolved = language == null ? TranslationTargetLanguage.ENGLISH_US : language;
+        System.setProperty(DEEPL_TARGET_LANGUAGE_PROPERTY, resolved.code());
     }
 
     public static int clampHostScale(int hostScale) {

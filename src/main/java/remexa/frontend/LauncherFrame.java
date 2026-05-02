@@ -28,6 +28,7 @@ import java.util.Locale;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.ButtonGroup;
+import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
@@ -40,6 +41,7 @@ import javax.swing.JPanel;
 import javax.swing.JRadioButtonMenuItem;
 import javax.swing.JButton;
 import javax.swing.SwingConstants;
+import javax.swing.JPasswordField;
 import javax.swing.JTextField;
 import javax.swing.TransferHandler;
 import javax.swing.UIManager;
@@ -338,6 +340,14 @@ public final class LauncherFrame extends JFrame {
         connectivityMenu.add(bluetoothSettingsItem);
         settingsMenu.add(connectivityMenu);
 
+        var extrasMenu = new JMenu("Extra's");
+        styleMenu(extrasMenu);
+        var deepLConfigurationItem = new JMenuItem("DeepL Configuration...");
+        styleMenuItem(deepLConfigurationItem);
+        deepLConfigurationItem.addActionListener(event -> showDeepLConfigurationDialog());
+        extrasMenu.add(deepLConfigurationItem);
+        settingsMenu.add(extrasMenu);
+
         var storageMenu = new JMenu("Storage");
         styleMenu(storageMenu);
         var openStorageFolderItem = new JMenuItem("Open Storage Folder");
@@ -615,6 +625,107 @@ public final class LauncherFrame extends JFrame {
                             + ", localName=" + normalizedLocalName
                             + ", remoteHost=" + normalizedRemoteHost
                             + ", port=" + parsedPort
+            );
+            return;
+        }
+    }
+
+    private void showDeepLConfigurationDialog() {
+        var liveTranslationItem = new JCheckBox("Enable Live Translation", HostUiSettings.liveTranslationEnabled());
+        liveTranslationItem.setOpaque(false);
+        var apiPlanBox = new JComboBox<>(LaunchConfig.DeepLApiPlan.values());
+        apiPlanBox.setSelectedItem(HostUiSettings.deepLApiPlan());
+        var apiKeyField = new JPasswordField(HostUiSettings.deepLApiKey(), 22);
+        var languageBox = new JComboBox<>(LaunchConfig.TranslationTargetLanguage.values());
+        languageBox.setSelectedItem(HostUiSettings.translationTargetLanguage());
+
+        var panel = new JPanel(new GridBagLayout());
+        panel.setOpaque(false);
+        var constraints = new GridBagConstraints();
+        constraints.insets = new Insets(6, 6, 6, 6);
+        constraints.anchor = GridBagConstraints.WEST;
+        constraints.fill = GridBagConstraints.HORIZONTAL;
+        constraints.gridx = 0;
+        constraints.gridy = 0;
+        constraints.gridwidth = 2;
+        constraints.weightx = 1;
+        panel.add(liveTranslationItem, constraints);
+
+        constraints.gridy++;
+        constraints.gridwidth = 1;
+        constraints.weightx = 0;
+        panel.add(new JLabel("API Plan"), constraints);
+        constraints.gridx = 1;
+        constraints.weightx = 1;
+        panel.add(apiPlanBox, constraints);
+
+        constraints.gridx = 0;
+        constraints.gridy++;
+        constraints.weightx = 0;
+        panel.add(new JLabel("API Key"), constraints);
+        constraints.gridx = 1;
+        constraints.weightx = 1;
+        panel.add(apiKeyField, constraints);
+
+        constraints.gridx = 0;
+        constraints.gridy++;
+        constraints.weightx = 0;
+        panel.add(new JLabel("Target Language"), constraints);
+        constraints.gridx = 1;
+        constraints.weightx = 1;
+        panel.add(languageBox, constraints);
+
+        var note = new JLabel("<html><div style='width:320px;'>Live translation uses DeepL to replace rendered Japanese text on the fly. Choose the correct API plan for your key and keep in mind that some games may still draw text as images or per-character glyphs.</div></html>");
+        note.setForeground(TEXT_SECONDARY);
+        constraints.gridx = 0;
+        constraints.gridy++;
+        constraints.gridwidth = 2;
+        constraints.weightx = 1;
+        panel.add(note, constraints);
+
+        while (true) {
+            var result = JOptionPane.showConfirmDialog(
+                    this,
+                    panel,
+                    "DeepL Configuration",
+                    JOptionPane.OK_CANCEL_OPTION,
+                    JOptionPane.PLAIN_MESSAGE
+            );
+            if (result != JOptionPane.OK_OPTION) {
+                return;
+            }
+
+            var liveTranslationEnabled = liveTranslationItem.isSelected();
+            var apiPlan = (LaunchConfig.DeepLApiPlan) apiPlanBox.getSelectedItem();
+            var apiKey = LaunchConfig.normalizeDeepLApiKey(new String(apiKeyField.getPassword()));
+            var targetLanguage = (LaunchConfig.TranslationTargetLanguage) languageBox.getSelectedItem();
+            if (liveTranslationEnabled && apiKey.isEmpty()) {
+                JOptionPane.showMessageDialog(
+                        this,
+                        "An API key is required when live translation is enabled.",
+                        "Missing DeepL API Key",
+                        JOptionPane.ERROR_MESSAGE
+                );
+                continue;
+            }
+
+            HostUiSettings.setLiveTranslationEnabled(liveTranslationEnabled);
+            HostUiSettings.setDeepLApiPlan(apiPlan);
+            HostUiSettings.setDeepLApiKey(apiKey);
+            HostUiSettings.setTranslationTargetLanguage(targetLanguage);
+
+            LaunchConfig.applyLiveTranslationEnabled(liveTranslationEnabled);
+            LaunchConfig.applyDeepLApiPlan(apiPlan);
+            LaunchConfig.applyDeepLApiKey(apiKey);
+            LaunchConfig.applyTranslationTargetLanguage(targetLanguage);
+
+            DebugLog.log(
+                    LogCategory.FRONTEND,
+                    LauncherFrame.class.getName(),
+                    "DeepL settings updated: enabled=" + liveTranslationEnabled
+                            + ", apiPlan=" + (apiPlan == null ? "null" : apiPlan.id())
+                            + ", targetLanguage=" + (targetLanguage == null ? "null" : targetLanguage.code())
+                            + ", apiKeyPresent=" + !apiKey.isEmpty()
             );
             return;
         }

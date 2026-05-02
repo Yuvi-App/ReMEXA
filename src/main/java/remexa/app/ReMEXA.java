@@ -36,6 +36,10 @@ public final class ReMEXA {
         LaunchConfig.applyHostScale(launchRequest.hostScale() == null ? HostUiSettings.hostScale() : launchRequest.hostScale());
         LaunchConfig.applyTouchControlsEnabled(HostUiSettings.touchControlsEnabled());
         LaunchConfig.applyFlashBacklightEnabled(HostUiSettings.flashBacklightEnabled());
+        LaunchConfig.applyLiveTranslationEnabled(HostUiSettings.liveTranslationEnabled());
+        LaunchConfig.applyDeepLApiPlan(HostUiSettings.deepLApiPlan());
+        LaunchConfig.applyDeepLApiKey(HostUiSettings.deepLApiKey());
+        LaunchConfig.applyTranslationTargetLanguage(HostUiSettings.translationTargetLanguage());
         LaunchConfig.applyBluetoothBackend(launchRequest.bluetoothBackend() == null ? HostUiSettings.bluetoothBackend() : launchRequest.bluetoothBackend());
         LaunchConfig.applyBluetoothRole(launchRequest.bluetoothRole() == null ? HostUiSettings.bluetoothRole() : launchRequest.bluetoothRole());
         LaunchConfig.applyBluetoothLocalName(launchRequest.bluetoothLocalName() == null ? HostUiSettings.bluetoothLocalName() : launchRequest.bluetoothLocalName());

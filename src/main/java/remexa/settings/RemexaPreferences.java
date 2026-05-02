@@ -19,6 +19,10 @@ public final class RemexaPreferences {
     public static final String HOST_SCALE_KEY = "hostScale";
     public static final String TOUCH_CONTROLS_ENABLED_KEY = "touchControlsEnabled";
     public static final String FLASH_BACKLIGHT_ENABLED_KEY = "flashBacklightEnabled";
+    public static final String LIVE_TRANSLATION_ENABLED_KEY = "liveTranslationEnabled";
+    public static final String DEEPL_API_PLAN_KEY = "deeplApiPlan";
+    public static final String DEEPL_API_KEY_KEY = "deeplApiKey";
+    public static final String DEEPL_TARGET_LANGUAGE_KEY = "deeplTargetLanguage";
     public static final String BLUETOOTH_BACKEND_KEY = "bluetoothBackend";
     public static final String BLUETOOTH_ROLE_KEY = "bluetoothRole";
     public static final String BLUETOOTH_LOCAL_NAME_KEY = "bluetoothLocalName";
