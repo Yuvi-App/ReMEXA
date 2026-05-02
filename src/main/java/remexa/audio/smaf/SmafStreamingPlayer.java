@@ -16,7 +16,12 @@ import java.util.Map;
 
 final class SmafStreamingPlayer implements SmafAudioPlayer {
     private static final int TARGET_CHUNK_MILLIS = 20;
-    private static final int TARGET_LINE_BUFFER_MILLIS = 96;
+    /**
+     * Target audio line buffer size in milliseconds. Larger values absorb
+     * jitter better at the cost of slightly higher playback latency.
+     */
+    private static final int TARGET_LINE_BUFFER_MILLIS =
+            Integer.getInteger("remexa.smafLineBufferMs", 240);
     private static final int MIN_CHUNK_FRAMES = 512;
     private static final int MIN_BUFFER_CHUNKS = 4;
     private static final long IDLE_CLOSE_MILLIS = 3_000L;

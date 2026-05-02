@@ -15,8 +15,12 @@ import java.util.List;
 import java.util.Map;
 
 final class Ma5SmafAudioEngine implements YamahaAudioEngine {
+    /**
+     * Output sample rate.
+     * The chip natively supports {22050, 32000, 44100, 48000};
+     */
     private static final int MA5_OUTPUT_SAMPLE_RATE =
-            Integer.getInteger("remexa.ma5SampleRate", 32_000);
+            Integer.getInteger("remexa.ma5SampleRate", 48_000);
     private final SmafSequencedRenderer renderer;
 
     Ma5SmafAudioEngine() {
@@ -170,15 +174,50 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
         private static final int ENV_TICK_INTERVAL_32K = 7;
 
         /**
-         * LFO frequency in Hz for the 2-bit {@code lfo} index, decoded from
-         * the 44.1 kHz speed table at {@code data_100291d4}
-         * ({@code 0x29819, 0x5bc02, 0x8541b, 0x9d495} as Q32 phase increments
-         * → 1.74, 3.84, 5.45, 6.39 Hz). Frequencies are sample-rate
-         * independent, so the same Hz values apply at any output rate.
-         * Used when {@code vibratoEnabled} or {@code amplitudeModEnabled}
-         * is set on the PCM voice.
+         * LFO frequency in Hz for the 2-bit {@code lfo} index, decoded
+         * directly from the chip's per-rate Q32 phase-increment tables in
+         * {@code M5_EmuHw.dll}: 48 kHz at {@code 0x100fa8ac}, 44.1 kHz at
+         * {@code 0x100fa8bc}, 32 kHz at {@code 0x100fa8cc}, 22.05 kHz at
+         * {@code 0x100fa8dc}. All four tables encode the same wall-clock
+         * frequencies (the chip compensates the Q32 step value for each
+         * output rate), so these Hz values apply unchanged at any output
+         * rate.
+         *
+         * <p>At 48 kHz, the raw table values
+         * {@code 0x00029819 0x0005BC02 0x0008541B 0x0009D495}
+         * decode to {@code 1.894, 4.205, 6.099, 7.199 Hz}.</p>
+         *
+         * <p>Used when {@code vibratoEnabled} or {@code amplitudeModEnabled}
+         * is set on the PCM voice.</p>
          */
-        private static final float[] LFO_FREQ_HZ = {1.74f, 3.84f, 5.45f, 6.39f};
+        private static final float[] LFO_FREQ_HZ = {1.90f, 4.20f, 6.10f, 7.20f};
+
+        /**
+         * 4096-entry sine LUT covering [0, 2π). Used by the per-sample LFO
+         * lookup in PCM rendering to avoid {@code Math.sin} on the audio
+         * thread; with vibrato + AM both modulating from the same {@code
+         * lfoPhase} every output sample, two {@code Math.sin} calls per
+         * sample per active PCM note pushed past the chunk budget at higher
+         * output rates. ~0.0015 rad precision is well within audible LFO
+         * resolution.
+         */
+        private static final int SIN_LUT_SIZE = 4096;
+        private static final int SIN_LUT_MASK = SIN_LUT_SIZE - 1;
+        private static final float SIN_LUT_SCALE = (float) (SIN_LUT_SIZE / (2.0 * Math.PI));
+        private static final float[] SIN_LUT = buildSinLut();
+
+        private static float[] buildSinLut() {
+            float[] lut = new float[SIN_LUT_SIZE];
+            for (int i = 0; i < SIN_LUT_SIZE; i++) {
+                lut[i] = (float) Math.sin(2.0 * Math.PI * i / SIN_LUT_SIZE);
+            }
+            return lut;
+        }
+
+        private static float fastSin(float radians) {
+            int idx = ((int) (radians * SIN_LUT_SCALE)) & SIN_LUT_MASK;
+            return SIN_LUT[idx];
+        }
 
         private final Sampler sampler;
         private final float sampleRate;
@@ -440,9 +479,12 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
                 }
 
                 float pan = note.pan(channelPans[note.channel]);
-                float[] panGain = equalPowerPan(pan);
-                float noteLeft = left * panGain[0];
-                float noteRight = right * panGain[1];
+                // Inlined equal-power pan to avoid allocating a float[2] per
+                // PcmNote per render chunk. cos/sin run once per chunk, not
+                // per sample.
+                double panAngle = (Math.max(-1.0f, Math.min(1.0f, pan)) + 1.0) * Math.PI * 0.25;
+                float noteLeft = left * (float) Math.cos(panAngle);
+                float noteRight = right * (float) Math.sin(panAngle);
                 float gain = channelVolumes[note.channel] * note.velocity * PCM_GAIN;
 
                 for (int frame = 0; frame < frames; frame++) {
@@ -455,6 +497,7 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
                         }
                     }
 
+                    note.computeLfoSin();
                     float sample = interpolatedWaveSample(wave, note.position)
                             * gain
                             * note.envelope()
@@ -707,11 +750,26 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
                         * hardwarePitchRatio(key - PCM_REFERENCE_KEY + bendSemitones + vibrato);
             }
 
+            /**
+             * Cached {@code sin(lfoPhase)} for the current sample frame.
+             * Computed once per frame in {@link #computeLfoSin} and consumed
+             * by {@link #vibratoSemitones} and {@link #amScale} so the
+             * relatively expensive sine evaluation runs once per active
+             * PCM note per output sample instead of twice.
+             */
+            private float lfoSinCached;
+
+            private void computeLfoSin() {
+                lfoSinCached = (vibratoDepthSemitones != 0.0f || amDepth != 0.0f)
+                        ? fastSin(lfoPhase)
+                        : 0.0f;
+            }
+
             private float vibratoSemitones() {
                 if (vibratoDepthSemitones == 0.0f) {
                     return 0.0f;
                 }
-                return vibratoDepthSemitones * (float) Math.sin(lfoPhase);
+                return vibratoDepthSemitones * lfoSinCached;
             }
 
             /**
@@ -724,7 +782,7 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
                 if (amDepth == 0.0f) {
                     return 1.0f;
                 }
-                float lfo01 = (1.0f + (float) Math.sin(lfoPhase)) * 0.5f;
+                float lfo01 = (1.0f + lfoSinCached) * 0.5f;
                 return Math.max(0.0f, 1.0f - amDepth * lfo01);
             }
 
