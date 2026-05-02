@@ -40,6 +40,7 @@ public final class MidletRuntime {
     private static final Map<Displayable, LaunchContext> DISPLAYABLES = Collections.synchronizedMap(new WeakHashMap<>());
     private static final Map<ClassLoader, HostTextInputRequest.Handler> TEXT_INPUT_HANDLERS = Collections.synchronizedMap(new WeakHashMap<>());
     private static final Map<ClassLoader, JadFrame> HOST_FRAMES = Collections.synchronizedMap(new WeakHashMap<>());
+    private static final Map<ClassLoader, Runnable> DESTROY_HANDLERS = Collections.synchronizedMap(new WeakHashMap<>());
     private static final java.util.Set<ClassLoader> SHUTTING_DOWN_CLASS_LOADERS =
             Collections.synchronizedSet(Collections.newSetFromMap(new WeakHashMap<>()));
     private static final StackWalker APP_CLASS_LOADER_WALKER =
@@ -128,10 +129,43 @@ public final class MidletRuntime {
         HOST_FRAMES.remove(classLoader);
     }
 
+    public static void registerDestroyHandler(ClassLoader classLoader, Runnable handler) {
+        if (classLoader == null || handler == null) {
+            return;
+        }
+        DESTROY_HANDLERS.put(classLoader, handler);
+    }
+
+    public static void unregisterDestroyHandler(ClassLoader classLoader) {
+        if (classLoader == null) {
+            return;
+        }
+        DESTROY_HANDLERS.remove(classLoader);
+    }
+
     public static void beginShutdown(ClassLoader classLoader) {
         if (classLoader != null) {
             SHUTTING_DOWN_CLASS_LOADERS.add(classLoader);
         }
+    }
+
+    public static void notifyDestroyed(MIDlet midlet) {
+        var context = CONTEXTS.get(midlet);
+        if (context == null) {
+            return;
+        }
+
+        var classLoader = context.classLoader();
+        if (classLoader == null || SHUTTING_DOWN_CLASS_LOADERS.contains(classLoader)) {
+            return;
+        }
+
+        beginShutdown(classLoader);
+        var handler = DESTROY_HANDLERS.get(classLoader);
+        if (handler != null) {
+            handler.run();
+        }
+        throw new AppShutdownError();
     }
 
     public static ClassLoader currentAppClassLoader() {

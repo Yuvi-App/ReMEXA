@@ -8,6 +8,7 @@ import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
 import javax.imageio.ImageIO;
 import javax.swing.JOptionPane;
+import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import remexa.host.HostUiSettings;
 import remexa.host.jad.JadDescriptor;
@@ -123,8 +124,16 @@ public final class JadLauncher {
             );
             previousDefaultHandler = installExitOnUncaughtException(frame, descriptor, result.classLoader());
             var restoredDefaultHandler = previousDefaultHandler;
+            MidletRuntime.registerDestroyHandler(result.classLoader(), () -> SwingUtilities.invokeLater(() -> {
+                restoreDefaultExceptionHandler(restoredDefaultHandler);
+                MidletRuntime.unregisterDestroyHandler(result.classLoader());
+                MidletRuntime.unregisterHostFrame(result.classLoader());
+                frame.dispose();
+                shutdownLaunch(result, shutdownOnce);
+            }));
             frame.setCloseHandler(() -> {
                 restoreDefaultExceptionHandler(restoredDefaultHandler);
+                MidletRuntime.unregisterDestroyHandler(result.classLoader());
                 MidletRuntime.unregisterHostFrame(result.classLoader());
                 shutdownLaunch(result, shutdownOnce);
             });

@@ -22,6 +22,7 @@ public abstract class MIDlet {
 
     public final void notifyDestroyed() {
         SdkStubSupport.log(getClass().getName(), "notifyDestroyed");
+        MidletRuntime.notifyDestroyed(this);
     }
 
     public final void notifyPaused() {
