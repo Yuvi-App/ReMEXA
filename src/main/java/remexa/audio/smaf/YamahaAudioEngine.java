@@ -1,6 +1,7 @@
 package remexa.audio.smaf;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 interface YamahaAudioEngine {
@@ -26,7 +27,20 @@ interface YamahaAudioEngine {
         if (startupPackets != null) {
             packets.addAll(startupPackets);
         }
-        packets.addAll(exclusiveVoices);
+        for (byte[] exclusiveVoice : exclusiveVoices) {
+            if (!containsPacket(packets, exclusiveVoice)) {
+                packets.add(exclusiveVoice);
+            }
+        }
         return packets;
+    }
+
+    private static boolean containsPacket(List<byte[]> packets, byte[] candidate) {
+        for (byte[] packet : packets) {
+            if (Arrays.equals(packet, candidate)) {
+                return true;
+            }
+        }
+        return false;
     }
 }
