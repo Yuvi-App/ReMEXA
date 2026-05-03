@@ -34,6 +34,7 @@ public final class SoftwareJ3dRenderer {
     private static final int COMMAND_MASK = 0xFF000000;
     private static final int ENV_ATTR_LIGHTING = 0x01;
     private static final int ENV_ATTR_SPHERE_MAP = 0x02;
+    private static final int ENV_ATTR_TOON_SHADING = 0x04;
     private static final int ENV_ATTR_SEMI_TRANSPARENT = 0x08;
     private static final int PATTR_COLORKEY = 0x10;
     private static final int PDATA_NORMAL_MASK = 0x0300;
@@ -279,6 +280,7 @@ public final class SoftwareJ3dRenderer {
                 int attributes = command & 0x00FFFFFF;
                 state.lightingEnabled = (attributes & ENV_ATTR_LIGHTING) != 0;
                 state.sphereMapEnabled = (attributes & ENV_ATTR_SPHERE_MAP) != 0;
+                state.toonShadingEnabled = (attributes & ENV_ATTR_TOON_SHADING) != 0;
                 state.semiTransparentEnabled = (attributes & ENV_ATTR_SEMI_TRANSPARENT) != 0;
                 continue;
             }
@@ -388,7 +390,9 @@ public final class SoftwareJ3dRenderer {
                 if (cursor + 2 >= commandList.length) {
                     break;
                 }
-                cursor += 3;
+                state.toonThreshold = commandList[cursor++];
+                state.toonHigh = commandList[cursor++];
+                state.toonLow = commandList[cursor++];
                 continue;
             }
             if (command >= 0) {
@@ -1554,7 +1558,23 @@ public final class SoftwareJ3dRenderer {
         }
         float ambient = state.ambientIntensity / 4096.0f;
         float diffuse = directional * (state.directionalIntensity / 4096.0f);
-        return clamp01(ambient + diffuse);
+        return applyCommandShading(state, ambient + diffuse);
+    }
+
+    private static float applyCommandShading(CommandState state, float shade) {
+        float clamped = clamp01(shade);
+        if (state == null || !state.toonShadingEnabled) {
+            return clamped;
+        }
+        int threshold = clampByte(state.toonThreshold);
+        int high = clampByte(state.toonHigh);
+        int low = clampByte(state.toonLow);
+        int level = Math.round(clamped * 255.0f);
+        return (level >= threshold ? high : low) / 255.0f;
+    }
+
+    private static int clampByte(int value) {
+        return Math.max(0, Math.min(255, value));
     }
 
     private static int renderPrimitiveCommand(
@@ -2474,11 +2494,15 @@ public final class SoftwareJ3dRenderer {
         private boolean lightingEnabled;
         private boolean semiTransparentEnabled;
         private boolean sphereMapEnabled;
+        private boolean toonShadingEnabled;
         private float lightDirectionX;
         private float lightDirectionY;
         private float lightDirectionZ;
         private int directionalIntensity;
         private int ambientIntensity;
+        private int toonThreshold;
+        private int toonHigh;
+        private int toonLow;
         private int clipX;
         private int clipY;
         private int clipWidth;
@@ -2505,11 +2529,15 @@ public final class SoftwareJ3dRenderer {
                 boolean lightingEnabled,
                 boolean semiTransparentEnabled,
                 boolean sphereMapEnabled,
+                boolean toonShadingEnabled,
                 float lightDirectionX,
                 float lightDirectionY,
                 float lightDirectionZ,
                 int directionalIntensity,
                 int ambientIntensity,
+                int toonThreshold,
+                int toonHigh,
+                int toonLow,
                 AffineTrans affineTrans,
                 Texture texture,
                 int centerX,
@@ -2531,11 +2559,15 @@ public final class SoftwareJ3dRenderer {
             this.lightingEnabled = lightingEnabled;
             this.semiTransparentEnabled = semiTransparentEnabled;
             this.sphereMapEnabled = sphereMapEnabled;
+            this.toonShadingEnabled = toonShadingEnabled;
             this.lightDirectionX = lightDirectionX;
             this.lightDirectionY = lightDirectionY;
             this.lightDirectionZ = lightDirectionZ;
             this.directionalIntensity = directionalIntensity;
             this.ambientIntensity = ambientIntensity;
+            this.toonThreshold = toonThreshold;
+            this.toonHigh = toonHigh;
+            this.toonLow = toonLow;
             this.clipX = baseClipX;
             this.clipY = baseClipY;
             this.clipWidth = Math.max(0, baseClipWidth);
@@ -2633,6 +2665,9 @@ public final class SoftwareJ3dRenderer {
             float lightDirectionZ = lightDirection == null ? 4096.0f : lightDirection.z;
             int directionalIntensity = light == null ? 0 : light.getDirIntensity();
             int ambientIntensity = light == null ? 4096 : light.getAmbIntensity();
+            int toonThreshold = effect == null ? 0 : effect.getThreshold();
+            int toonHigh = effect == null ? 255 : effect.getThresholdHigh();
+            int toonLow = effect == null ? 0 : effect.getThresholdLow();
             int centerX = layout.hasExplicitCenter()
                     ? originX + layout.getCenterX()
                     : originX + (perspective ? surfaceWidth / 2 : layout.getCenterX());
@@ -2653,11 +2688,15 @@ public final class SoftwareJ3dRenderer {
                     effect != null,
                     effect == null || effect.isSemiTransparentEnabled(),
                     effect != null && effect.getSphereMap() != null,
+                    effect != null && effect.getShading() == Effect3D.TOON_SHADING,
                     lightDirectionX,
                     lightDirectionY,
                     lightDirectionZ,
                     directionalIntensity,
                     ambientIntensity,
+                    toonThreshold,
+                    toonHigh,
+                    toonLow,
                     layout.getAffineTrans(),
                     currentTexture,
                     centerX,
