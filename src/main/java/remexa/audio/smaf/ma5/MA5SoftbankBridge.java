@@ -12,6 +12,7 @@ import java.util.Set;
 public final class MA5SoftbankBridge {
     private static final int MANUFACTURER_YAMAHA = 0x43;
     private static final int FAMILY_VM5 = 0x05;
+    private static final int FAMILY_VM5_COMPACT_4OP = 0x04;
     private static final int VM5_WAVE_DATA = 0x00;
     private static final int VM5_FM_PROGRAM = 0x01;
     private static final int VM5_PCM_PROGRAM = 0x02;
@@ -19,6 +20,7 @@ public final class MA5SoftbankBridge {
     private final Sampler sampler;
     private final PcmVoiceSink pcmVoiceSink;
     private final Set<String> loggedPackets = new HashSet<>();
+    private int implicitCompactVoiceSlot;
 
     public MA5SoftbankBridge(Sampler sampler) {
         this(sampler, PcmVoiceSink.NOOP);
@@ -31,6 +33,7 @@ public final class MA5SoftbankBridge {
 
     public void reset() {
         loggedPackets.clear();
+        implicitCompactVoiceSlot = 0;
     }
 
     public boolean sysEx(byte[] message) {
@@ -40,6 +43,20 @@ public final class MA5SoftbankBridge {
         }
         int family = body[1] & 0xff;
         int type = body[2] & 0xff;
+        if (family == FAMILY_VM5_COMPACT_4OP && type == VM5_FM_PROGRAM) {
+            MA5VoiceProgram voice = MA5VoiceProgram.decode(message);
+            if (voice == null) {
+                debugOnce("vm5-compact-fm-invalid", message);
+                return true;
+            }
+            int slot = implicitCompactVoiceSlot++ & 0x3f;
+            voice = voice.withBankProgram(0, slot);
+            sampler.sysEx(voice.toMa3FmAlgorithmMessage());
+            if (SmafDebug.isEnabled("ma5", SmafDebug.Level.DEBUG)) {
+                SmafDebug.debug("ma5", "[MA5] loaded compact 4op FM voice slot=" + slot + " " + voice.summary());
+            }
+            return true;
+        }
         if (family != FAMILY_VM5) {
             return false;
         }

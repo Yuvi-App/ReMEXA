@@ -52,7 +52,7 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
         return renderer.render(
                 context.sequence(),
                 context.sequenceSysExEvents(),
-                context.startupPackets(),
+                YamahaAudioEngine.startupAndExclusivePackets(context),
                 context.pcmClipData(),
                 context.pcmTriggers());
     }
@@ -62,7 +62,7 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
         return renderer.openStream(
                 context.sequence(),
                 context.sequenceSysExEvents(),
-                context.startupPackets(),
+                YamahaAudioEngine.startupAndExclusivePackets(context),
                 context.pcmClipData(),
                 context.pcmTriggers());
     }

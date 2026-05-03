@@ -8,6 +8,11 @@ import java.util.Arrays;
  * <p>The layout mirrors smaf825's VM35FMVoice reader for packets shaped like
  * {@code 43 05 01 bank program ...}. The payload starts at byte 5 and contains
  * 3 global bytes followed by 2 or 4 seven-byte FM operator records.</p>
+ *
+ * <p>Some SoftBank MA-5 files use the more compact {@code 43 04 01} form:
+ * two VM35 global bytes ({@code pan/basic-octave}, {@code lfo/pan-enable/alg})
+ * followed by four 7-byte FM operator records. Those packets do not carry an
+ * explicit bank/program; the bridge assigns them to slots in EXVO order.</p>
  */
 public record MA5VoiceProgram(int bankLsb,
                               int program,
@@ -21,8 +26,11 @@ public record MA5VoiceProgram(int bankLsb,
                               byte[] payload) {
     private static final int MANUFACTURER_YAMAHA = 0x43;
     private static final int FAMILY_VM5 = 0x05;
+    private static final int FAMILY_VM5_COMPACT_4OP = 0x04;
     private static final int VM5_FM_PROGRAM = 0x01;
     private static final int VM5_HEADER_BYTES = 5;
+    private static final int COMPACT_4OP_HEADER_BYTES = 3;
+    private static final int COMPACT_4OP_GLOBAL_BYTES = 2;
     private static final int GLOBAL_BYTES = 3;
     private static final int OPERATOR_BYTES = 7;
 
@@ -33,8 +41,14 @@ public record MA5VoiceProgram(int bankLsb,
 
     public static MA5VoiceProgram decode(byte[] packet) {
         byte[] body = normalize(packet);
+        if (body.length < 3 || (body[0] & 0xff) != MANUFACTURER_YAMAHA) {
+            return null;
+        }
+        if ((body[1] & 0xff) == FAMILY_VM5_COMPACT_4OP
+                && (body[2] & 0xff) == VM5_FM_PROGRAM) {
+            return decodeCompact4Op(body);
+        }
         if (body.length < VM5_HEADER_BYTES + GLOBAL_BYTES
-                || (body[0] & 0xff) != MANUFACTURER_YAMAHA
                 || (body[1] & 0xff) != FAMILY_VM5
                 || (body[2] & 0xff) != VM5_FM_PROGRAM) {
             return null;
@@ -63,6 +77,39 @@ public record MA5VoiceProgram(int bankLsb,
         }
         return new MA5VoiceProgram(bankLsb, program, drumKey, panpot, basicOctave,
                 lfo, panpotEnable, algorithm, operators, payload);
+    }
+
+    private static MA5VoiceProgram decodeCompact4Op(byte[] body) {
+        int expectedLength = COMPACT_4OP_HEADER_BYTES + COMPACT_4OP_GLOBAL_BYTES + 4 * OPERATOR_BYTES;
+        if (body.length != expectedLength) {
+            return null;
+        }
+
+        byte[] payload = new byte[GLOBAL_BYTES + 4 * OPERATOR_BYTES];
+        payload[0] = 0;
+        payload[1] = body[3];
+        payload[2] = body[4];
+        System.arraycopy(body, COMPACT_4OP_HEADER_BYTES + COMPACT_4OP_GLOBAL_BYTES,
+                payload, GLOBAL_BYTES, 4 * OPERATOR_BYTES);
+
+        int panpot = (payload[1] >> 3) & 0x1f;
+        int basicOctave = payload[1] & 0x03;
+        int lfo = (payload[2] >> 6) & 0x03;
+        boolean panpotEnable = (payload[2] & 0x20) != 0;
+        int algorithm = payload[2] & 0x07;
+        Operator[] operators = new Operator[4];
+        int offset = GLOBAL_BYTES;
+        for (int i = 0; i < operators.length; i++) {
+            operators[i] = Operator.decode(i, payload, offset);
+            offset += OPERATOR_BYTES;
+        }
+        return new MA5VoiceProgram(0, 0, 0, panpot, basicOctave,
+                lfo, panpotEnable, algorithm, operators, payload);
+    }
+
+    public MA5VoiceProgram withBankProgram(int bankLsb, int program) {
+        return new MA5VoiceProgram(bankLsb & 0x7f, program & 0x7f, drumKey, panpot,
+                basicOctave, lfo, panpotEnable, algorithm, operators, payload);
     }
 
     public int operatorCount() {

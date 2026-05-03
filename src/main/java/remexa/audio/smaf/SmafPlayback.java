@@ -664,26 +664,28 @@ public final class SmafPlayback implements AutoCloseable {
 
     private YamahaAudioEngine resolveAudioEngine(String synthPreference) {
         ensureDecodedUnchecked("resolve SMAF audio engine");
-        return resolveAudioEngine(synthPreference, source, startupPackets, sequenceSysExEvents);
+        return resolveAudioEngine(synthPreference, source, startupPackets, exclusiveVoices, sequenceSysExEvents);
     }
 
     private static YamahaAudioEngine resolveAudioEngine(String synthPreference,
-                                                        byte[] source,
-                                                        List<byte[]> startupPackets,
-                                                        List<SMAFDecoder.SequenceSysExEvent> sequenceSysExEvents) {
+                                                         byte[] source,
+                                                         List<byte[]> startupPackets,
+                                                         List<byte[]> exclusiveVoices,
+                                                         List<SMAFDecoder.SequenceSysExEvent> sequenceSysExEvents) {
         return switch (synthPreference) {
             case SMAF_SYNTH_MA3 -> MA3_ENGINE;
             case SMAF_SYNTH_MA5 -> MA5_ENGINE;
             case SMAF_SYNTH_MA7 -> MA7_ENGINE;
-            case SMAF_SYNTH_AUTO -> resolveAutomaticAudioEngine(source, startupPackets, sequenceSysExEvents);
+            case SMAF_SYNTH_AUTO -> resolveAutomaticAudioEngine(source, startupPackets, exclusiveVoices, sequenceSysExEvents);
             default -> MA3_ENGINE;
         };
     }
 
     private static YamahaAudioEngine resolveAutomaticAudioEngine(byte[] source,
-                                                                 List<byte[]> startupPackets,
-                                                                 List<SMAFDecoder.SequenceSysExEvent> sequenceSysExEvents) {
-        SmafAudioFamily family = SmafAudioDetector.detect(source, startupPackets, sequenceSysExEvents);
+                                                                  List<byte[]> startupPackets,
+                                                                  List<byte[]> exclusiveVoices,
+                                                                  List<SMAFDecoder.SequenceSysExEvent> sequenceSysExEvents) {
+        SmafAudioFamily family = SmafAudioDetector.detect(source, startupPackets, exclusiveVoices, sequenceSysExEvents);
         YamahaAudioEngine engine = switch (family) {
             case MA3 -> MA3_ENGINE;
             case MA5 -> MA5_ENGINE;
