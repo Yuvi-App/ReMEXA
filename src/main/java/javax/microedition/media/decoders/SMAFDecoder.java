@@ -1248,7 +1248,13 @@ public final class SMAFDecoder
 
                     // Create MIDI note event
                     smafLog(SMAF_LOG_DEBUG, SMAFDecoder.class.getPackage().getName() + "." + SMAFDecoder.class.getSimpleName() + ": " + "Adding note event " + noteTypes[noteNumber] + (4+octave+channelData[channel].octaveShift) + "(" + noteNumber + ")" + " to channel " + channel);
-                    recordPcmSequenceTrigger(totalDuration, gateTime, noteNumber, channelData[channel].velocity, channel);
+                    recordPcmSequenceTrigger(totalDuration,
+                            gateTime,
+                            noteNumber,
+                            channelData[channel].velocity,
+                            channel,
+                            resolveMidiChannel(channel),
+                            midiNoteNumber);
                     
                     ShortMessage noteOn = new ShortMessage();
                     setChannelMessage(noteOn, ShortMessage.NOTE_ON, channel, midiNoteNumber, channelData[channel].velocity);
@@ -1352,7 +1358,13 @@ public final class SMAFDecoder
                             
                             // TODO: This might be incorrect as the SMAF documentation doesn't detail how the chip differentiates between PCM data and Sequence Data to play, for now notes are played alongside the PCM index
                             smafLog(SMAF_LOG_DEBUG, SMAFDecoder.class.getPackage().getName() + "." + SMAFDecoder.class.getSimpleName() + ": " + "Adding note value " + noteNumber + " to channel " + channel);
-                            recordPcmSequenceTrigger(totalDuration, gateTime, noteNumber, channelData[channel].velocity, channel);
+                            recordPcmSequenceTrigger(totalDuration,
+                                    gateTime,
+                                    noteNumber,
+                                    channelData[channel].velocity,
+                                    channel,
+                                    resolveMidiChannel(channel),
+                                    noteNumber & 0x7F);
                             
                             // We still add the notes no matter, just so that the sequencer can actually reach the PCM request time
                             setChannelMessage(noteOn, ShortMessage.NOTE_ON, channel, noteNumber, channelData[channel].velocity);
@@ -1395,7 +1407,13 @@ public final class SMAFDecoder
                             }
                             
                             smafLog(SMAF_LOG_DEBUG, SMAFDecoder.class.getPackage().getName() + "." + SMAFDecoder.class.getSimpleName() + ": " + "Adding note value " + noteNumber + " with new velocity to channel " + channel);
-                            recordPcmSequenceTrigger(totalDuration, gateTime, noteNumber, channelData[channel].velocity, channel);
+                            recordPcmSequenceTrigger(totalDuration,
+                                    gateTime,
+                                    noteNumber,
+                                    channelData[channel].velocity,
+                                    channel,
+                                    resolveMidiChannel(channel),
+                                    noteNumber & 0x7F);
                             
                             setChannelMessage(noteOn, ShortMessage.NOTE_ON, channel, noteNumber, channelData[channel].velocity);
                             midiEvent = new MidiEvent(noteOn, totalDuration);
@@ -1766,7 +1784,13 @@ public final class SMAFDecoder
                     }
                     
                     smafLog(SMAF_LOG_DEBUG, SMAFDecoder.class.getPackage().getName() + "." + SMAFDecoder.class.getSimpleName() + ": " + "Adding note value " + noteValue + " to channel " + channel);
-                    recordPcmSequenceTrigger(totalDuration, gateTime, noteValue, channelData[channel].velocity, channel);
+                    recordPcmSequenceTrigger(totalDuration,
+                            gateTime,
+                            noteValue,
+                            channelData[channel].velocity,
+                            channel,
+                            resolveMidiChannel(channel),
+                            noteValue & 0x7F);
                     
                     ShortMessage noteOn = new ShortMessage();
                     setChannelMessage(noteOn, ShortMessage.NOTE_ON, channel, noteValue, channelData[channel].velocity); // This will always use the default velocity
@@ -2030,13 +2054,28 @@ public final class SMAFDecoder
                 }));
     }
 
-    private static void recordPcmSequenceTrigger(int startTick, int gateTime, int noteValue, int velocity, int channel)
+    private static void recordPcmSequenceTrigger(int startTick,
+                                                 int gateTime,
+                                                 int noteValue,
+                                                 int velocity,
+                                                 int channel,
+                                                 int midiChannel,
+                                                 int midiNote)
     {
         int gateTimeMs = gateTime * timeBasetoMs(TimeBase_G);
         int triggerTick = startTick + gateTimeMs;
         pcmDataPositions.put(triggerTick, noteValue);
         pcmDataVelocities.put(triggerTick, velocity);
-        pcmSequenceTriggers.add(new PcmSequenceTrigger(triggerTick, startTick, gateTime, gateTimeMs, noteValue, velocity, channel));
+        pcmSequenceTriggers.add(new PcmSequenceTrigger(
+                triggerTick,
+                startTick,
+                gateTime,
+                gateTimeMs,
+                noteValue,
+                velocity,
+                channel,
+                midiChannel,
+                midiNote));
     }
 
     public static record SequenceSysExEvent(int tick, int sourceBank, byte[] data)
@@ -2053,7 +2092,9 @@ public final class SMAFDecoder
                                             int gateTimeMs,
                                             int noteValue,
                                             int velocity,
-                                            int smafChannel)
+                                            int smafChannel,
+                                            int midiChannel,
+                                            int midiNote)
     {
     }
 

@@ -56,7 +56,8 @@ final class SmafSequencedRenderer {
         SmafSynthAdapter sampler = synthProvider.instance(outputSampleRate);
         sampler.reset();
 
-        List<RenderEvent> events = collectEvents(sequence, sysExEvents, startupPackets);
+        List<PcmClip> pcmClips = decodePcmClips(pcmClipData);
+        List<RenderEvent> events = collectEvents(sequence, sysExEvents, startupPackets, pcmTriggers, pcmClips);
         MidiChannelState[] channelStates = createChannelStates();
 
         float[] mix = new float[Math.max(outputSampleRate * OUTPUT_CHANNELS, 1)];
@@ -87,7 +88,6 @@ final class SmafSequencedRenderer {
             tailFrames += chunkFrames;
         }
 
-        List<PcmClip> pcmClips = decodePcmClips(pcmClipData);
         if (SmafDebug.isEnabled("render", SmafDebug.Level.INFO)) {
             SmafDebug.info("render",
                     rendererName + " render events=" + events.size()
@@ -122,7 +122,9 @@ final class SmafSequencedRenderer {
 
     private static List<RenderEvent> collectEvents(Sequence sequence,
                                                    List<SMAFDecoder.SequenceSysExEvent> sysExEvents,
-                                                   List<byte[]> startupPackets) {
+                                                   List<byte[]> startupPackets,
+                                                   List<SMAFDecoder.PcmSequenceTrigger> pcmTriggers,
+                                                   List<PcmClip> pcmClips) {
         List<RenderEvent> events = new ArrayList<>();
         int order = 0;
         for (byte[] startupPacket : startupPackets) {
@@ -154,7 +156,10 @@ final class SmafSequencedRenderer {
                 .comparingLong(RenderEvent::tick)
                 .thenComparingInt(RenderEvent::priority)
                 .thenComparingInt(RenderEvent::order));
-        return suppressLegacyYamahaCarrierNotes(events);
+        return suppressPcmCarrierNotes(
+                suppressLegacyYamahaCarrierNotes(events),
+                pcmTriggers,
+                pcmClips);
     }
 
     private static List<RenderEvent> suppressLegacyYamahaCarrierNotes(List<RenderEvent> events) {
@@ -196,6 +201,51 @@ final class SmafSequencedRenderer {
         return filtered;
     }
 
+    private static List<RenderEvent> suppressPcmCarrierNotes(List<RenderEvent> events,
+                                                             List<SMAFDecoder.PcmSequenceTrigger> pcmTriggers,
+                                                             List<PcmClip> pcmClips) {
+        if (pcmTriggers.isEmpty() || pcmClips.isEmpty()) {
+            return events;
+        }
+
+        Set<Long> noteOnKeys = new HashSet<>();
+        Set<Long> noteOffKeys = new HashSet<>();
+        for (SMAFDecoder.PcmSequenceTrigger trigger : pcmTriggers) {
+            if (resolvePcmClip(trigger, pcmClips) == null) {
+                continue;
+            }
+            noteOnKeys.add(tickChannelNoteKey(trigger.startTick(), trigger.midiChannel(), trigger.midiNote()));
+            noteOffKeys.add(tickChannelNoteKey(trigger.triggerTick(), trigger.midiChannel(), trigger.midiNote()));
+        }
+        if (noteOnKeys.isEmpty()) {
+            return events;
+        }
+
+        List<RenderEvent> filtered = new ArrayList<>(events.size());
+        int suppressed = 0;
+        for (RenderEvent event : events) {
+            if (event.sysEx == null && event.command == ShortMessage.NOTE_ON && event.data2 > 0
+                    && noteOnKeys.contains(tickChannelNoteKey(event.tick, event.channel, event.data1))) {
+                suppressed++;
+                continue;
+            }
+            if (event.sysEx == null
+                    && (event.command == ShortMessage.NOTE_OFF
+                    || (event.command == ShortMessage.NOTE_ON && event.data2 == 0))
+                    && noteOffKeys.contains(tickChannelNoteKey(event.tick, event.channel, event.data1))) {
+                suppressed++;
+                continue;
+            }
+            filtered.add(event);
+        }
+
+        if (suppressed > 0 && SmafDebug.isEnabled("render", SmafDebug.Level.DEBUG)) {
+            SmafDebug.debug("render",
+                    "Suppressed " + suppressed + " PCM carrier note event(s)");
+        }
+        return filtered;
+    }
+
     private static int legacyYamahaExtendedNoteChannel(RenderEvent event) {
         if (event.sysEx == null || event.sysEx.length < 5
                 || (event.sysEx[0] & 0xff) != 0x43
@@ -217,6 +267,10 @@ final class SmafSequencedRenderer {
 
     private static int channelNoteKey(int channel, int note) {
         return ((channel & 0x1f) << 8) | (note & 0xff);
+    }
+
+    private static long tickChannelNoteKey(long tick, int channel, int note) {
+        return (tick << 13) | ((channel & 0x1fL) << 8) | (note & 0xffL);
     }
 
     private static void applyEvent(SmafSynthAdapter sampler, MidiChannelState[] channelStates, RenderEvent event) {
@@ -736,9 +790,9 @@ final class SmafSequencedRenderer {
             this.sequence = sequence;
             this.sysExEvents = sysExEvents;
             this.startupPackets = startupPackets;
-            this.events = collectEvents(sequence, sysExEvents, startupPackets);
             this.pcmClips = decodePcmClips(pcmClipData);
             this.scheduledPcmClips = schedulePcmClips(this.pcmClips, pcmTriggers);
+            this.events = collectEvents(sequence, sysExEvents, startupPackets, pcmTriggers, this.pcmClips);
             this.pcmEndFrame = scheduledPcmEndFrame(scheduledPcmClips);
             this.trailingSilenceGraceFrames = Math.max(1,
                     outputSampleRate * TRAILING_SILENCE_GRACE_MILLIS / 1_000);
