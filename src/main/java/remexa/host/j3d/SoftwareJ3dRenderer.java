@@ -2,7 +2,9 @@ package remexa.host.j3d;
 
 import com.jblend.graphics.j3d.AffineTrans;
 import com.jblend.graphics.j3d.Effect3D;
+import com.jblend.graphics.j3d.Light;
 import com.jblend.graphics.j3d.Texture;
+import com.jblend.graphics.j3d.Vector3D;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -275,6 +277,7 @@ public final class SoftwareJ3dRenderer {
             }
             if ((command & COMMAND_MASK) == COMMAND_ATTRIBUTE) {
                 int attributes = command & 0x00FFFFFF;
+                state.lightingEnabled = (attributes & ENV_ATTR_LIGHTING) != 0;
                 state.sphereMapEnabled = (attributes & ENV_ATTR_SPHERE_MAP) != 0;
                 state.semiTransparentEnabled = (attributes & ENV_ATTR_SEMI_TRANSPARENT) != 0;
                 continue;
@@ -368,14 +371,17 @@ public final class SoftwareJ3dRenderer {
                 if (cursor >= commandList.length) {
                     break;
                 }
-                cursor++;
+                state.ambientIntensity = commandList[cursor++];
                 continue;
             }
             if (command == COMMAND_DIRECTION_LIGHT) {
                 if (cursor + 3 >= commandList.length) {
                     break;
                 }
-                cursor += 4;
+                state.lightDirectionX = commandList[cursor++];
+                state.lightDirectionY = commandList[cursor++];
+                state.lightDirectionZ = commandList[cursor++];
+                state.directionalIntensity = commandList[cursor++];
                 continue;
             }
             if (command == COMMAND_THRESHOLD) {
@@ -825,7 +831,8 @@ public final class SoftwareJ3dRenderer {
                     viewY[vertexIndex],
                     viewZ[vertexIndex],
                     u,
-                    v
+                    v,
+                    1.0f
             ));
         }
         if (vertices.size() == 3) {
@@ -1094,9 +1101,9 @@ public final class SoftwareJ3dRenderer {
                 polygonBlendMode,
                 texture,
                 sphereMap,
-                new ProjectedVertex(screenX[i0], screenY[i0], depth[i0], 0.0f, uv == null ? 0.0f : uv[uv0], uv == null ? 0.0f : uv[uv0 + 1]),
-                new ProjectedVertex(screenX[i1], screenY[i1], depth[i1], 0.0f, uv == null ? 0.0f : uv[uv1], uv == null ? 0.0f : uv[uv1 + 1]),
-                new ProjectedVertex(screenX[i2], screenY[i2], depth[i2], 0.0f, uv == null ? 0.0f : uv[uv2], uv == null ? 0.0f : uv[uv2 + 1]),
+                new ProjectedVertex(screenX[i0], screenY[i0], depth[i0], 0.0f, uv == null ? 0.0f : uv[uv0], uv == null ? 0.0f : uv[uv0 + 1], 1.0f),
+                new ProjectedVertex(screenX[i1], screenY[i1], depth[i1], 0.0f, uv == null ? 0.0f : uv[uv1], uv == null ? 0.0f : uv[uv1 + 1], 1.0f),
+                new ProjectedVertex(screenX[i2], screenY[i2], depth[i2], 0.0f, uv == null ? 0.0f : uv[uv2], uv == null ? 0.0f : uv[uv2 + 1], 1.0f),
                 uv != null
         );
     }
@@ -1398,6 +1405,15 @@ public final class SoftwareJ3dRenderer {
         return (alpha << 24) | (red << 16) | (green << 8) | blue;
     }
 
+    private static int modulateShade(int color, float shade) {
+        float clampedShade = clamp01(shade);
+        int alpha = (color >>> 24) & 0xFF;
+        int red = Math.min(255, Math.max(0, Math.round(((color >>> 16) & 0xFF) * clampedShade)));
+        int green = Math.min(255, Math.max(0, Math.round(((color >>> 8) & 0xFF) * clampedShade)));
+        int blue = Math.min(255, Math.max(0, Math.round((color & 0xFF) * clampedShade)));
+        return (alpha << 24) | (red << 16) | (green << 8) | blue;
+    }
+
     private static int sampleCommandTexture(Texture texture, float u, float v, boolean transparent) {
         if (texture == null || texture.getWidth() <= 0 || texture.getHeight() <= 0) {
             return 0;
@@ -1458,7 +1474,8 @@ public final class SoftwareJ3dRenderer {
                 lerp(start.y(), end.y(), t),
                 targetZ,
                 lerp(start.u(), end.u(), t),
-                lerp(start.v(), end.v(), t)
+                lerp(start.v(), end.v(), t),
+                lerp(start.shade(), end.shade(), t)
         );
     }
 
@@ -1479,12 +1496,65 @@ public final class SoftwareJ3dRenderer {
                 -vertex.z(),
                 1.0f / vertex.z(),
                 vertex.u(),
-                vertex.v()
+                vertex.v(),
+                vertex.shade()
         );
     }
 
     private static float lerp(float start, float end, float amount) {
         return start + ((end - start) * amount);
+    }
+
+    private static float clamp01(float value) {
+        return Math.max(0.0f, Math.min(1.0f, value));
+    }
+
+    private static float transformNormalX(AffineTrans affineTrans, float x, float y, float z) {
+        return mulRaw(x, affineTrans.m00) + mulRaw(y, affineTrans.m01) + mulRaw(z, affineTrans.m02);
+    }
+
+    private static float transformNormalY(AffineTrans affineTrans, float x, float y, float z) {
+        return mulRaw(x, affineTrans.m10) + mulRaw(y, affineTrans.m11) + mulRaw(z, affineTrans.m12);
+    }
+
+    private static float transformNormalZ(AffineTrans affineTrans, float x, float y, float z) {
+        return mulRaw(x, affineTrans.m20) + mulRaw(y, affineTrans.m21) + mulRaw(z, affineTrans.m22);
+    }
+
+    private static float computeCommandShade(CommandState state, float nx, float ny, float nz) {
+        if (state == null || !state.lightingEnabled) {
+            return 1.0f;
+        }
+        float tx = nx;
+        float ty = ny;
+        float tz = nz;
+        if (state.affineTrans != null) {
+            tx = transformNormalX(state.affineTrans, nx, ny, nz);
+            ty = transformNormalY(state.affineTrans, nx, ny, nz);
+            tz = transformNormalZ(state.affineTrans, nx, ny, nz);
+        }
+        float normalLength = (float) Math.sqrt((tx * tx) + (ty * ty) + (tz * tz));
+        if (normalLength <= DEPTH_EPSILON) {
+            return 1.0f;
+        }
+        tx /= normalLength;
+        ty /= normalLength;
+        tz /= normalLength;
+
+        float lightX = state.lightDirectionX;
+        float lightY = state.lightDirectionY;
+        float lightZ = state.lightDirectionZ;
+        float lightLength = (float) Math.sqrt((lightX * lightX) + (lightY * lightY) + (lightZ * lightZ));
+        float directional = 0.0f;
+        if (lightLength > DEPTH_EPSILON && state.directionalIntensity > 0) {
+            lightX /= lightLength;
+            lightY /= lightLength;
+            lightZ /= lightLength;
+            directional = Math.max(0.0f, (tx * lightX) + (ty * lightY) + (tz * lightZ));
+        }
+        float ambient = state.ambientIntensity / 4096.0f;
+        float diffuse = directional * (state.directionalIntensity / 4096.0f);
+        return clamp01(ambient + diffuse);
     }
 
     private static int renderPrimitiveCommand(
@@ -1551,7 +1621,8 @@ public final class SoftwareJ3dRenderer {
                                 vertices[base + 1],
                                 vertices[base + 2],
                                 0.0f,
-                                0.0f
+                                0.0f,
+                                1.0f
                         );
                         ProjectedVertex v1 = transformAndProject(
                                 state,
@@ -1559,7 +1630,8 @@ public final class SoftwareJ3dRenderer {
                                 vertices[base + 4],
                                 vertices[base + 5],
                                 0.0f,
-                                0.0f
+                                0.0f,
+                                1.0f
                         );
                         int colorValue = 0xFFFFFFFF;
                         if (colors != null) {
@@ -1714,7 +1786,13 @@ public final class SoftwareJ3dRenderer {
             if (cursor + normalInts > commandList.length) {
                 return cursor - 1 - vertexInts;
             }
-            cursor += normalInts;
+        }
+        float[] normals = null;
+        if (normalInts > 0) {
+            normals = new float[normalInts];
+            for (int i = 0; i < normalInts; i++) {
+                normals[i] = commandList[cursor++];
+            }
         }
         boolean hasTextureCoords = (command & PDATA_TEXCOORD_MASK) == PDATA_TEXCOORD_PER_VERTEX;
         float[] texCoords = null;
@@ -1749,6 +1827,21 @@ public final class SoftwareJ3dRenderer {
         for (int i = 0; i < primitiveCount; i++) {
             int vertexBase = i * verticesPerPrimitive * 3;
             int texBase = texCoords == null ? 0 : i * verticesPerPrimitive * 2;
+            int normalBase = 0;
+            float faceShade = 1.0f;
+            if (normals != null) {
+                if ((command & PDATA_NORMAL_MASK) == PDATA_NORMAL_PER_FACE) {
+                    normalBase = i * 3;
+                    faceShade = computeCommandShade(
+                            state,
+                            normals[normalBase],
+                            normals[normalBase + 1],
+                            normals[normalBase + 2]
+                    );
+                } else if ((command & PDATA_NORMAL_MASK) == PDATA_NORMAL_PER_VERTEX) {
+                    normalBase = i * verticesPerPrimitive * 3;
+                }
+            }
             int color = colors == null ? 0xFFFFFFFF : 0xFF000000 | (colors.length == 1 ? colors[0] : colors[i]);
             if (state.perspective) {
                 List<PolygonVertex> polygonVertices = new ArrayList<>(verticesPerPrimitive);
@@ -1756,13 +1849,24 @@ public final class SoftwareJ3dRenderer {
                     int source = vertexBase + vertex * 3;
                     float u = texCoords == null ? 0.0f : texCoords[texBase + vertex * 2];
                     float v = texCoords == null ? 0.0f : texCoords[texBase + vertex * 2 + 1];
+                    float shade = faceShade;
+                    if (normals != null && (command & PDATA_NORMAL_MASK) == PDATA_NORMAL_PER_VERTEX) {
+                        int vertexNormalBase = normalBase + vertex * 3;
+                        shade = computeCommandShade(
+                                state,
+                                normals[vertexNormalBase],
+                                normals[vertexNormalBase + 1],
+                                normals[vertexNormalBase + 2]
+                        );
+                    }
                     polygonVertices.add(transformVertex(
                             state,
                             vertices[source],
                             vertices[source + 1],
                             vertices[source + 2],
                             u,
-                            v
+                            v,
+                            shade
                     ));
                 }
                 rasterizePerspectiveCommandPolygon(
@@ -1790,13 +1894,24 @@ public final class SoftwareJ3dRenderer {
                 int source = vertexBase + vertex * 3;
                 float u = texCoords == null ? 0.0f : texCoords[texBase + vertex * 2];
                 float v = texCoords == null ? 0.0f : texCoords[texBase + vertex * 2 + 1];
+                float shade = faceShade;
+                if (normals != null && (command & PDATA_NORMAL_MASK) == PDATA_NORMAL_PER_VERTEX) {
+                    int vertexNormalBase = normalBase + vertex * 3;
+                    shade = computeCommandShade(
+                            state,
+                            normals[vertexNormalBase],
+                            normals[vertexNormalBase + 1],
+                            normals[vertexNormalBase + 2]
+                    );
+                }
                 projected[vertex] = transformAndProject(
                         state,
                         vertices[source],
                         vertices[source + 1],
                         vertices[source + 2],
                         u,
-                        v
+                        v,
+                        shade
                 );
             }
             if (verticesPerPrimitive == 3) {
@@ -2008,7 +2123,7 @@ public final class SoftwareJ3dRenderer {
             Texture sphereMap,
             boolean colorKeyEnabled
     ) {
-        ProjectedVertex center = transformAndProject(state, x, y, z, 0.0f, 0.0f);
+        ProjectedVertex center = transformAndProject(state, x, y, z, 0.0f, 0.0f, 1.0f);
         if (center == null || state.texture == null) {
             return;
         }
@@ -2075,7 +2190,8 @@ public final class SoftwareJ3dRenderer {
                 center.depth(),
                 center.reciprocalDepth(),
                 u,
-                v
+                v,
+                center.shade()
         );
     }
 
@@ -2085,7 +2201,8 @@ public final class SoftwareJ3dRenderer {
             float y,
             float z,
             float u,
-            float v
+            float v,
+            float shade
     ) {
         float tx = x;
         float ty = y;
@@ -2095,7 +2212,7 @@ public final class SoftwareJ3dRenderer {
             ty = transformY(state.affineTrans, x, y, z);
             tz = transformZ(state.affineTrans, x, y, z);
         }
-        return new PolygonVertex(tx, ty, tz, u, v);
+        return new PolygonVertex(tx, ty, tz, u, v, shade);
     }
 
     private static ProjectedVertex transformAndProject(
@@ -2104,7 +2221,8 @@ public final class SoftwareJ3dRenderer {
             float y,
             float z,
             float u,
-            float v
+            float v,
+            float shade
     ) {
         float tx = x;
         float ty = y;
@@ -2116,7 +2234,7 @@ public final class SoftwareJ3dRenderer {
         }
         if (state.perspective) {
             return projectVertex(
-                    new PolygonVertex(tx, ty, tz, u, v),
+                    new PolygonVertex(tx, ty, tz, u, v, shade),
                     state.centerX,
                     state.centerY,
                     state.projectionScaleX,
@@ -2130,7 +2248,8 @@ public final class SoftwareJ3dRenderer {
                 -tz,
                 0.0f,
                 u,
-                v
+                v,
+                shade
         );
     }
 
@@ -2284,6 +2403,7 @@ public final class SoftwareJ3dRenderer {
                 float w1 = edgeFunction(x2, y2, x0, y0, px, py) / area;
                 float w2 = edgeFunction(x0, y0, x1, y1, px, py) / area;
                 float pixelDepth = (w0 * z0) + (w1 * z1) + (w2 * z2);
+                float pixelShade = clamp01((w0 * v0.shade()) + (w1 * v1.shade()) + (w2 * v2.shade()));
                 int index = y * surfaceWidth + x;
                 float depthTest = blendMode == 0 ? pixelDepth : pixelDepth + TRANSLUCENT_DEPTH_BIAS;
                 if (depthTest < depthBuffer[index] - DEPTH_EPSILON) {
@@ -2316,8 +2436,9 @@ public final class SoftwareJ3dRenderer {
                     if ((argb >>> 24) == 0) {
                         continue;
                     }
+                    argb = modulateShade(argb, pixelShade);
                 } else {
-                    argb = flatColor;
+                    argb = modulateShade(flatColor, pixelShade);
                 }
                 argb = applySphereMap(argb, sphereMap, surfaceWidth, surfaceHeight, x, y);
                 pixels[index] = blend(argb, pixels[index], blendMode);
@@ -2350,8 +2471,14 @@ public final class SoftwareJ3dRenderer {
         private int nearClip;
         private int farClip;
         private final boolean yDownProjection;
+        private boolean lightingEnabled;
         private boolean semiTransparentEnabled;
         private boolean sphereMapEnabled;
+        private float lightDirectionX;
+        private float lightDirectionY;
+        private float lightDirectionZ;
+        private int directionalIntensity;
+        private int ambientIntensity;
         private int clipX;
         private int clipY;
         private int clipWidth;
@@ -2375,8 +2502,14 @@ public final class SoftwareJ3dRenderer {
                 int nearClip,
                 int farClip,
                 boolean yDownProjection,
+                boolean lightingEnabled,
                 boolean semiTransparentEnabled,
                 boolean sphereMapEnabled,
+                float lightDirectionX,
+                float lightDirectionY,
+                float lightDirectionZ,
+                int directionalIntensity,
+                int ambientIntensity,
                 AffineTrans affineTrans,
                 Texture texture,
                 int centerX,
@@ -2395,8 +2528,14 @@ public final class SoftwareJ3dRenderer {
             this.nearClip = nearClip;
             this.farClip = farClip;
             this.yDownProjection = yDownProjection;
+            this.lightingEnabled = lightingEnabled;
             this.semiTransparentEnabled = semiTransparentEnabled;
             this.sphereMapEnabled = sphereMapEnabled;
+            this.lightDirectionX = lightDirectionX;
+            this.lightDirectionY = lightDirectionY;
+            this.lightDirectionZ = lightDirectionZ;
+            this.directionalIntensity = directionalIntensity;
+            this.ambientIntensity = ambientIntensity;
             this.clipX = baseClipX;
             this.clipY = baseClipY;
             this.clipWidth = Math.max(0, baseClipWidth);
@@ -2487,6 +2626,13 @@ public final class SoftwareJ3dRenderer {
             if (currentTexture == null && textures != null && textures.length > 0) {
                 currentTexture = textures[0];
             }
+            Light light = effect == null ? null : effect.getLight();
+            Vector3D lightDirection = light == null ? null : light.getDirection();
+            float lightDirectionX = lightDirection == null ? 0.0f : lightDirection.x;
+            float lightDirectionY = lightDirection == null ? 0.0f : lightDirection.y;
+            float lightDirectionZ = lightDirection == null ? 4096.0f : lightDirection.z;
+            int directionalIntensity = light == null ? 0 : light.getDirIntensity();
+            int ambientIntensity = light == null ? 4096 : light.getAmbIntensity();
             int centerX = layout.hasExplicitCenter()
                     ? originX + layout.getCenterX()
                     : originX + (perspective ? surfaceWidth / 2 : layout.getCenterX());
@@ -2504,8 +2650,14 @@ public final class SoftwareJ3dRenderer {
                     layout.getPerspectiveNear(),
                     layout.getPerspectiveFar(),
                     yDownProjection,
+                    effect != null,
                     effect == null || effect.isSemiTransparentEnabled(),
                     effect != null && effect.getSphereMap() != null,
+                    lightDirectionX,
+                    lightDirectionY,
+                    lightDirectionZ,
+                    directionalIntensity,
+                    ambientIntensity,
                     layout.getAffineTrans(),
                     currentTexture,
                     centerX,
@@ -2517,9 +2669,9 @@ public final class SoftwareJ3dRenderer {
         }
     }
 
-    private record PolygonVertex(float x, float y, float z, float u, float v) {
+    private record PolygonVertex(float x, float y, float z, float u, float v, float shade) {
     }
 
-    private record ProjectedVertex(float screenX, float screenY, float depth, float reciprocalDepth, float u, float v) {
+    private record ProjectedVertex(float screenX, float screenY, float depth, float reciprocalDepth, float u, float v, float shade) {
     }
 }
