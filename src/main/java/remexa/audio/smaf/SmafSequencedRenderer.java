@@ -774,6 +774,7 @@ final class SmafSequencedRenderer {
         private final List<RenderEvent> events;
         private final MidiChannelState[] channelStates = createChannelStates();
         private final int pcmEndFrame;
+        private final int sequenceEndFrame;
         private final int trailingSilenceGraceFrames;
         private final int maxTailFrames;
         private SmafSynthAdapter sampler;
@@ -781,6 +782,7 @@ final class SmafSequencedRenderer {
         private int eventIndex;
         private int trailingSilentFrames;
         private int tailFramesRendered;
+        private boolean tightLoop;
 
         private StreamingSession(Sequence sequence,
                                  List<SMAFDecoder.SequenceSysExEvent> sysExEvents,
@@ -794,6 +796,9 @@ final class SmafSequencedRenderer {
             this.scheduledPcmClips = schedulePcmClips(this.pcmClips, pcmTriggers);
             this.events = collectEvents(sequence, sysExEvents, startupPackets, pcmTriggers, this.pcmClips);
             this.pcmEndFrame = scheduledPcmEndFrame(scheduledPcmClips);
+            this.sequenceEndFrame = events.isEmpty()
+                    ? 0
+                    : tickToFrames(events.get(events.size() - 1).tick());
             this.trailingSilenceGraceFrames = Math.max(1,
                     outputSampleRate * TRAILING_SILENCE_GRACE_MILLIS / 1_000);
             this.maxTailFrames = Math.max(trailingSilenceGraceFrames,
@@ -827,21 +832,34 @@ final class SmafSequencedRenderer {
             Arrays.fill(output, 0, Math.min(output.length, maxFrames * OUTPUT_CHANNELS), 0.0f);
             int producedFrames = 0;
             int chunkStartFrame = framePosition;
+            int loopBoundary = tightLoop ? Math.max(sequenceEndFrame, pcmEndFrame) : Integer.MAX_VALUE;
             while (producedFrames < maxFrames) {
                 while (eventIndex < events.size() && tickToFrames(events.get(eventIndex).tick()) <= framePosition) {
                     applyEvent(sampler, channelStates, events.get(eventIndex));
                     eventIndex++;
                 }
-                if (eventIndex >= events.size() && sampler.isFinished() && framePosition >= pcmEndFrame) {
+                boolean eventsDone = eventIndex >= events.size();
+                if (tightLoop) {
+                    if (eventsDone && framePosition >= loopBoundary) {
+                        break;
+                    }
+                } else if (eventsDone && sampler.isFinished() && framePosition >= pcmEndFrame) {
                     break;
                 }
                 int framesUntilEvent = maxFrames - producedFrames;
-                if (eventIndex < events.size()) {
+                if (!eventsDone) {
                     framesUntilEvent = Math.min(framesUntilEvent,
                             Math.max(0, tickToFrames(events.get(eventIndex).tick()) - framePosition));
                 }
-                boolean tailOnly = eventIndex >= events.size() && framePosition >= pcmEndFrame;
-                if (tailOnly) {
+                if (tightLoop) {
+                    framesUntilEvent = Math.min(framesUntilEvent,
+                            Math.max(0, loopBoundary - framePosition));
+                    if (framesUntilEvent == 0 && eventsDone) {
+                        break;
+                    }
+                }
+                boolean tailOnly = eventsDone && framePosition >= pcmEndFrame;
+                if (tailOnly && !tightLoop) {
                     int remainingTailFrames = maxTailFrames - tailFramesRendered;
                     if (remainingTailFrames <= 0) {
                         break;
@@ -854,14 +872,14 @@ final class SmafSequencedRenderer {
                 sampler.render(output, producedFrames * OUTPUT_CHANNELS, framesUntilEvent, 1.0f, 1.0f, false, false);
                 producedFrames += framesUntilEvent;
                 framePosition += framesUntilEvent;
-                if (tailOnly) {
+                if (tailOnly && !tightLoop) {
                     tailFramesRendered += framesUntilEvent;
                 }
             }
             if (producedFrames > 0) {
                 mixScheduledPcmClips(output, chunkStartFrame, producedFrames, scheduledPcmClips);
                 boolean tailOnly = eventIndex >= events.size() && framePosition >= pcmEndFrame;
-                if (tailOnly) {
+                if (tailOnly && !tightLoop) {
                     float peak = peak(output, producedFrames * OUTPUT_CHANNELS);
                     if (peak <= TRAILING_SILENCE_EPSILON) {
                         trailingSilentFrames += producedFrames;
@@ -889,6 +907,11 @@ final class SmafSequencedRenderer {
                 channelState.reset();
             }
             resetSampler();
+        }
+
+        @Override
+        public void setLoopMode(boolean tight) {
+            this.tightLoop = tight;
         }
 
         private void resetSampler() throws Exception {

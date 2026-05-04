@@ -406,6 +406,7 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
                 throwIfFailedLocked();
                 try {
                     session.rewind();
+                    session.setLoopMode(loopCount != 1);
                 } catch (Exception exception) {
                     throw new RuntimeException("Failed to prepare streamed SMAF playback", exception);
                 }
@@ -596,6 +597,11 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
                     remainingLoops--;
                 }
                 session.rewind();
+                if (remainingLoops == 0) {
+                    // About to enter the final iteration: let the natural FM
+                    // tail play out instead of cutting at the SEQU boundary.
+                    session.setLoopMode(false);
+                }
                 framePosition = 0;
                 nextUserEventIndex = 0;
                 return true;
