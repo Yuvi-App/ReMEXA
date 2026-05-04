@@ -9,6 +9,7 @@ import com.jblend.graphics.j3d.Light;
 import com.jblend.graphics.j3d.Texture;
 import com.jblend.graphics.j3d.Vector3D;
 import java.awt.image.BufferedImage;
+import java.awt.image.DataBufferInt;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -277,13 +278,24 @@ public final class CanvasGraphics3D extends Graphics implements Graphics3D {
             sceneDepthValid = false;
         }
         if (backingImage != null) {
-            backingImage.getRGB(0, 0, surfaceWidth, surfaceHeight, scenePixels, 0, surfaceWidth);
+            copyBackingImageToScenePixels(size);
         } else {
             Arrays.fill(scenePixels, 0);
         }
         if (!sceneDepthValid) {
             Arrays.fill(sceneDepth, Float.NEGATIVE_INFINITY);
         }
+    }
+
+    private void copyBackingImageToScenePixels(int size) {
+        var dataBuffer = backingImage.getRaster().getDataBuffer();
+        if (backingImage.getType() == BufferedImage.TYPE_INT_ARGB
+                && dataBuffer instanceof DataBufferInt intBuffer
+                && intBuffer.getData().length >= size) {
+            System.arraycopy(intBuffer.getData(), 0, scenePixels, 0, size);
+            return;
+        }
+        backingImage.getRGB(0, 0, surfaceWidth, surfaceHeight, scenePixels, 0, surfaceWidth);
     }
 
     private void clearPendingScene() {

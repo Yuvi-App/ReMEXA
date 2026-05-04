@@ -1,9 +1,10 @@
 package remexa.host.render;
 
 import java.awt.AlphaComposite;
-import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
+import java.awt.image.DataBufferInt;
+import java.util.Arrays;
 import remexa.host.jblend.CanvasGraphics3D;
 import remexa.host.profile.DisplayMetrics;
 
@@ -14,8 +15,11 @@ public final class DisplaySurfaceState {
     private BufferedImage displayImage;
     private BufferedImage virtualImage;
     private BufferedImage frameBuffer;
+    private Graphics2D displayGraphicsDelegate;
     private Graphics2D canvasGraphicsDelegate;
+    private Graphics2D frameBufferGraphicsDelegate;
     private javax.microedition.lcdui.Graphics canvasGraphics;
+    private int[] virtualCopyPixels;
     private long renderedFrameCount;
 
     public DisplaySurfaceState(DisplayMetrics displayMetrics) {
@@ -29,6 +33,7 @@ public final class DisplaySurfaceState {
     }
 
     public synchronized void updateDisplayMetrics(DisplayMetrics nextDisplayMetrics) {
+        disposeDisplayGraphics();
         disposeCanvasGraphics();
         displayMetrics = nextDisplayMetrics;
         displayImage = createSurface(nextDisplayMetrics.width(), nextDisplayMetrics.height());
@@ -44,11 +49,13 @@ public final class DisplaySurfaceState {
     }
 
     public synchronized void createFrameBuffer(int width, int height) {
+        disposeFrameBufferGraphics();
         frameBuffer = createTransparentSurface(width, height);
         ensureVirtualSurface();
     }
 
     public synchronized void disposeFrameBuffer() {
+        disposeFrameBufferGraphics();
         frameBuffer = null;
     }
 
@@ -56,35 +63,25 @@ public final class DisplaySurfaceState {
         if (frameBuffer == null) {
             return;
         }
-        var graphics = frameBuffer.createGraphics();
-        try {
-            graphics.drawImage(
-                    virtualImage,
-                    tx,
-                    ty,
-                    tx + width,
-                    ty + height,
-                    sx,
-                    sy,
-                    sx + width,
-                    sy + height,
-                    null
-            );
-        } finally {
-            graphics.dispose();
-        }
+        var graphics = frameBufferGraphics();
+        resetBlitGraphics(graphics, frameBuffer);
+        graphics.drawImage(
+                virtualImage,
+                tx,
+                ty,
+                tx + width,
+                ty + height,
+                sx,
+                sy,
+                sx + width,
+                sy + height,
+                null
+        );
     }
 
     public synchronized void copyFullScreen(int tx, int ty) {
         ensureVirtualSurface();
-        var copy = copyOf(virtualImage);
-        var graphics = virtualImage.createGraphics();
-        try {
-            graphics.setComposite(AlphaComposite.Src);
-            graphics.drawImage(copy, tx, ty, null);
-        } finally {
-            graphics.dispose();
-        }
+        copyImageWithinVirtualSurface(tx, ty);
     }
 
     public synchronized void drawFrameBuffer(int tx, int ty) {
@@ -92,12 +89,9 @@ public final class DisplaySurfaceState {
             return;
         }
         markFrameRendered();
-        var graphics = displayImage.createGraphics();
-        try {
-            graphics.drawImage(frameBuffer, tx, ty, null);
-        } finally {
-            graphics.dispose();
-        }
+        var graphics = displayGraphics();
+        resetBlitGraphics(graphics, displayImage);
+        graphics.drawImage(frameBuffer, tx, ty, null);
         clearTransparent(frameBuffer);
     }
 
@@ -107,12 +101,9 @@ public final class DisplaySurfaceState {
             return;
         }
         markFrameRendered();
-        var graphics = displayImage.createGraphics();
-        try {
-            graphics.drawImage(source, tx, ty, null);
-        } finally {
-            graphics.dispose();
-        }
+        var graphics = displayGraphics();
+        resetBlitGraphics(graphics, displayImage);
+        graphics.drawImage(source, tx, ty, null);
         if (frameBuffer != null) {
             clearTransparent(frameBuffer);
         }
@@ -121,12 +112,9 @@ public final class DisplaySurfaceState {
     public synchronized void presentCanvas() {
         ensureVirtualSurface();
         clear(displayImage);
-        var graphics = displayImage.createGraphics();
-        try {
-            graphics.drawImage(virtualImage, 0, 0, null);
-        } finally {
-            graphics.dispose();
-        }
+        var graphics = displayGraphics();
+        resetBlitGraphics(graphics, displayImage);
+        graphics.drawImage(virtualImage, 0, 0, null);
     }
 
     public synchronized void drawIndexedPattern(
@@ -234,6 +222,20 @@ public final class DisplaySurfaceState {
         );
     }
 
+    private Graphics2D displayGraphics() {
+        if (displayGraphicsDelegate == null) {
+            displayGraphicsDelegate = displayImage.createGraphics();
+        }
+        return displayGraphicsDelegate;
+    }
+
+    private Graphics2D frameBufferGraphics() {
+        if (frameBufferGraphicsDelegate == null) {
+            frameBufferGraphicsDelegate = frameBuffer.createGraphics();
+        }
+        return frameBufferGraphicsDelegate;
+    }
+
     private javax.microedition.lcdui.Graphics beginCachedVirtualPaint() {
         ensureVirtualSurface();
         ensureCanvasGraphics();
@@ -246,6 +248,20 @@ public final class DisplaySurfaceState {
         if (canvasGraphicsDelegate != null) {
             canvasGraphicsDelegate.dispose();
             canvasGraphicsDelegate = null;
+        }
+    }
+
+    private void disposeDisplayGraphics() {
+        if (displayGraphicsDelegate != null) {
+            displayGraphicsDelegate.dispose();
+            displayGraphicsDelegate = null;
+        }
+    }
+
+    private void disposeFrameBufferGraphics() {
+        if (frameBufferGraphicsDelegate != null) {
+            frameBufferGraphicsDelegate.dispose();
+            frameBufferGraphicsDelegate = null;
         }
     }
 
@@ -288,34 +304,50 @@ public final class DisplaySurfaceState {
 
     private static BufferedImage copyOf(BufferedImage source) {
         var copy = createSurface(source.getWidth(), source.getHeight());
-        var graphics = copy.createGraphics();
-        try {
-            graphics.drawImage(source, 0, 0, null);
-        } finally {
-            graphics.dispose();
-        }
+        System.arraycopy(pixels(source), 0, pixels(copy), 0, source.getWidth() * source.getHeight());
         return copy;
     }
 
     private static void clear(BufferedImage image) {
-        var graphics = image.createGraphics();
-        try {
-            graphics.setComposite(AlphaComposite.Src);
-            graphics.setColor(Color.BLACK);
-            graphics.fillRect(0, 0, image.getWidth(), image.getHeight());
-        } finally {
-            graphics.dispose();
-        }
+        Arrays.fill(pixels(image), 0xFF000000);
     }
 
     private static void clearTransparent(BufferedImage image) {
-        var graphics = image.createGraphics();
-        try {
-            graphics.setComposite(AlphaComposite.Clear);
-            graphics.fillRect(0, 0, image.getWidth(), image.getHeight());
-        } finally {
-            graphics.dispose();
+        Arrays.fill(pixels(image), 0);
+    }
+
+    private void copyImageWithinVirtualSurface(int tx, int ty) {
+        int width = virtualImage.getWidth();
+        int height = virtualImage.getHeight();
+        int size = width * height;
+        if (virtualCopyPixels == null || virtualCopyPixels.length != size) {
+            virtualCopyPixels = new int[size];
         }
+        var target = pixels(virtualImage);
+        System.arraycopy(target, 0, virtualCopyPixels, 0, size);
+
+        int left = Math.max(0, tx);
+        int top = Math.max(0, ty);
+        int right = Math.min(width, tx + width);
+        int bottom = Math.min(height, ty + height);
+        if (left >= right || top >= bottom) {
+            return;
+        }
+        int copyWidth = right - left;
+        int sourceX = left - tx;
+        for (int y = top; y < bottom; y++) {
+            int sourceY = y - ty;
+            System.arraycopy(virtualCopyPixels, sourceY * width + sourceX, target, y * width + left, copyWidth);
+        }
+    }
+
+    private static int[] pixels(BufferedImage image) {
+        return ((DataBufferInt) image.getRaster().getDataBuffer()).getData();
+    }
+
+    private static void resetBlitGraphics(Graphics2D graphics, BufferedImage target) {
+        graphics.setComposite(AlphaComposite.SrcOver);
+        graphics.setClip(0, 0, target.getWidth(), target.getHeight());
     }
 
     private static int resolvePaletteColor(int[] palette, int paletteIndex, int rawPaletteIndex, boolean transparent) {

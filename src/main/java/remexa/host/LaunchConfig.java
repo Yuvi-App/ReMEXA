@@ -393,7 +393,7 @@ public final class LaunchConfig {
 
         public static FrameRateOption normalize(String candidate) {
             var option = fromId(candidate);
-            return option == null ? FPS_20 : option;
+            return option == null ? UNCAPPED : option;
         }
 
         public static FrameRateOption resolveConfigured() {
@@ -404,7 +404,7 @@ public final class LaunchConfig {
                     return parsed;
                 }
             }
-            return FPS_20;
+            return UNCAPPED;
         }
     }
 
@@ -425,7 +425,7 @@ public final class LaunchConfig {
     }
 
     public static void applyFrameRateOption(FrameRateOption option) {
-        var resolved = option == null ? FrameRateOption.FPS_20 : option;
+        var resolved = option == null ? FrameRateOption.UNCAPPED : option;
         System.setProperty(FRAME_INTERVAL_PROPERTY, Integer.toString(resolved.frameIntervalMs()));
     }
 

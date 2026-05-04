@@ -98,13 +98,13 @@ public final class HostUiSettings {
         return LaunchConfig.FrameRateOption.normalize(
                 RemexaPreferences.ui().get(
                         RemexaPreferences.FRAME_RATE_KEY,
-                        LaunchConfig.FrameRateOption.FPS_20.id()
+                        LaunchConfig.FrameRateOption.UNCAPPED.id()
                 )
         );
     }
 
     public static void setFrameRateOption(LaunchConfig.FrameRateOption option) {
-        var resolved = option == null ? LaunchConfig.FrameRateOption.FPS_20 : option;
+        var resolved = option == null ? LaunchConfig.FrameRateOption.UNCAPPED : option;
         RemexaPreferences.ui().put(RemexaPreferences.FRAME_RATE_KEY, resolved.id());
     }
 
