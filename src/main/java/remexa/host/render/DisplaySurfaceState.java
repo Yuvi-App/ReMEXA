@@ -133,6 +133,9 @@ public final class DisplaySurfaceState {
             return;
         }
         var target = toFrameBuffer ? ensureFrameBuffer() : ensureVirtualSurfaceAndGet();
+        var targetPixels = pixels(target);
+        int targetWidth = target.getWidth();
+        int targetHeight = target.getHeight();
         var normalizedRotation = Math.floorMod(rotation, 4);
         for (int sampleY = 0; sampleY < 8; sampleY++) {
             for (int sampleX = 0; sampleX < 8; sampleX++) {
@@ -145,13 +148,27 @@ public final class DisplaySurfaceState {
                 if (((argb >>> 24) & 0xFF) == 0) {
                     continue;
                 }
-                drawPatternPixel(target, x, y, sampleX, sampleY, normalizedRotation, upsideDown, rightsideLeft, argb);
+                drawPatternPixel(
+                        targetPixels,
+                        targetWidth,
+                        targetHeight,
+                        x,
+                        y,
+                        sampleX,
+                        sampleY,
+                        normalizedRotation,
+                        upsideDown,
+                        rightsideLeft,
+                        argb
+                );
             }
         }
     }
 
     private static void drawPatternPixel(
-            BufferedImage target,
+            int[] targetPixels,
+            int targetWidth,
+            int targetHeight,
             int x,
             int y,
             int sampleX,
@@ -171,10 +188,10 @@ public final class DisplaySurfaceState {
         }
         var drawX = x + transformedX;
         var drawY = y + transformedY;
-        if (drawX < 0 || drawY < 0 || drawX >= target.getWidth() || drawY >= target.getHeight()) {
+        if (drawX < 0 || drawY < 0 || drawX >= targetWidth || drawY >= targetHeight) {
             return;
         }
-        target.setRGB(drawX, drawY, argb);
+        targetPixels[drawY * targetWidth + drawX] = argb;
     }
 
     public synchronized BufferedImage currentFrameSnapshot() {
