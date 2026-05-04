@@ -8,8 +8,7 @@ import remexa.host.jblend.CanvasGraphics3D;
 import remexa.host.profile.DisplayMetrics;
 
 public final class DisplaySurfaceState {
-    private static final int SPRITE_SCRATCH_COLUMNS = 8;
-    private static final int SPRITE_SCRATCH_ROWS = 8;
+    private static final int SPRITE_SCRATCH_MARGIN = 8;
 
     private DisplayMetrics displayMetrics;
     private BufferedImage displayImage;
@@ -250,11 +249,17 @@ public final class DisplaySurfaceState {
     }
 
     private int virtualSurfaceWidth() {
-        return displayMetrics.width() + (frameBuffer == null ? 0 : SPRITE_SCRATCH_COLUMNS);
+        if (frameBuffer == null) {
+            return displayMetrics.width();
+        }
+        return Math.max(displayMetrics.width(), frameBuffer.getWidth() + SPRITE_SCRATCH_MARGIN * 2);
     }
 
     private int virtualSurfaceHeight() {
-        return displayMetrics.height() + (frameBuffer == null ? 0 : SPRITE_SCRATCH_ROWS);
+        if (frameBuffer == null) {
+            return displayMetrics.height();
+        }
+        return Math.max(displayMetrics.height(), frameBuffer.getHeight() + SPRITE_SCRATCH_MARGIN * 2);
     }
 
     private static BufferedImage createSurface(int width, int height) {
