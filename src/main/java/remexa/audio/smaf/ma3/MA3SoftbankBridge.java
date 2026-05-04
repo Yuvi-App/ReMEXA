@@ -157,8 +157,12 @@ public final class MA3SoftbankBridge {
          * the smaf825 canonical reference ({@code vmafm.go:206}), payload
          * byte 1 is a constant {@code 0x01} marker. Channel-level pan
          * arrives separately via MIDI CC10.</p>
+         *
+         * <p>Low two bits encode {@code basicOctave = 1} so the legacy path
+         * leaves pitch unshifted; {@code basicOctave = 0} would transpose the
+         * voice up by an octave</p>
          */
-        private static final int CENTER_PANPOT_BYTE = 15 << 3;
+        private static final int CENTER_PANPOT_BYTE = (15 << 3) | 0x01;
 
         private final int lfo;
         private final int algorithm;
