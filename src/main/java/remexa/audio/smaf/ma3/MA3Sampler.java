@@ -160,9 +160,13 @@ public class MA3Sampler
     @Override
     public boolean isFinished()
     {
-        for (MA3Channel chan : this.channels)
+        MA3Channel[] channels = this.channels;
+        for (int i = 0, n = channels.length; i < n; i++)
+        {
+            MA3Channel chan = channels[i];
             if (chan.notesOut.size() != 0)
                 return false;
+        }
 
         return true;
     }
@@ -281,8 +285,9 @@ public class MA3Sampler
             throw new IllegalArgumentException("Invalid semitones.");
 
         this.bendOut = (float)Math.pow(2, semitones);
-        for (MA3Channel chan : this.channels)
-            chan.onFrequency();
+        MA3Channel[] channels = this.channels;
+        for (int i = 0, n = channels.length; i < n; i++)
+            channels[i].onFrequency();
     }
 
     /**
@@ -558,19 +563,22 @@ public class MA3Sampler
         this.wavRam = null;
         this.fm2ops.clear();
         this.fm4ops.clear();
-        for (MA3Channel chan : this.channels)
-            chan.reset();
+        MA3Channel[] channels = this.channels;
+        for (int i = 0, n = channels.length; i < n; i++)
+            channels[i].reset();
         Arrays.fill(this.wavDrums, null);
     }
 
     /** Terminate all active notes. */
     public void stopAll()
     {
-        for (MA3Channel chan : this.channels)
+        MA3Channel[] channels = this.channels;
+        for (int i = 0, n = channels.length; i < n; i++)
         {
+            MA3Channel chan = channels[i];
             Arrays.fill(chan.notesOn, null);
-            for (MA3Note note : chan.notesOut)
-                note.stop();
+            for (int j = 0, m = chan.notesOut.size(); j < m; j++)
+                chan.notesOut.get(j).stop();
         }
     }
 
@@ -777,8 +785,9 @@ public class MA3Sampler
     void onVolume()
     {
         this.volOut = (1.0f - this.volFade) * this.volLevel;
-        for (MA3Channel chan : this.channels)
-            chan.onVolume();
+        MA3Channel[] channels = this.channels;
+        for (int i = 0, n = channels.length; i < n; i++)
+            channels[i].onVolume();
     }
 
     /**
@@ -787,8 +796,9 @@ public class MA3Sampler
     void sample()
     {
         this.smpNext[0] = this.smpNext[1] = 0.0f;
-        for (MA3Channel chan : this.channels)
-            chan.render();
+        MA3Channel[] channels = this.channels;
+        for (int i = 0, n = channels.length; i < n; i++)
+            channels[i].render();
 
         this.amPhase = (this.amPhase + 1) % 0x34000;
         this.vibPhase++;
@@ -839,9 +849,16 @@ public class MA3Sampler
      */
     void stopWaveDrums()
     {
-        for (MA3Channel chan : this.channels)
-            for (MA3Note note : chan.notesOut)
+        MA3Channel[] channels = this.channels;
+        for (int i = 0, n = channels.length; i < n; i++)
+        {
+            MA3Channel chan = channels[i];
+            for (int j = 0, m = chan.notesOut.size(); j < m; j++)
+            {
+                MA3Note note = chan.notesOut.get(j);
                 if (note.algorithm.isWave)
                     note.stop();
+            }
+        }
     }
 }

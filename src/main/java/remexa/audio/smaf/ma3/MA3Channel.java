@@ -133,8 +133,9 @@ class MA3Channel
     void onFrequency()
     {
         float bend = this.instance.bendOut * this.bendOut;
-        for (MA3Note note : this.notesOut)
-            note.onFrequency(bend);
+        ArrayList<MA3Note> notesOut = this.notesOut;
+        for (int i = 0, n = notesOut.size(); i < n; i++)
+            notesOut.get(i).onFrequency(bend);
     }
 
     /**
@@ -146,8 +147,9 @@ class MA3Channel
 
         this.volLeftOut = instance.volOut * this.volLeft;
         this.volRightOut = instance.volOut * this.volRight;
-        for (MA3Note note : this.notesOut)
-            note.onVolume();
+        ArrayList<MA3Note> notesOut = this.notesOut;
+        for (int i = 0, n = notesOut.size(); i < n; i++)
+            notesOut.get(i).onVolume();
     }
 
     /**
@@ -183,8 +185,9 @@ class MA3Channel
 
         // Stop playing all notes (not calling note.onFrequency())
         Arrays.fill(this.notesOn, null);
-        for (MA3Note note : this.notesOut)
-            note.stop();
+        ArrayList<MA3Note> notesOut = this.notesOut;
+        for (int i = 0, n = notesOut.size(); i < n; i++)
+            notesOut.get(i).stop();
     }
 
 }
