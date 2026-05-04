@@ -94,6 +94,8 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
         private final OutputFormatKey formatKey;
         private final Object engineLock = new Object();
         private final List<PlaybackHandle> handles = new ArrayList<>();
+        private final List<PlaybackHandle> handleSnapshot = new ArrayList<>();
+        private final NotificationSink notifications = new NotificationSink();
         private final int chunkFrames;
         private final int lineBufferFrames;
         private final float[] mixBuffer;
@@ -166,7 +168,9 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
                         pruneClosedHandlesLocked();
                         if (hasRunnableHandleLocked()) {
                             idleCloseDeadlineMs = Long.MAX_VALUE;
-                            snapshot = new ArrayList<>(handles);
+                            handleSnapshot.clear();
+                            handleSnapshot.addAll(handles);
+                            snapshot = handleSnapshot;
                             break;
                         }
                         long waitMillis = idleWaitMillisLocked();
@@ -185,9 +189,9 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
                 }
 
                 Arrays.fill(mixBuffer, 0.0f);
+                notifications.clear();
                 long writtenBefore = writtenFrames;
                 int mixedFrames = 0;
-                List<Runnable> notifications = new ArrayList<>();
                 for (PlaybackHandle handle : snapshot) {
                     Arrays.fill(sessionBuffer, 0.0f);
                     int frames;
@@ -245,7 +249,7 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
                     handle.bindCompletionTarget(writtenBefore, writtenFrames);
                     handle.dispatchReadyCompletion(playedFrames, notifications);
                 }
-                notifications.forEach(Runnable::run);
+                notifications.runAll();
             }
         }
 
@@ -341,6 +345,36 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
 
         private static int framesForMillis(int sampleRate, int millis) {
             return Math.max(1, (int) Math.ceil(sampleRate * (millis / 1000.0)));
+        }
+    }
+
+    private static final class NotificationSink {
+        private List<Runnable> notifications;
+
+        void add(Runnable notification) {
+            if (notifications == null) {
+                notifications = new ArrayList<>();
+            }
+            notifications.add(notification);
+        }
+
+        void clear() {
+            if (notifications != null) {
+                notifications.clear();
+            }
+        }
+
+        void runAll() {
+            if (notifications == null) {
+                return;
+            }
+            try {
+                for (Runnable notification : notifications) {
+                    notification.run();
+                }
+            } finally {
+                notifications.clear();
+            }
         }
     }
 
@@ -465,7 +499,7 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
         }
 
         @SuppressWarnings("RedundantThrows")
-        int renderInto(float[] output, int maxFrames, List<Runnable> notifications) throws Exception {
+        int renderInto(float[] output, int maxFrames, NotificationSink notifications) throws Exception {
             while (true) {
                 long epoch;
                 int startFrame;
@@ -524,7 +558,7 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
             }
         }
 
-        void dispatchReadyCompletion(long playedFrames, List<Runnable> notifications) {
+        void dispatchReadyCompletion(long playedFrames, NotificationSink notifications) {
             synchronized (stateLock) {
                 if (!completionPending || completionTargetFrame < 0L || playedFrames < completionTargetFrame) {
                     return;
