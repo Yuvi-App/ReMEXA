@@ -47,6 +47,8 @@ public final class SoftwareJ3dRenderer {
     private static final int PDATA_POINT_SPRITE_PARAMS_PER_COMMAND = 0x1000;
     private static final int PDATA_POINT_SPRITE_PARAMS_PER_FACE = 0x2000;
     private static final int PDATA_TEXCOORD_PER_VERTEX = 0x3000;
+    private static final int POINT_SPRITE_PIXEL_SIZE = 0x01;
+    private static final int POINT_SPRITE_NO_PERS = 0x02;
     private static final int PRIMITIVE_POINTS = 0x01;
     private static final int PRIMITIVE_LINES = 0x02;
     private static final int PRIMITIVE_TRIANGLES = 0x03;
@@ -1735,7 +1737,7 @@ public final class SoftwareJ3dRenderer {
                 for (int i = 0; i < spriteInts; i++) {
                     spriteParams[i] = commandList[cursor++];
                 }
-                if (rendersInPass(blendMode, pass)) {
+                if (spriteInts >= 8 && rendersInPass(blendMode, pass)) {
                     for (int i = 0; i < primitiveCount; i++) {
                         int vertexBase = i * 3;
                         int spriteBase = spriteMode == PDATA_POINT_SPRITE_PARAMS_PER_COMMAND ? 0 : i * 8;
@@ -2146,17 +2148,38 @@ public final class SoftwareJ3dRenderer {
         if (center == null || state.texture == null) {
             return;
         }
-        float scaleX = state.projectionScaleX;
-        float scaleY = state.projectionScaleY;
+        int flags = spriteParams[spriteBase + 7];
+        boolean pixelSize = (flags & POINT_SPRITE_PIXEL_SIZE) != 0;
+        boolean noPerspective = (flags & POINT_SPRITE_NO_PERS) != 0;
+        float spriteWidth = spriteParams[spriteBase];
+        float spriteHeight = spriteParams[spriteBase + 1];
+        float projectedWidth;
+        float projectedHeight;
         if (state.perspective) {
-            // Command-list point sprites use world-space billboard sizes, so they must
-            // shrink with distance just like projected geometry instead of staying at a
-            // fixed screen-space size.
-            scaleX *= center.reciprocalDepth();
-            scaleY *= center.reciprocalDepth();
+            float depth = center.reciprocalDepth() > 0.0f ? 1.0f / center.reciprocalDepth() : 0.0f;
+            if (depth <= DEPTH_EPSILON) {
+                return;
+            }
+            if (pixelSize) {
+                float perspectiveScale = noPerspective || state.nearClip <= 0
+                        ? 1.0f
+                        : state.nearClip / depth;
+                projectedWidth = spriteWidth * perspectiveScale;
+                projectedHeight = spriteHeight * perspectiveScale;
+            } else {
+                float perspectiveDepth = noPerspective && state.nearClip > 0 ? state.nearClip : depth;
+                projectedWidth = spriteWidth * state.projectionScaleX / perspectiveDepth;
+                projectedHeight = spriteHeight * state.projectionScaleY / perspectiveDepth;
+            }
+        } else if (pixelSize) {
+            projectedWidth = spriteWidth;
+            projectedHeight = spriteHeight;
+        } else {
+            projectedWidth = spriteWidth * state.projectionScaleX;
+            projectedHeight = spriteHeight * state.projectionScaleY;
         }
-        float halfWidth = Math.abs(spriteParams[spriteBase] * scaleX) * 0.5f;
-        float halfHeight = Math.abs(spriteParams[spriteBase + 1] * scaleY) * 0.5f;
+        float halfWidth = Math.abs(projectedWidth) * 0.5f;
+        float halfHeight = Math.abs(projectedHeight) * 0.5f;
         if (halfWidth <= DEPTH_EPSILON || halfHeight <= DEPTH_EPSILON) {
             return;
         }

@@ -235,7 +235,7 @@ public final class DisplaySurfaceState {
                 virtualImage.getHeight(),
                 false,
                 virtualImage,
-                true
+                false
         );
     }
 
