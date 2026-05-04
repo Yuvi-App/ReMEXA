@@ -5,7 +5,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public abstract class ACanvas extends javax.microedition.lcdui.Canvas implements com.jblend.ui.SequenceInterface {
     private static final int PALETTE_BANK_SIZE = 32;
     private static final int PATTERN_MASK = 0x00FF;
-    private static final int TRANSFORM_MASK = 0x0700;
+    private static final int ROTATION_MASK = 0x0C00;
+    private static final int UPSIDE_DOWN_MASK = 0x0200;
+    private static final int RIGHTSIDE_LEFT_MASK = 0x0100;
     private static final int TRANSPARENT_MASK = 0x1000;
     private static final int OFFSET_MASK = 0xE000;
 
@@ -98,7 +100,13 @@ public abstract class ACanvas extends javax.microedition.lcdui.Canvas implements
             throw new IllegalArgumentException("ACanvas pattern number must be between 0 and 255.");
         }
         int encoded = patternNo & PATTERN_MASK;
-        encoded |= encodeTransform(rotation, isUpsideDown, isRightsideLeft);
+        encoded |= (rotation & 0x3) << 10;
+        if (isUpsideDown) {
+            encoded |= UPSIDE_DOWN_MASK;
+        }
+        if (isRightsideLeft) {
+            encoded |= RIGHTSIDE_LEFT_MASK;
+        }
         if (transparent) {
             encoded |= TRANSPARENT_MASK;
         }
@@ -249,99 +257,15 @@ public abstract class ACanvas extends javax.microedition.lcdui.Canvas implements
         int command = encodedCommand & 0xFFFF;
         int offset = (command & OFFSET_MASK) >>> 13;
         boolean transparent = (command & TRANSPARENT_MASK) != 0;
-        var transform = decodeTransform(command & TRANSFORM_MASK);
         int patternNo = command & PATTERN_MASK;
         return new CharacterCommand(
                 offset,
                 transparent,
-                transform.rotation(),
-                transform.upsideDown(),
-                transform.rightsideLeft(),
+                (command & ROTATION_MASK) >>> 10,
+                (command & UPSIDE_DOWN_MASK) != 0,
+                (command & RIGHTSIDE_LEFT_MASK) != 0,
                 patternNo
         );
-    }
-
-    private static int encodeTransform(int rotation, boolean upsideDown, boolean rightsideLeft) {
-        int[][] samples = {
-                {0, 0},
-                {7, 0},
-                {0, 7}
-        };
-        int[][] target = new int[samples.length][2];
-        for (int i = 0; i < samples.length; i++) {
-            int x = rotateX(samples[i][0], samples[i][1], rotation);
-            int y = rotateY(samples[i][0], samples[i][1], rotation);
-            if (upsideDown) {
-                y = 7 - y;
-            }
-            if (rightsideLeft) {
-                x = 7 - x;
-            }
-            target[i][0] = x;
-            target[i][1] = y;
-        }
-        for (int transformCode = 0; transformCode < 8; transformCode++) {
-            if (matchesCanonicalTransform(transformCode, samples, target)) {
-                return transformCode << 8;
-            }
-        }
-        throw new IllegalArgumentException("Unsupported ACanvas transform.");
-    }
-
-    private static boolean matchesCanonicalTransform(int transformCode, int[][] samples, int[][] target) {
-        for (int i = 0; i < samples.length; i++) {
-            int[] transformed = applyCanonicalTransform(transformCode, samples[i][0], samples[i][1]);
-            if (transformed[0] != target[i][0] || transformed[1] != target[i][1]) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private static CharacterTransform decodeTransform(int encodedTransform) {
-        return switch (encodedTransform) {
-            case 0x000 -> new CharacterTransform(0, false, false);
-            case 0x100 -> new CharacterTransform(0, false, true);
-            case 0x200 -> new CharacterTransform(0, true, false);
-            case 0x300 -> new CharacterTransform(2, false, false);
-            case 0x400 -> new CharacterTransform(1, false, false);
-            case 0x500 -> new CharacterTransform(3, false, false);
-            case 0x600 -> new CharacterTransform(1, false, true);
-            case 0x700 -> new CharacterTransform(1, true, false);
-            default -> throw new IllegalArgumentException("Unsupported ACanvas transform: 0x" + Integer.toHexString(encodedTransform));
-        };
-    }
-
-    private static int[] applyCanonicalTransform(int transformCode, int x, int y) {
-        return switch (transformCode) {
-            case 0 -> new int[] {x, y};
-            case 1 -> new int[] {7 - x, y};
-            case 2 -> new int[] {x, 7 - y};
-            case 3 -> new int[] {7 - x, 7 - y};
-            case 4 -> new int[] {7 - y, x};
-            case 5 -> new int[] {y, 7 - x};
-            case 6 -> new int[] {y, x};
-            case 7 -> new int[] {7 - y, 7 - x};
-            default -> throw new IllegalArgumentException("Unsupported ACanvas canonical transform.");
-        };
-    }
-
-    private static int rotateX(int x, int y, int rotation) {
-        return switch (rotation & 0x3) {
-            case 1 -> 7 - y;
-            case 2 -> 7 - x;
-            case 3 -> y;
-            default -> x;
-        };
-    }
-
-    private static int rotateY(int x, int y, int rotation) {
-        return switch (rotation & 0x3) {
-            case 1 -> x;
-            case 2 -> 7 - y;
-            case 3 -> 7 - x;
-            default -> y;
-        };
     }
 
     private record CharacterCommand(
@@ -354,10 +278,4 @@ public abstract class ACanvas extends javax.microedition.lcdui.Canvas implements
     ) {
     }
 
-    private record CharacterTransform(
-            int rotation,
-            boolean upsideDown,
-            boolean rightsideLeft
-    ) {
-    }
 }

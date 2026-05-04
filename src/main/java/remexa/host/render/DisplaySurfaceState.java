@@ -170,27 +170,41 @@ public final class DisplaySurfaceState {
                 if (transparent && rawPaletteIndex == 0) {
                     continue;
                 }
-                var paletteIndex = paletteOffset + rawPaletteIndex;
+                var paletteIndex = (paletteOffset + rawPaletteIndex) & 0xFF;
                 var argb = resolvePaletteColor(palette, paletteIndex, rawPaletteIndex, transparent);
                 if (((argb >>> 24) & 0xFF) == 0) {
                     continue;
                 }
-                int transformedX = rotateX(sampleX, sampleY, normalizedRotation);
-                int transformedY = rotateY(sampleX, sampleY, normalizedRotation);
-                if (upsideDown) {
-                    transformedY = 7 - transformedY;
-                }
-                if (rightsideLeft) {
-                    transformedX = 7 - transformedX;
-                }
-                var drawX = x + transformedX;
-                var drawY = y + transformedY;
-                if (drawX < 0 || drawY < 0 || drawX >= target.getWidth() || drawY >= target.getHeight()) {
-                    continue;
-                }
-                target.setRGB(drawX, drawY, argb);
+                drawPatternPixel(target, x, y, sampleX, sampleY, normalizedRotation, upsideDown, rightsideLeft, argb);
             }
         }
+    }
+
+    private static void drawPatternPixel(
+            BufferedImage target,
+            int x,
+            int y,
+            int sampleX,
+            int sampleY,
+            int rotation,
+            boolean upsideDown,
+            boolean rightsideLeft,
+            int argb
+    ) {
+        int transformedX = rotateX(sampleX, sampleY, rotation);
+        int transformedY = rotateY(sampleX, sampleY, rotation);
+        if (upsideDown) {
+            transformedY = 7 - transformedY;
+        }
+        if (rightsideLeft) {
+            transformedX = 7 - transformedX;
+        }
+        var drawX = x + transformedX;
+        var drawY = y + transformedY;
+        if (drawX < 0 || drawY < 0 || drawX >= target.getWidth() || drawY >= target.getHeight()) {
+            return;
+        }
+        target.setRGB(drawX, drawY, argb);
     }
 
     public synchronized BufferedImage currentFrameSnapshot() {
