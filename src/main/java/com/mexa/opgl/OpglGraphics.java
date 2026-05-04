@@ -609,21 +609,25 @@ public class OpglGraphics {
                 }
             }
         }
-        remexa.probes.SdkStubSupport.log(
-                "com.mexa.opgl.OpglGraphics",
-                "getInstance",
-                describeInstance(current)
-        );
+        if (remexa.probes.SdkStubSupport.SDK_TRACE_ENABLED) {
+            remexa.probes.SdkStubSupport.log(
+                    "com.mexa.opgl.OpglGraphics",
+                    "getInstance",
+                    describeInstance(current)
+            );
+        }
         return current;
     }
 
     public void bind (java.lang.Object target) {
-        remexa.probes.SdkStubSupport.log(
-                "com.mexa.opgl.OpglGraphics",
-                "bind",
-                describeInstance(this),
-                target
-        );
+        if (remexa.probes.SdkStubSupport.SDK_TRACE_ENABLED) {
+            remexa.probes.SdkStubSupport.log(
+                    "com.mexa.opgl.OpglGraphics",
+                    "bind",
+                    describeInstance(this),
+                    target
+            );
+        }
         if (target == null) {
             throw new NullPointerException("target");
         }

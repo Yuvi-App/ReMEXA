@@ -19,6 +19,7 @@ public final class LogSettings {
     public static void setEnabled(LogCategory category, boolean enabled) {
         ENABLED[category.ordinal()] = enabled;
         RemexaPreferences.log().putBoolean(key(category), enabled);
+        SdkStubSupport.refreshTraceEnabled();
     }
 
     public static boolean areAllEnabled() {
@@ -30,10 +31,21 @@ public final class LogSettings {
         return true;
     }
 
+    public static boolean isAnyEnabled() {
+        for (boolean enabled : ENABLED) {
+            if (enabled) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public static void setAllEnabled(boolean enabled) {
         for (var category : CATEGORIES) {
-            setEnabled(category, enabled);
+            ENABLED[category.ordinal()] = enabled;
+            RemexaPreferences.log().putBoolean(key(category), enabled);
         }
+        SdkStubSupport.refreshTraceEnabled();
     }
 
     public static Map<LogCategory, Boolean> loadAll() {
