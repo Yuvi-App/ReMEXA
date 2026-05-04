@@ -326,7 +326,7 @@ public final class MidletRuntime {
         }
         var surface = context.surfaceFor(canvas);
         var spriteCanvas = canvas instanceof SpriteCanvas || canvas instanceof ACanvas;
-        var graphics = surface.beginCanvasPaint(spriteCanvas);
+        var graphics = surface.beginCanvasPaint();
         CURRENT_GRAPHICS.set(graphics);
         try {
             renderer.accept(graphics);
@@ -347,7 +347,7 @@ public final class MidletRuntime {
             return;
         }
         var surface = context.surfaceFor(screen);
-        var graphics = surface.beginCanvasPaint(false);
+        var graphics = surface.beginCanvasPaint();
         CURRENT_GRAPHICS.set(graphics);
         try {
             renderer.accept(graphics);

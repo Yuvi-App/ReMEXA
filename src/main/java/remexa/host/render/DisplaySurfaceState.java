@@ -35,33 +35,12 @@ public final class DisplaySurfaceState {
         virtualImage = createVirtualSurface();
     }
 
-    public synchronized javax.microedition.lcdui.Graphics beginCanvasPaint(boolean spriteCanvas) {
-        ensureVirtualSurface();
-        if (!spriteCanvas) {
-            ensureCanvasGraphics();
-            canvasGraphics.resetState();
-            return canvasGraphics;
-        }
-        return new CanvasGraphics3D(
-                virtualImage.createGraphics(),
-                virtualImage.getWidth(),
-                virtualImage.getHeight(),
-                true,
-                virtualImage,
-                true
-        );
+    public synchronized javax.microedition.lcdui.Graphics beginCanvasPaint() {
+        return beginCachedVirtualPaint();
     }
 
     public synchronized javax.microedition.lcdui.Graphics beginVirtualPaint() {
-        ensureVirtualSurface();
-        return new CanvasGraphics3D(
-                virtualImage.createGraphics(),
-                virtualImage.getWidth(),
-                virtualImage.getHeight(),
-                true,
-                virtualImage,
-                true
-        );
+        return beginCachedVirtualPaint();
     }
 
     public synchronized void createFrameBuffer(int width, int height) {
@@ -226,6 +205,7 @@ public final class DisplaySurfaceState {
         if (virtualImage == null
                 || virtualImage.getWidth() != virtualSurfaceWidth()
                 || virtualImage.getHeight() != virtualSurfaceHeight()) {
+            disposeCanvasGraphics();
             virtualImage = createVirtualSurface();
         }
     }
@@ -252,6 +232,13 @@ public final class DisplaySurfaceState {
                 virtualImage,
                 true
         );
+    }
+
+    private javax.microedition.lcdui.Graphics beginCachedVirtualPaint() {
+        ensureVirtualSurface();
+        ensureCanvasGraphics();
+        canvasGraphics.resetState();
+        return canvasGraphics;
     }
 
     private void disposeCanvasGraphics() {
