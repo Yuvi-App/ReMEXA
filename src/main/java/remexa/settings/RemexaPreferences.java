@@ -31,6 +31,7 @@ public final class RemexaPreferences {
     public static final String BLUETOOTH_REMOTE_HOST_KEY = "bluetoothRemoteHost";
     public static final String BLUETOOTH_PORT_KEY = "bluetoothPort";
     public static final String DUMP_RMS_KEY = "dumpRms";
+    public static final String FPS_OVERLAY_ENABLED_KEY = "fpsOverlayEnabled";
     public static final String LOG_ENABLED_PREFIX = "enabled.";
     public static final String RECENT_ENTRY_PREFIX = "entry.";
 

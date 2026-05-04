@@ -411,6 +411,19 @@ public final class LauncherFrame extends JFrame {
         });
         debuggingMenu.add(hostDetailsItem);
         debuggingMenu.addSeparator();
+        var fpsOverlayItem = new JCheckBoxMenuItem("Show FPS Overlay", HostUiSettings.fpsOverlayEnabled());
+        styleMenuItem(fpsOverlayItem);
+        fpsOverlayItem.addActionListener(event -> {
+            HostUiSettings.setFpsOverlayEnabled(fpsOverlayItem.isSelected());
+            LaunchConfig.applyFpsOverlayEnabled(fpsOverlayItem.isSelected());
+            DebugLog.log(
+                    LogCategory.FRONTEND,
+                    LauncherFrame.class.getName(),
+                    "FPS overlay set to " + fpsOverlayItem.isSelected()
+            );
+        });
+        debuggingMenu.add(fpsOverlayItem);
+        debuggingMenu.addSeparator();
         var dumpRmsItem = new JCheckBoxMenuItem("Dump RMS", HostUiSettings.dumpRms());
         styleMenuItem(dumpRmsItem);
         dumpRmsItem.addActionListener(event -> {

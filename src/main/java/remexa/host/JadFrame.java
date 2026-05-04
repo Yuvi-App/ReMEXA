@@ -27,6 +27,7 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.Locale;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -131,6 +132,7 @@ public final class JadFrame extends JFrame {
     private final AtomicBoolean fatalFailure = new AtomicBoolean();
     private final Object closeHandlerLock = new Object();
     private final int hostScale;
+    private final FpsMeter fpsMeter = new FpsMeter();
     private volatile long backlightFlashUntilMs;
     private volatile ActiveTextInput activeTextInput;
     private volatile ActiveHostedVideo activeHostedVideo;
@@ -1382,12 +1384,48 @@ public final class JadFrame extends JFrame {
                     }
                     g2.drawImage(frame, viewport.drawX(), viewport.drawY(), viewport.drawWidth(), viewport.drawHeight(), null);
                     paintBacklightFlash(g2, viewport);
+                    paintFpsOverlay(g2, viewport);
                 } finally {
                     g2.dispose();
                 }
             } catch (Throwable throwable) {
                 handleFatalFailure("render surface repaint", throwable);
             }
+        }
+    }
+
+    private void paintFpsOverlay(Graphics2D graphics, RenderViewport viewport) {
+        if (!LaunchConfig.resolveConfiguredFpsOverlayEnabled()) {
+            fpsMeter.reset();
+            return;
+        }
+
+        var fpsText = fpsMeter.update(MidletRuntime.currentRenderedFrameCount());
+        var previousFont = graphics.getFont();
+        var previousColor = graphics.getColor();
+        var previousComposite = graphics.getComposite();
+        try {
+            var overlayFont = new Font(Font.MONOSPACED, Font.BOLD, Math.max(11, Math.min(16, hostScale * 5)));
+            graphics.setFont(overlayFont);
+            var metrics = graphics.getFontMetrics();
+            int paddingX = Math.max(5, hostScale * 2);
+            int paddingY = Math.max(3, hostScale);
+            int textWidth = metrics.stringWidth(fpsText);
+            int boxWidth = textWidth + paddingX * 2;
+            int boxHeight = metrics.getHeight() + paddingY * 2;
+            int x = viewport.drawX() + Math.max(3, hostScale);
+            int y = viewport.drawY() + Math.max(3, hostScale);
+
+            graphics.setComposite(AlphaComposite.SrcOver.derive(0.72f));
+            graphics.setColor(Color.BLACK);
+            graphics.fillRect(x, y, boxWidth, boxHeight);
+            graphics.setComposite(AlphaComposite.SrcOver);
+            graphics.setColor(new Color(0xEAF7FF));
+            graphics.drawString(fpsText, x + paddingX, y + paddingY + metrics.getAscent());
+        } finally {
+            graphics.setComposite(previousComposite);
+            graphics.setColor(previousColor);
+            graphics.setFont(previousFont);
         }
     }
 
@@ -1456,6 +1494,38 @@ public final class JadFrame extends JFrame {
             sourceX = Math.max(0, Math.min(sourceWidth - 1, sourceX));
             sourceY = Math.max(0, Math.min(sourceHeight - 1, sourceY));
             return new MappedPoint(sourceX, sourceY);
+        }
+    }
+
+    private static final class FpsMeter {
+        private static final long SAMPLE_WINDOW_NANOS = 500_000_000L;
+
+        private long sampleStartNanos;
+        private long sampleStartFrames;
+        private double fps;
+
+        private String update(long currentFrames) {
+            long now = System.nanoTime();
+            if (sampleStartNanos == 0L) {
+                sampleStartNanos = now;
+                sampleStartFrames = currentFrames;
+                fps = 0.0;
+            } else {
+                long elapsed = now - sampleStartNanos;
+                if (elapsed >= SAMPLE_WINDOW_NANOS) {
+                    long frameDelta = Math.max(0L, currentFrames - sampleStartFrames);
+                    fps = frameDelta * 1_000_000_000.0 / elapsed;
+                    sampleStartNanos = now;
+                    sampleStartFrames = currentFrames;
+                }
+            }
+            return String.format(Locale.ROOT, "FPS %4.1f", fps);
+        }
+
+        private void reset() {
+            sampleStartNanos = 0L;
+            sampleStartFrames = 0L;
+            fps = 0.0;
         }
     }
 

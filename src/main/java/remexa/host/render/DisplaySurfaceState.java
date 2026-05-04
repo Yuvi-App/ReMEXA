@@ -16,6 +16,7 @@ public final class DisplaySurfaceState {
     private BufferedImage frameBuffer;
     private Graphics2D canvasGraphicsDelegate;
     private javax.microedition.lcdui.Graphics canvasGraphics;
+    private long renderedFrameCount;
 
     public DisplaySurfaceState(DisplayMetrics displayMetrics) {
         this.displayMetrics = displayMetrics;
@@ -111,6 +112,7 @@ public final class DisplaySurfaceState {
         if (frameBuffer == null) {
             return;
         }
+        markFrameRendered();
         var graphics = displayImage.createGraphics();
         try {
             graphics.drawImage(frameBuffer, tx, ty, null);
@@ -125,6 +127,7 @@ public final class DisplaySurfaceState {
         if (source == null) {
             return;
         }
+        markFrameRendered();
         var graphics = displayImage.createGraphics();
         try {
             graphics.drawImage(source, tx, ty, null);
@@ -209,6 +212,14 @@ public final class DisplaySurfaceState {
 
     public synchronized BufferedImage currentFrameSnapshot() {
         return copyOf(displayImage);
+    }
+
+    public synchronized void markFrameRendered() {
+        renderedFrameCount++;
+    }
+
+    public synchronized long renderedFrameCount() {
+        return renderedFrameCount;
     }
 
     private void ensureVirtualSurface() {

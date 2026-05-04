@@ -37,6 +37,7 @@ public final class ReMEXA {
         LaunchConfig.applyFrameRateOption(launchRequest.frameRateOption() == null ? HostUiSettings.frameRateOption() : launchRequest.frameRateOption());
         LaunchConfig.applyTouchControlsEnabled(HostUiSettings.touchControlsEnabled());
         LaunchConfig.applyFlashBacklightEnabled(HostUiSettings.flashBacklightEnabled());
+        LaunchConfig.applyFpsOverlayEnabled(HostUiSettings.fpsOverlayEnabled());
         LaunchConfig.applyCameraInputMode(HostUiSettings.cameraInputMode());
         LaunchConfig.applyLiveTranslationEnabled(HostUiSettings.liveTranslationEnabled());
         LaunchConfig.applyDeepLApiPlan(HostUiSettings.deepLApiPlan());

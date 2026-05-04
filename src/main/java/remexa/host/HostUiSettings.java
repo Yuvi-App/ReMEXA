@@ -270,4 +270,12 @@ public final class HostUiSettings {
     public static void setDumpRms(boolean enabled) {
         RemexaPreferences.debug().putBoolean(RemexaPreferences.DUMP_RMS_KEY, enabled);
     }
+
+    public static boolean fpsOverlayEnabled() {
+        return RemexaPreferences.debug().getBoolean(RemexaPreferences.FPS_OVERLAY_ENABLED_KEY, false);
+    }
+
+    public static void setFpsOverlayEnabled(boolean enabled) {
+        RemexaPreferences.debug().putBoolean(RemexaPreferences.FPS_OVERLAY_ENABLED_KEY, enabled);
+    }
 }

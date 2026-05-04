@@ -12,6 +12,7 @@ public final class LaunchConfig {
     public static final String FRAME_INTERVAL_PROPERTY = "remexa.frameIntervalMs";
     public static final String TOUCH_CONTROLS_PROPERTY = "remexa.touchControls";
     public static final String FLASH_BACKLIGHT_PROPERTY = "remexa.flashBacklight";
+    public static final String FPS_OVERLAY_PROPERTY = "remexa.fpsOverlay";
     public static final String CAMERA_INPUT_MODE_PROPERTY = "remexa.cameraInputMode";
     public static final String LIVE_TRANSLATION_PROPERTY = "remexa.liveTranslation";
     public static final String DEEPL_API_PLAN_PROPERTY = "remexa.deeplApiPlan";
@@ -446,6 +447,14 @@ public final class LaunchConfig {
 
     public static void applyFlashBacklightEnabled(Boolean enabled) {
         System.setProperty(FLASH_BACKLIGHT_PROPERTY, Boolean.toString(enabled == null || enabled));
+    }
+
+    public static boolean resolveConfiguredFpsOverlayEnabled() {
+        return Boolean.parseBoolean(System.getProperty(FPS_OVERLAY_PROPERTY, Boolean.FALSE.toString()));
+    }
+
+    public static void applyFpsOverlayEnabled(Boolean enabled) {
+        System.setProperty(FPS_OVERLAY_PROPERTY, Boolean.toString(enabled != null && enabled));
     }
 
     public enum CameraInputMode {

@@ -330,6 +330,7 @@ public final class MidletRuntime {
         CURRENT_GRAPHICS.set(graphics);
         try {
             renderer.accept(graphics);
+            surface.markFrameRendered();
             if (!spriteCanvas) {
                 surface.presentCanvas();
                 paceFrame(canvas);
@@ -350,6 +351,7 @@ public final class MidletRuntime {
         CURRENT_GRAPHICS.set(graphics);
         try {
             renderer.accept(graphics);
+            surface.markFrameRendered();
             surface.presentCanvas();
         } finally {
             CURRENT_GRAPHICS.remove();
@@ -544,6 +546,14 @@ public final class MidletRuntime {
             return null;
         }
         return context.currentFrameSnapshot();
+    }
+
+    public static long currentRenderedFrameCount() {
+        var context = activeContext();
+        if (context == null) {
+            return 0L;
+        }
+        return context.currentRenderedFrameCount();
     }
 
     public static Path appStorageRoot() {
@@ -872,6 +882,15 @@ public final class MidletRuntime {
             }
             var surface = surfaces.get(displayable);
             return surface == null ? null : surface.currentFrameSnapshot();
+        }
+
+        private long currentRenderedFrameCount() {
+            var displayable = currentDisplayable;
+            if (displayable == null) {
+                return 0L;
+            }
+            var surface = surfaces.get(displayable);
+            return surface == null ? 0L : surface.renderedFrameCount();
         }
 
         private Displayable currentDisplayable() {
