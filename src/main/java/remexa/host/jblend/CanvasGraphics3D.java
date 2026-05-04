@@ -77,16 +77,18 @@ public final class CanvasGraphics3D extends Graphics implements Graphics3D {
         }
         int translateX = getTranslateX();
         int translateY = getTranslateY();
-        DebugLog.log(
-                LogCategory.J3D,
-                CanvasGraphics3D.class.getName(),
-                "renderPrimitives cmd=0x" + Integer.toHexString(command)
-                        + " prims=" + numPrimitives
-                        + " origin=" + x + "," + y
-                        + " scale=" + layout.getScaleX() + "," + layout.getScaleY()
-                        + " center=" + layout.getCenterX() + "," + layout.getCenterY()
-                        + " explicitCenter=" + layout.hasExplicitCenter()
-        );
+        if (LogCategory.J3D.isEnabled()) {
+            DebugLog.log(
+                    LogCategory.J3D,
+                    CanvasGraphics3D.class.getName(),
+                    "renderPrimitives cmd=0x" + Integer.toHexString(command)
+                            + " prims=" + numPrimitives
+                            + " origin=" + x + "," + y
+                            + " scale=" + layout.getScaleX() + "," + layout.getScaleY()
+                            + " center=" + layout.getCenterX() + "," + layout.getCenterY()
+                            + " explicitCenter=" + layout.hasExplicitCenter()
+            );
+        }
         pendingDraws.add(new PrimitivesDraw(
                 texture,
                 x + translateX,

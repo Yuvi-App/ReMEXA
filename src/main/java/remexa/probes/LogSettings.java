@@ -6,21 +6,24 @@ import remexa.settings.RemexaPreferences;
 
 public final class LogSettings {
     private static final boolean DEFAULT_LOG_ENABLED = false;
+    private static final LogCategory[] CATEGORIES = LogCategory.values();
+    private static final boolean[] ENABLED = loadEnabledStates();
 
     private LogSettings() {
     }
 
     public static boolean isEnabled(LogCategory category) {
-        return RemexaPreferences.log().getBoolean(key(category), DEFAULT_LOG_ENABLED);
+        return ENABLED[category.ordinal()];
     }
 
     public static void setEnabled(LogCategory category, boolean enabled) {
+        ENABLED[category.ordinal()] = enabled;
         RemexaPreferences.log().putBoolean(key(category), enabled);
     }
 
     public static boolean areAllEnabled() {
-        for (var category : LogCategory.values()) {
-            if (!isEnabled(category)) {
+        for (boolean enabled : ENABLED) {
+            if (!enabled) {
                 return false;
             }
         }
@@ -28,17 +31,26 @@ public final class LogSettings {
     }
 
     public static void setAllEnabled(boolean enabled) {
-        for (var category : LogCategory.values()) {
+        for (var category : CATEGORIES) {
             setEnabled(category, enabled);
         }
     }
 
     public static Map<LogCategory, Boolean> loadAll() {
         var values = new EnumMap<LogCategory, Boolean>(LogCategory.class);
-        for (var category : LogCategory.values()) {
+        for (var category : CATEGORIES) {
             values.put(category, isEnabled(category));
         }
         return Map.copyOf(values);
+    }
+
+    private static boolean[] loadEnabledStates() {
+        var enabled = new boolean[CATEGORIES.length];
+        var preferences = RemexaPreferences.log();
+        for (var category : CATEGORIES) {
+            enabled[category.ordinal()] = preferences.getBoolean(key(category), DEFAULT_LOG_ENABLED);
+        }
+        return enabled;
     }
 
     private static String key(LogCategory category) {

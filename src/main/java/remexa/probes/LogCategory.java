@@ -16,6 +16,10 @@ public enum LogCategory {
     SYSTEM,
     SDK_MISC;
 
+    public boolean isEnabled() {
+        return LogSettings.isEnabled(this);
+    }
+
     public static LogCategory fromPackageName(String packageName) {
         if (packageName == null || packageName.isBlank()) {
             return SDK_MISC;

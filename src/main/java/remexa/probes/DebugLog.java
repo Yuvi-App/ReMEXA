@@ -42,6 +42,9 @@ public final class DebugLog {
     public static void sdkCall(String owner, String member, Object... arguments) {
         var packageName = owner.contains(".") ? owner.substring(0, owner.lastIndexOf('.')) : owner;
         var category = LogCategory.fromPackageName(packageName);
+        if (!category.isEnabled()) {
+            return;
+        }
         log(category, owner, member + formatArguments(arguments));
     }
 
