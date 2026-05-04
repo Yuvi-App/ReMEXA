@@ -31,6 +31,9 @@ import java.util.Locale;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import javax.imageio.ImageIO;
@@ -47,7 +50,6 @@ import javax.swing.JSplitPane;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.KeyStroke;
-import javax.swing.Timer;
 import javax.swing.SwingUtilities;
 import javax.swing.SwingConstants;
 import javax.swing.border.EmptyBorder;
@@ -76,6 +78,8 @@ import remexa.ui.RemexaTheme;
 public final class JadFrame extends JFrame {
     private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm:ss").withZone(ZoneId.systemDefault());
     private static final int SOFT_KEY_BAR_HEIGHT = 28;
+    private static final long RENDER_REFRESH_PERIOD_MS = 16L;
+    private static final long CHROME_REFRESH_INTERVAL_NANOS = 250_000_000L;
     private static final int[] HOST_KEY_CODES = new int[]{
             KeyEvent.VK_UP,
             KeyEvent.VK_DOWN,
@@ -127,7 +131,8 @@ public final class JadFrame extends JFrame {
     private final Consumer<LogEvent> listener = this::appendLog;
     private final LaunchProfile launchProfile;
     private final boolean showHostDetails;
-    private final Timer refreshTimer;
+    private final ScheduledExecutorService refreshScheduler;
+    private final AtomicBoolean chromeRefreshPending = new AtomicBoolean();
     private final AtomicBoolean disposed = new AtomicBoolean();
     private final AtomicBoolean fatalFailure = new AtomicBoolean();
     private final Object closeHandlerLock = new Object();
@@ -136,6 +141,7 @@ public final class JadFrame extends JFrame {
     private volatile long backlightFlashUntilMs;
     private volatile ActiveTextInput activeTextInput;
     private volatile ActiveHostedVideo activeHostedVideo;
+    private volatile long lastChromeRefreshNanos;
     private Runnable closeHandler;
 
     public JadFrame(JadDescriptor descriptor, LaunchProfile launchProfile, boolean showHostDetails) {
@@ -162,14 +168,18 @@ public final class JadFrame extends JFrame {
             DebugLog.addListener(listener);
         }
         refreshSoftKeyLabels();
-        refreshTimer = new Timer(33, event -> runHostAction("refresh timer", () -> {
-            refreshSoftKeyLabels();
-            if (showHostDetails) {
-                refreshLogToggleButton();
-            }
-            renderSurface.repaint();
-        }));
-        refreshTimer.start();
+        refreshScheduler = Executors.newSingleThreadScheduledExecutor(task -> {
+            var thread = new Thread(task, "remexa-render-refresh-" + descriptor.title());
+            thread.setDaemon(true);
+            return thread;
+        });
+        lastChromeRefreshNanos = System.nanoTime();
+        refreshScheduler.scheduleAtFixedRate(
+                this::runRefreshTick,
+                0L,
+                RENDER_REFRESH_PERIOD_MS,
+                TimeUnit.MILLISECONDS
+        );
     }
 
     public void showFrame() {
@@ -316,7 +326,7 @@ public final class JadFrame extends JFrame {
             shutdownTask = closeHandler;
             closeHandler = null;
         }
-        refreshTimer.stop();
+        refreshScheduler.shutdownNow();
         var pendingInput = activeTextInput;
         if (pendingInput != null) {
             pendingInput.result().complete(new HostTextInputRequest.Result(
@@ -361,6 +371,39 @@ public final class JadFrame extends JFrame {
                             System.lineSeparator()
             );
             logArea.setCaretPosition(logArea.getDocument().getLength());
+        }));
+    }
+
+    private void runRefreshTick() {
+        if (disposed.get()) {
+            return;
+        }
+        try {
+            renderSurface.repaint();
+            refreshChromeIfDue();
+        } catch (Throwable throwable) {
+            handleFatalFailure("refresh scheduler", throwable);
+        }
+    }
+
+    private void refreshChromeIfDue() {
+        long now = System.nanoTime();
+        if (now - lastChromeRefreshNanos < CHROME_REFRESH_INTERVAL_NANOS) {
+            return;
+        }
+        lastChromeRefreshNanos = now;
+        if (!chromeRefreshPending.compareAndSet(false, true)) {
+            return;
+        }
+        SwingUtilities.invokeLater(() -> runHostAction("chrome refresh", () -> {
+            try {
+                refreshSoftKeyLabels();
+                if (showHostDetails) {
+                    refreshLogToggleButton();
+                }
+            } finally {
+                chromeRefreshPending.set(false);
+            }
         }));
     }
 
