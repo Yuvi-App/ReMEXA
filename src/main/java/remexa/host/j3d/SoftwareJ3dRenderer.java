@@ -1144,10 +1144,6 @@ public final class SoftwareJ3dRenderer {
                 || !Float.isFinite(x2) || !Float.isFinite(y2)) {
             return;
         }
-        float area = edgeFunction(x0, y0, x1, y1, x2, y2);
-        if (area == 0.0f) {
-            return;
-        }
         if (!polygon.doubleSided()) {
             // Mascot figures still contain some front-facing panels with mixed winding after skinning,
             // so keep single-sided faces visible here and rely on the corrected quad split instead.
@@ -1173,12 +1169,14 @@ public final class SoftwareJ3dRenderer {
         boolean topLeft12 = isCoverageTopLeftEdge(fx1, fy1, fx2, fy2, flipped);
         boolean topLeft20 = isCoverageTopLeftEdge(fx2, fy2, fx0, fy0, flipped);
         boolean topLeft01 = isCoverageTopLeftEdge(fx0, fy0, fx1, fy1, flipped);
+        float invRasterArea = 1.0f / (float) Math.abs(rasterArea);
+        boolean perspectiveCorrect = v0.reciprocalDepth() > 0.0f
+                || v1.reciprocalDepth() > 0.0f
+                || v2.reciprocalDepth() > 0.0f;
 
         for (int y = minY; y <= maxY; y++) {
-            float py = y + 0.5f;
             int rasterY = (y << RASTER_SUBPIXEL_SHIFT) + (RASTER_SUBPIXEL_SCALE >> 1);
             for (int x = minX; x <= maxX; x++) {
-                float px = x + 0.5f;
                 int rasterX = (x << RASTER_SUBPIXEL_SHIFT) + (RASTER_SUBPIXEL_SCALE >> 1);
                 long coverage0 = edgeFixed(fx1, fy1, fx2, fy2, rasterX, rasterY);
                 long coverage1 = edgeFixed(fx2, fy2, fx0, fy0, rasterX, rasterY);
@@ -1193,9 +1191,9 @@ public final class SoftwareJ3dRenderer {
                         || coverage2 < 0L || (coverage2 == 0L && !topLeft01)) {
                     continue;
                 }
-                float w0 = edgeFunction(x1, y1, x2, y2, px, py) / area;
-                float w1 = edgeFunction(x2, y2, x0, y0, px, py) / area;
-                float w2 = edgeFunction(x0, y0, x1, y1, px, py) / area;
+                float w0 = coverage0 * invRasterArea;
+                float w1 = coverage1 * invRasterArea;
+                float w2 = coverage2 * invRasterArea;
                 float pixelDepth = w0 * z0 + w1 * z1 + w2 * z2;
                 int index = y * surfaceWidth + x;
                 if (pixelDepth < depthBuffer[index] - DEPTH_EPSILON) {
@@ -1205,7 +1203,7 @@ public final class SoftwareJ3dRenderer {
                 if (texture != null && textured) {
                     float u;
                     float v;
-                    if (v0.reciprocalDepth() > 0.0f || v1.reciprocalDepth() > 0.0f || v2.reciprocalDepth() > 0.0f) {
+                    if (perspectiveCorrect) {
                         float rw0 = w0 * v0.reciprocalDepth();
                         float rw1 = w1 * v1.reciprocalDepth();
                         float rw2 = w2 * v2.reciprocalDepth();
@@ -1213,8 +1211,9 @@ public final class SoftwareJ3dRenderer {
                         if (Math.abs(reciprocalWeight) <= DEPTH_EPSILON) {
                             continue;
                         }
-                        u = ((rw0 * v0.u()) + (rw1 * v1.u()) + (rw2 * v2.u())) / reciprocalWeight;
-                        v = ((rw0 * v0.v()) + (rw1 * v1.v()) + (rw2 * v2.v())) / reciprocalWeight;
+                        float invReciprocalWeight = 1.0f / reciprocalWeight;
+                        u = ((rw0 * v0.u()) + (rw1 * v1.u()) + (rw2 * v2.u())) * invReciprocalWeight;
+                        v = ((rw0 * v0.v()) + (rw1 * v1.v()) + (rw2 * v2.v())) * invReciprocalWeight;
                     } else {
                         u = (w0 * v0.u()) + (w1 * v1.u()) + (w2 * v2.u());
                         v = (w0 * v0.v()) + (w1 * v1.v()) + (w2 * v2.v());
@@ -2374,10 +2373,6 @@ public final class SoftwareJ3dRenderer {
                 || !Float.isFinite(x2) || !Float.isFinite(y2)) {
             return;
         }
-        float area = edgeFunction(x0, y0, x1, y1, x2, y2);
-        if (area == 0.0f) {
-            return;
-        }
         int minX = Math.max(clipX, Math.max(0, (int) Math.floor(Math.min(x0, Math.min(x1, x2)))));
         int minY = Math.max(clipY, Math.max(0, (int) Math.floor(Math.min(y0, Math.min(y1, y2)))));
         int maxX = Math.min(clipX + clipWidth - 1, Math.min(surfaceWidth - 1, (int) Math.ceil(Math.max(x0, Math.max(x1, x2)))));
@@ -2399,12 +2394,14 @@ public final class SoftwareJ3dRenderer {
         boolean topLeft12 = isCoverageTopLeftEdge(fx1, fy1, fx2, fy2, flipped);
         boolean topLeft20 = isCoverageTopLeftEdge(fx2, fy2, fx0, fy0, flipped);
         boolean topLeft01 = isCoverageTopLeftEdge(fx0, fy0, fx1, fy1, flipped);
+        float invRasterArea = 1.0f / (float) Math.abs(rasterArea);
+        boolean perspectiveCorrect = v0.reciprocalDepth() > 0.0f
+                || v1.reciprocalDepth() > 0.0f
+                || v2.reciprocalDepth() > 0.0f;
 
         for (int y = minY; y <= maxY; y++) {
-            float py = y + 0.5f;
             int rasterY = (y << RASTER_SUBPIXEL_SHIFT) + (RASTER_SUBPIXEL_SCALE >> 1);
             for (int x = minX; x <= maxX; x++) {
-                float px = x + 0.5f;
                 int rasterX = (x << RASTER_SUBPIXEL_SHIFT) + (RASTER_SUBPIXEL_SCALE >> 1);
                 long coverage0 = edgeFixed(fx1, fy1, fx2, fy2, rasterX, rasterY);
                 long coverage1 = edgeFixed(fx2, fy2, fx0, fy0, rasterX, rasterY);
@@ -2419,9 +2416,9 @@ public final class SoftwareJ3dRenderer {
                         || coverage2 < 0L || (coverage2 == 0L && !topLeft01)) {
                     continue;
                 }
-                float w0 = edgeFunction(x1, y1, x2, y2, px, py) / area;
-                float w1 = edgeFunction(x2, y2, x0, y0, px, py) / area;
-                float w2 = edgeFunction(x0, y0, x1, y1, px, py) / area;
+                float w0 = coverage0 * invRasterArea;
+                float w1 = coverage1 * invRasterArea;
+                float w2 = coverage2 * invRasterArea;
                 float pixelDepth = (w0 * z0) + (w1 * z1) + (w2 * z2);
                 float pixelShade = clamp01((w0 * v0.shade()) + (w1 * v1.shade()) + (w2 * v2.shade()));
                 int index = y * surfaceWidth + x;
@@ -2433,7 +2430,7 @@ public final class SoftwareJ3dRenderer {
                 if (texture != null && textured) {
                     float u;
                     float v;
-                    if (v0.reciprocalDepth() > 0.0f || v1.reciprocalDepth() > 0.0f || v2.reciprocalDepth() > 0.0f) {
+                    if (perspectiveCorrect) {
                         float rw0 = w0 * v0.reciprocalDepth();
                         float rw1 = w1 * v1.reciprocalDepth();
                         float rw2 = w2 * v2.reciprocalDepth();
@@ -2441,8 +2438,9 @@ public final class SoftwareJ3dRenderer {
                         if (Math.abs(reciprocalWeight) <= DEPTH_EPSILON) {
                             continue;
                         }
-                        u = ((rw0 * v0.u()) + (rw1 * v1.u()) + (rw2 * v2.u())) / reciprocalWeight;
-                        v = ((rw0 * v0.v()) + (rw1 * v1.v()) + (rw2 * v2.v())) / reciprocalWeight;
+                        float invReciprocalWeight = 1.0f / reciprocalWeight;
+                        u = ((rw0 * v0.u()) + (rw1 * v1.u()) + (rw2 * v2.u())) * invReciprocalWeight;
+                        v = ((rw0 * v0.v()) + (rw1 * v1.v()) + (rw2 * v2.v())) * invReciprocalWeight;
                     } else {
                         u = (w0 * v0.u()) + (w1 * v1.u()) + (w2 * v2.u());
                         v = (w0 * v0.v()) + (w1 * v1.v()) + (w2 * v2.v());
