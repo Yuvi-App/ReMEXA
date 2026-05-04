@@ -237,37 +237,39 @@ public abstract class Canvas extends Displayable {
         var left = containsAnyKey(KEYCODE_LEFT, LEFT, (int) '4');
         var right = containsAnyKey(KEYCODE_RIGHT, RIGHT, (int) '6');
         var down = containsAnyKey(KEYCODE_DOWN, DOWN, (int) '8');
+        boolean upRight = eightDirectionsEnabled && up && right;
+        boolean upLeft = eightDirectionsEnabled && up && left;
+        boolean downRight = eightDirectionsEnabled && down && right;
+        boolean downLeft = eightDirectionsEnabled && down && left;
         var state = 0;
-        if (eightDirectionsEnabled) {
-            if (up && right) {
-                state |= 0x800000;
-            }
-            if (up && left) {
-                state |= 0x400000;
-            }
-            if (down && right) {
-                state |= 0x200000;
-            }
-            if (down && left) {
-                state |= 0x100000;
-            }
+        if (upRight) {
+            state |= 0x100000;
         }
-        if (!eightDirectionsEnabled || (state & 0x800000) == 0 && (state & 0x400000) == 0) {
+        if (upLeft) {
+            state |= 0x200000;
+        }
+        if (downRight) {
+            state |= 0x400000;
+        }
+        if (downLeft) {
+            state |= 0x800000;
+        }
+        if (!upRight && !upLeft) {
             if (up) {
                 state |= 0x1000;
             }
         }
-        if (!eightDirectionsEnabled || (state & 0x400000) == 0 && (state & 0x100000) == 0) {
+        if (!upLeft && !downLeft) {
             if (left) {
                 state |= 0x2000;
             }
         }
-        if (!eightDirectionsEnabled || (state & 0x800000) == 0 && (state & 0x200000) == 0) {
+        if (!upRight && !downRight) {
             if (right) {
                 state |= 0x4000;
             }
         }
-        if (!eightDirectionsEnabled || (state & 0x100000) == 0 && (state & 0x200000) == 0) {
+        if (!downLeft && !downRight) {
             if (down) {
                 state |= 0x8000;
             }
