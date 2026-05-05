@@ -79,12 +79,13 @@ public final class M3GLoader {
 		} else {
 			this.resourceName = var1;
 			this.fileHistory.addElement(var1);
-			PeekInputStream var2;
-			int var3 = getFileType(var2 = new PeekInputStream(this.getInputStream(var1), 12));
-			var2.rewind();
-			Object3D[] var4 = this.loadStream(var2, var3);
-			this.fileHistory.removeElement(var1);
-			return var4;
+			try (PeekInputStream var2 = new PeekInputStream(this.getInputStream(var1), 12)) {
+				int var3 = getFileType(var2);
+				var2.rewind();
+				return this.loadStream(var2, var3);
+			} finally {
+				this.fileHistory.removeElement(var1);
+			}
 		}
 	}
 

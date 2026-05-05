@@ -8,6 +8,8 @@ import java.net.URL;
 import java.net.URLConnection;
 import java.net.URLClassLoader;
 import java.security.CodeSource;
+import java.util.HashSet;
+import java.util.Set;
 import remexa.probes.DebugLog;
 import remexa.probes.LogCategory;
 
@@ -15,6 +17,10 @@ final class LegacyJarClassLoader extends URLClassLoader {
     static {
         registerAsParallelCapable();
     }
+
+    private final Object resourceStreamLock = new Object();
+    private final Set<LegacyResourceStream> resourceStreams = new HashSet<>();
+    private boolean closed;
 
     LegacyJarClassLoader(URL jarUrl, ClassLoader parent) {
         super(new URL[]{jarUrl}, parent);
@@ -29,9 +35,51 @@ final class LegacyJarClassLoader extends URLClassLoader {
         try {
             URLConnection connection = resource.openConnection();
             connection.setUseCaches(false);
-            return new DataInputStream(new LegacyResourceStream(connection.getInputStream(), connection.getContentLengthLong()));
+            var stream = new LegacyResourceStream(this, connection.getInputStream(), connection.getContentLengthLong());
+            if (!registerResourceStream(stream)) {
+                stream.close();
+                return null;
+            }
+            return new DataInputStream(stream);
         } catch (IOException exception) {
             return null;
+        }
+    }
+
+    @Override
+    public void close() throws IOException {
+        LegacyResourceStream[] streams;
+        synchronized (resourceStreamLock) {
+            closed = true;
+            streams = resourceStreams.toArray(new LegacyResourceStream[0]);
+            resourceStreams.clear();
+        }
+
+        IOException failure = null;
+        for (var stream : streams) {
+            try {
+                stream.close();
+            } catch (IOException exception) {
+                if (failure == null) {
+                    failure = exception;
+                } else {
+                    failure.addSuppressed(exception);
+                }
+            }
+        }
+
+        try {
+            super.close();
+        } catch (IOException exception) {
+            if (failure == null) {
+                failure = exception;
+            } else {
+                failure.addSuppressed(exception);
+            }
+        }
+
+        if (failure != null) {
+            throw failure;
         }
     }
 
@@ -43,7 +91,7 @@ final class LegacyJarClassLoader extends URLClassLoader {
             throw new ClassNotFoundException(name);
         }
 
-        try (var input = resource.openStream()) {
+        try (var input = openUncachedStream(resource)) {
             byte[] original = input.readAllBytes();
             var switchResult = ClassFileSanitizer.zeroSwitchPadding(original);
             if (switchResult.changes() > 0) {
@@ -81,12 +129,37 @@ final class LegacyJarClassLoader extends URLClassLoader {
         }
     }
 
+    private boolean registerResourceStream(LegacyResourceStream stream) {
+        synchronized (resourceStreamLock) {
+            if (closed) {
+                return false;
+            }
+            resourceStreams.add(stream);
+            return true;
+        }
+    }
+
+    private void unregisterResourceStream(LegacyResourceStream stream) {
+        synchronized (resourceStreamLock) {
+            resourceStreams.remove(stream);
+        }
+    }
+
+    private static InputStream openUncachedStream(URL resource) throws IOException {
+        URLConnection connection = resource.openConnection();
+        connection.setUseCaches(false);
+        return connection.getInputStream();
+    }
+
     private static final class LegacyResourceStream extends FilterInputStream {
+        private final LegacyJarClassLoader owner;
         private final long contentLength;
         private long bytesRead;
+        private boolean closed;
 
-        private LegacyResourceStream(InputStream input, long contentLength) {
+        private LegacyResourceStream(LegacyJarClassLoader owner, InputStream input, long contentLength) {
             super(input);
+            this.owner = owner;
             this.contentLength = contentLength;
         }
 
@@ -126,6 +199,19 @@ final class LegacyJarClassLoader extends URLClassLoader {
                 return bytesRead >= contentLength;
             }
             return super.available() <= 0;
+        }
+
+        @Override
+        public void close() throws IOException {
+            if (closed) {
+                return;
+            }
+            closed = true;
+            try {
+                super.close();
+            } finally {
+                owner.unregisterResourceStream(this);
+            }
         }
     }
 }

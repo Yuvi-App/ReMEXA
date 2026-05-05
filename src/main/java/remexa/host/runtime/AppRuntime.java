@@ -106,6 +106,7 @@ public final class AppRuntime {
             if (!launched && classLoader != null) {
                 MidletRuntime.unregisterTextInputHandler(classLoader);
                 MidletRuntime.unregisterHostFrame(classLoader);
+                closeClassLoader(classLoader, descriptor.title());
             }
         }
     }
@@ -132,17 +133,7 @@ public final class AppRuntime {
         shutdownAudioPlayers(classLoader);
         MidletRuntime.unregisterTextInputHandler(classLoader);
 
-        if (classLoader instanceof URLClassLoader urlClassLoader) {
-            try {
-                urlClassLoader.close();
-            } catch (java.io.IOException exception) {
-                DebugLog.log(
-                        LogCategory.HOST,
-                        AppRuntime.class.getName(),
-                        "ClassLoader close failed for " + result.descriptor().title() + ": " + exception.getMessage()
-                );
-            }
-        }
+        closeClassLoader(classLoader, result.descriptor().title());
     }
 
     private void shutdownAudioPlayers(ClassLoader classLoader) {
@@ -344,6 +335,21 @@ public final class AppRuntime {
                     LogCategory.HOST,
                     AppRuntime.class.getName(),
                     "Failed to dispose media players during shutdown: " + exception.getMessage()
+            );
+        }
+    }
+
+    private void closeClassLoader(ClassLoader classLoader, String title) {
+        if (!(classLoader instanceof URLClassLoader urlClassLoader)) {
+            return;
+        }
+        try {
+            urlClassLoader.close();
+        } catch (java.io.IOException exception) {
+            DebugLog.log(
+                    LogCategory.HOST,
+                    AppRuntime.class.getName(),
+                    "ClassLoader close failed for " + title + ": " + exception.getMessage()
             );
         }
     }
