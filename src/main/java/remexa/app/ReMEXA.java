@@ -14,6 +14,7 @@ import remexa.host.JadLauncher;
 import remexa.host.LaunchConfig;
 import remexa.probes.DebugLog;
 import remexa.probes.LogCategory;
+import remexa.ui.AppIcons;
 
 public final class ReMEXA {
     private static final String DEFAULT_LEGACY_ENCODING = "windows-31j";
@@ -26,6 +27,7 @@ public final class ReMEXA {
 
     public static void main(String[] args) {
         bootstrapJvmConfigurationIfNeeded(args);
+        AppIcons.applyToTaskbar();
         var arguments = List.of(args);
         var launchRequest = parseLaunchRequest(arguments);
         LaunchConfig.applyFontType(launchRequest.fontType() == null ? HostUiSettings.fontType() : launchRequest.fontType());

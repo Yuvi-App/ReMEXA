@@ -31,10 +31,16 @@ Requirements:
 - A configured Maven JDK toolchain for JDK 24+ if your Maven setup requires one.
 - VLC installed on the host system if you want to exercise VLCJ-backed media features.
 
-Build the project:
+Build the nightly jar:
 
 ```sh
 mvn -DskipTests package
+```
+
+Build the release jar:
+
+```sh
+mvn -Prelease -DskipTests package
 ```
 
 ## Usage
@@ -42,7 +48,7 @@ mvn -DskipTests package
 Open the desktop launcher:
 
 ```sh
-java -jar target/remexa-0.1.0-SNAPSHOT.jar
+java -jar target/ReMEXA-Nightly.jar
 ```
 
 From the launcher, open or drag in a `.jad` file.
@@ -50,7 +56,7 @@ From the launcher, open or drag in a `.jad` file.
 Launch a `.jad` directly:
 
 ```sh
-java -jar target/remexa-0.1.0-SNAPSHOT.jar --run-jad path/to/app.jad
+java -jar target/ReMEXA-Nightly.jar --run-jad path/to/app.jad
 ```
 
 Useful launch options:
@@ -73,7 +79,7 @@ Useful launch options:
 Example:
 
 ```sh
-java -jar target/remexa-0.1.0-SNAPSHOT.jar --host-scale 3 --frame-rate 30 --run-jad path/to/app.jad
+java -jar target/ReMEXA-Nightly.jar --host-scale 3 --frame-rate 30 --run-jad path/to/app.jad
 ```
 
 ## References / Licenses

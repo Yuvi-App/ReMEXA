@@ -53,6 +53,7 @@ import remexa.host.LaunchConfig;
 import remexa.probes.DebugLog;
 import remexa.probes.LogCategory;
 import remexa.probes.LogSettings;
+import remexa.ui.AppIcons;
 import remexa.ui.RemexaTheme;
 
 public final class LauncherFrame extends JFrame {
@@ -78,6 +79,7 @@ public final class LauncherFrame extends JFrame {
         super("ReMEXA Launcher");
         this.launcher = launcher;
 
+        AppIcons.applyTo(this);
         installMenuTheme();
         setDefaultCloseOperation(EXIT_ON_CLOSE);
         setMinimumSize(new Dimension(720, 520));

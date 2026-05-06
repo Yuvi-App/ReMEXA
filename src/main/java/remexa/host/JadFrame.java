@@ -73,6 +73,7 @@ import remexa.probes.DebugLog;
 import remexa.probes.LogCategory;
 import remexa.probes.LogEvent;
 import remexa.probes.LogSettings;
+import remexa.ui.AppIcons;
 import remexa.ui.RemexaTheme;
 
 public final class JadFrame extends JFrame {
@@ -149,6 +150,7 @@ public final class JadFrame extends JFrame {
         this.launchProfile = launchProfile;
         this.showHostDetails = showHostDetails;
         this.hostScale = LaunchConfig.resolveConfiguredHostScale();
+        AppIcons.applyTo(this);
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
         setLayout(new BorderLayout());
         renderSurface.setBackground(new Color(22, 24, 29));
