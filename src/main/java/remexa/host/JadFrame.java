@@ -31,7 +31,9 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.HashSet;
 import java.util.Locale;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -143,6 +145,8 @@ public final class JadFrame extends JFrame {
     private final AtomicBoolean fatalFailure = new AtomicBoolean();
     private final Object closeHandlerLock = new Object();
     private final Object motionLock = new Object();
+    private final Set<Integer> pressedHostKeyCodes = new HashSet<>();
+    private final Set<Integer> stateOnlyHostKeyCodes = new HashSet<>();
     private final int hostScale;
     private final FpsMeter fpsMeter = new FpsMeter();
     private volatile long backlightFlashUntilMs;
@@ -333,6 +337,7 @@ public final class JadFrame extends JFrame {
         if (!disposed.compareAndSet(false, true)) {
             return;
         }
+        releasePressedHostKeys();
         Runnable shutdownTask;
         synchronized (closeHandlerLock) {
             shutdownTask = closeHandler;
@@ -655,7 +660,8 @@ public final class JadFrame extends JFrame {
         actionMap.put(actionId, new javax.swing.AbstractAction() {
             @Override
             public void actionPerformed(ActionEvent event) {
-                runHostAction("input dispatch", () -> dispatchHostKey(keyCode, release));
+                var dispatchKind = recordHostKeyEvent(keyCode, release);
+                runHostAction("input dispatch", () -> dispatchHostKey(keyCode, dispatchKind));
             }
         });
     }
@@ -713,16 +719,39 @@ public final class JadFrame extends JFrame {
         shutdownThread.start();
     }
 
-    private void dispatchHostKey(int awtKeyCode, boolean release) {
+    private KeyDispatchKind recordHostKeyEvent(int awtKeyCode, boolean release) {
+        if (release) {
+            pressedHostKeyCodes.remove(awtKeyCode);
+            return KeyDispatchKind.RELEASE;
+        }
+        return pressedHostKeyCodes.add(awtKeyCode) ? KeyDispatchKind.PRESS : KeyDispatchKind.REPEAT;
+    }
+
+    private void releasePressedHostKeys() {
+        if (pressedHostKeyCodes.isEmpty()) {
+            stateOnlyHostKeyCodes.clear();
+            return;
+        }
+        var keyCodes = pressedHostKeyCodes.stream().mapToInt(Integer::intValue).toArray();
+        pressedHostKeyCodes.clear();
+        for (var keyCode : keyCodes) {
+            dispatchHostKey(keyCode, KeyDispatchKind.RELEASE);
+        }
+        stateOnlyHostKeyCodes.clear();
+    }
+
+    private void dispatchHostKey(int awtKeyCode, KeyDispatchKind dispatchKind) {
         var displayable = MidletRuntime.currentDisplayable();
         InputProfile inputProfile = launchProfile.profile().inputProfile();
         var softKeyIndex = HostKeyMapper.toSoftKeyIndex(awtKeyCode, inputProfile);
         var dispatchCanvasSoftKeyCommand =
-                softKeyIndex >= 0 && !release && shouldDispatchCanvasSoftKeyCommand(displayable, softKeyIndex);
+                softKeyIndex >= 0
+                        && dispatchKind == KeyDispatchKind.PRESS
+                        && shouldDispatchCanvasSoftKeyCommand(displayable, softKeyIndex);
         if (softKeyIndex >= 0) {
             if (!(displayable instanceof javax.microedition.lcdui.Canvas)
                     && shouldDispatchSoftKeyAsCommand(displayable, softKeyIndex)) {
-                if (!release) {
+                if (dispatchKind == KeyDispatchKind.PRESS) {
                     MidletRuntime.dispatchSoftKey(softKeyIndex);
                 }
                 return;
@@ -734,6 +763,7 @@ public final class JadFrame extends JFrame {
                 inputProfile,
                 launchProfile.rotateInputForWideScreen()
         );
+        dispatchKind = adjustDirectionalChordDispatch(awtKeyCode, phoneKeyCode, dispatchKind, inputProfile);
         if (phoneKeyCode == HostKeyMapper.NO_MAPPING) {
             if (dispatchCanvasSoftKeyCommand) {
                 MidletRuntime.dispatchSoftKey(softKeyIndex);
@@ -741,10 +771,71 @@ public final class JadFrame extends JFrame {
             return;
         }
 
-        dispatchPhoneKey(phoneKeyCode, release);
+        dispatchPhoneKey(phoneKeyCode, dispatchKind);
         if (dispatchCanvasSoftKeyCommand) {
             MidletRuntime.dispatchSoftKey(softKeyIndex);
         }
+    }
+
+    private KeyDispatchKind adjustDirectionalChordDispatch(
+            int awtKeyCode,
+            int phoneKeyCode,
+            KeyDispatchKind dispatchKind,
+            InputProfile inputProfile
+    ) {
+        if (!inputProfile.usesJPhoneKeyCodes() || !isDirectionalPhoneKey(phoneKeyCode)) {
+            if (dispatchKind == KeyDispatchKind.RELEASE) {
+                stateOnlyHostKeyCodes.remove(awtKeyCode);
+            }
+            return dispatchKind;
+        }
+        if (dispatchKind == KeyDispatchKind.RELEASE) {
+            return stateOnlyHostKeyCodes.remove(awtKeyCode)
+                    ? KeyDispatchKind.STATE_RELEASE
+                    : KeyDispatchKind.RELEASE;
+        }
+        if (stateOnlyHostKeyCodes.contains(awtKeyCode)) {
+            return KeyDispatchKind.STATE_PRESS;
+        }
+        if (dispatchKind == KeyDispatchKind.PRESS && hasOtherDirectionalHostKeyPressed(awtKeyCode)) {
+            stateOnlyHostKeyCodes.add(awtKeyCode);
+            return KeyDispatchKind.STATE_PRESS;
+        }
+        return dispatchKind;
+    }
+
+    private boolean hasOtherDirectionalHostKeyPressed(int awtKeyCode) {
+        for (var pressedKeyCode : pressedHostKeyCodes) {
+            if (pressedKeyCode != awtKeyCode && isDirectionalHostKey(pressedKeyCode)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isDirectionalHostKey(int awtKeyCode) {
+        return switch (awtKeyCode) {
+            case KeyEvent.VK_UP,
+                 KeyEvent.VK_DOWN,
+                 KeyEvent.VK_LEFT,
+                 KeyEvent.VK_RIGHT,
+                 KeyEvent.VK_KP_UP,
+                 KeyEvent.VK_KP_DOWN,
+                 KeyEvent.VK_KP_LEFT,
+                 KeyEvent.VK_KP_RIGHT -> true;
+            default -> false;
+        };
+    }
+
+    private static boolean isDirectionalPhoneKey(int phoneKeyCode) {
+        return phoneKeyCode == javax.microedition.lcdui.Canvas.UP
+                || phoneKeyCode == javax.microedition.lcdui.Canvas.DOWN
+                || phoneKeyCode == javax.microedition.lcdui.Canvas.LEFT
+                || phoneKeyCode == javax.microedition.lcdui.Canvas.RIGHT
+                || phoneKeyCode == javax.microedition.lcdui.Canvas.KEYCODE_UP
+                || phoneKeyCode == javax.microedition.lcdui.Canvas.KEYCODE_DOWN
+                || phoneKeyCode == javax.microedition.lcdui.Canvas.KEYCODE_LEFT
+                || phoneKeyCode == javax.microedition.lcdui.Canvas.KEYCODE_RIGHT;
     }
 
     private static boolean shouldDispatchSoftKeyAsCommand(javax.microedition.lcdui.Displayable displayable, int softKeyIndex) {
@@ -776,11 +867,13 @@ public final class JadFrame extends JFrame {
                 && softKeys[softKeyIndex] != null;
     }
 
-    private void dispatchPhoneKey(int phoneKeyCode, boolean release) {
-        if (release) {
-            MidletRuntime.dispatchKeyReleased(phoneKeyCode);
-        } else {
-            MidletRuntime.dispatchKeyPressed(phoneKeyCode);
+    private void dispatchPhoneKey(int phoneKeyCode, KeyDispatchKind dispatchKind) {
+        switch (dispatchKind) {
+            case PRESS -> MidletRuntime.dispatchKeyPressed(phoneKeyCode);
+            case REPEAT -> MidletRuntime.dispatchKeyRepeated(phoneKeyCode);
+            case RELEASE -> MidletRuntime.dispatchKeyReleased(phoneKeyCode);
+            case STATE_PRESS -> MidletRuntime.dispatchKeyStateChanged(phoneKeyCode, true);
+            case STATE_RELEASE -> MidletRuntime.dispatchKeyStateChanged(phoneKeyCode, false);
         }
     }
 
@@ -1450,6 +1543,9 @@ public final class JadFrame extends JFrame {
     private void setHostInputBindingsEnabled(boolean enabled) {
         var inputMap = getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW);
         var actionMap = getRootPane().getActionMap();
+        if (!enabled) {
+            releasePressedHostKeys();
+        }
         for (var keyCode : HOST_KEY_CODES) {
             var pressedActionId = "press-" + keyCode;
             var releasedActionId = "release-" + keyCode;
@@ -1648,6 +1744,14 @@ public final class JadFrame extends JFrame {
         PRESS,
         RELEASE,
         DRAG
+    }
+
+    private enum KeyDispatchKind {
+        PRESS,
+        REPEAT,
+        RELEASE,
+        STATE_PRESS,
+        STATE_RELEASE
     }
 
     private record RenderViewport(

@@ -628,6 +628,13 @@ public final class MidletRuntime {
         DisplayableHostAccess.fireScreenKeyRepeated(displayable, keyCode);
     }
 
+    public static void dispatchKeyStateChanged(int keyCode, boolean pressed) {
+        var displayable = currentDisplayable();
+        if (displayable instanceof Canvas canvas) {
+            canvas.fireKeyStateChanged(keyCode, pressed);
+        }
+    }
+
     public static void dispatchPointerPressed(int x, int y) {
         var displayable = currentDisplayable();
         if (!(displayable instanceof Canvas canvas)) {

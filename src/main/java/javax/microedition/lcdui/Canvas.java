@@ -214,6 +214,15 @@ public abstract class Canvas extends Displayable {
         keyRepeated(keyCode);
     }
 
+    public final void fireKeyStateChanged(int keyCode, boolean pressed) {
+        if (pressed) {
+            pressedKeys.add(keyCode);
+        } else {
+            pressedKeys.remove(keyCode);
+        }
+        keyStateChanged(keyCode, pressed);
+    }
+
     public final void firePointerPressed(int x, int y) {
         pointerPressed(x, y);
     }
