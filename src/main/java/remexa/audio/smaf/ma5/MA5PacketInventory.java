@@ -8,12 +8,14 @@ import java.util.Arrays;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 
 /**
  * Classifies the Yamaha/SoftBank packets that matter to the MA-5 rebuild.
  */
 public final class MA5PacketInventory {
     private static final int MANUFACTURER_YAMAHA = 0x43;
+    private static final int INTERNAL_LEGACY_YAMAHA_MESSAGE = 0x72;
     private static final int FAMILY_LEGACY_MA = 0x03;
     private static final int FAMILY_VM5_VOICE = 0x05;
     private static final int FAMILY_MA5_VOICE_ALT = 0x04;
@@ -97,6 +99,8 @@ public final class MA5PacketInventory {
                 + " ma5AltVoices=" + count(PacketKind.MA5_ALT_VOICE)
                 + " vm5Markers=" + count(PacketKind.VM5_MARKER)
                 + " vmaVoices=" + count(PacketKind.VMA_VOICE)
+                + " legacyControls=" + count(PacketKind.LEGACY_CONTROL)
+                + legacyControlSummary()
                 + " otherYamaha=" + count(PacketKind.OTHER_YAMAHA)
                 + " unknown=" + count(PacketKind.UNKNOWN);
     }
@@ -151,6 +155,15 @@ public final class MA5PacketInventory {
 
     private static PacketRecord classify(PacketOrigin origin, int index, int tick, int sourceBank, byte[] packet) {
         NormalizedPacket normalized = normalize(packet);
+        if (normalized.body.length >= 4
+                && (normalized.body[0] & 0xff) == INTERNAL_LEGACY_YAMAHA_MESSAGE) {
+            int command = normalized.body[1] & 0xff;
+            int channel = normalized.body[2] & 0x0f;
+            int value = normalized.body[3] & 0xff;
+            return new PacketRecord(origin, index, tick, sourceBank, PacketKind.LEGACY_CONTROL,
+                    -1, command, normalized.enveloped, normalized.declaredLength, normalized.body.length,
+                    channel, value, legacyControlDetail(command, channel, value), hex(packet, 32));
+        }
         if (normalized.body.length < 2 || (normalized.body[0] & 0xff) != MANUFACTURER_YAMAHA) {
             return new PacketRecord(origin, index, tick, sourceBank, PacketKind.UNKNOWN,
                     -1, -1, normalized.enveloped, normalized.declaredLength, normalized.body.length,
@@ -196,6 +209,36 @@ public final class MA5PacketInventory {
             return waveDataPacket.summary();
         }
         return "";
+    }
+
+    private String legacyControlSummary() {
+        if (count(PacketKind.LEGACY_CONTROL) == 0) {
+            return " ";
+        }
+        Map<Integer, Integer> commands = new TreeMap<>();
+        for (PacketRecord packet : packets) {
+            if (packet.kind == PacketKind.LEGACY_CONTROL && packet.type >= 0) {
+                commands.merge(packet.type, 1, Integer::sum);
+            }
+        }
+        if (commands.isEmpty()) {
+            return " ";
+        }
+        StringBuilder builder = new StringBuilder(" legacyCmds=");
+        boolean first = true;
+        for (Map.Entry<Integer, Integer> entry : commands.entrySet()) {
+            if (!first) {
+                builder.append(',');
+            }
+            builder.append(String.format("%02X", entry.getKey())).append(':').append(entry.getValue());
+            first = false;
+        }
+        builder.append(' ');
+        return builder.toString();
+    }
+
+    private static String legacyControlDetail(int command, int channel, int value) {
+        return String.format("legacyControl command=0x%02X channel=%d value=0x%02X", command, channel, value);
     }
 
     private static byte[] messageForPreview(byte[] original, byte[] normalizedBody) {
@@ -316,6 +359,7 @@ public final class MA5PacketInventory {
         VM35_VOICE,
         MA5_ALT_VOICE,
         VMA_VOICE,
+        LEGACY_CONTROL,
         OTHER_YAMAHA,
         UNKNOWN
     }

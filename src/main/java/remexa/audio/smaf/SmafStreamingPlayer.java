@@ -241,10 +241,13 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
                     }
                 }
 
-                long playedFrames;
-                synchronized (engineLock) {
-                    playedFrames = line == null ? writtenFrames : line.getLongFramePosition();
-                }
+                // PhraseTrack completion is a sequencing/lifecycle signal, not a
+                // guarantee that the OS mixer has physically drained every sample.
+                // Some Windows Java mixers advance getLongFramePosition slowly or
+                // inconsistently for tiny writes, which can leave games with small
+                // JBlend phrase pools thinking a track is still busy long after the
+                // short SFX has already been queued.
+                long playedFrames = writtenFrames;
                 for (PlaybackHandle handle : snapshot) {
                     handle.bindCompletionTarget(writtenBefore, writtenFrames);
                     handle.dispatchReadyCompletion(playedFrames, notifications);
@@ -276,8 +279,11 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
         private void closeHandle(PlaybackHandle handle) {
             synchronized (engineLock) {
                 pruneClosedHandlesLocked();
-                if (!handles.contains(handle) && !hasRunnableHandleLocked()) {
-                    closeLineLocked();
+                if (!handles.contains(handle) && !hasRunnableHandleLocked() && line != null) {
+                    // One-shot PhraseTracks are often removed from their completion callback.
+                    // Some Java mixers report queued frames as "played", so closing the line
+                    // immediately here can flush very short SFX before the device drains them.
+                    idleCloseDeadlineMs = System.currentTimeMillis() + IDLE_CLOSE_MILLIS;
                 }
                 engineLock.notifyAll();
             }

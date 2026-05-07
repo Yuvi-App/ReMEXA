@@ -49,11 +49,13 @@ final class Ma3SmafAudioEngine implements YamahaAudioEngine {
         private static final int CHANNEL_COUNT = 16;
         private static final int INTERNAL_LEGACY_YAMAHA_MESSAGE = 0x72;
         private static final int INTERNAL_LEGACY_YAMAHA_SELECTOR = 0x06;
+        private static final int INTERNAL_LEGACY_YAMAHA_MODULATION = 0x07;
         private static final int INTERNAL_LEGACY_YAMAHA_VOLUME = 0x08;
         private static final int INTERNAL_LEGACY_YAMAHA_PAN = 0x09;
         private static final int INTERNAL_LEGACY_YAMAHA_PHRASE_VOLUME = 0x0a;
         private static final int INTERNAL_LEGACY_YAMAHA_PROGRAM = 0x0b;
         private static final int INTERNAL_LEGACY_YAMAHA_BANK = 0x0c;
+        private static final int INTERNAL_LEGACY_YAMAHA_PITCH = 0x11;
         private static final float DEFAULT_PITCH_BEND_RANGE_SEMITONES = 2.0f;
         private static final float SEMITONES_PER_OCTAVE = 12.0f;
 
@@ -177,10 +179,16 @@ final class Ma3SmafAudioEngine implements YamahaAudioEngine {
                     sampler.drumEnable(logicalChannel, drumBank);
                     sampler.bankChange(logicalChannel, value);
                 }
+                case INTERNAL_LEGACY_YAMAHA_MODULATION -> {
+                    // The MA3 sampler does not currently expose modulation depth,
+                    // but this command is intentionally consumed as chip state.
+                }
                 case INTERNAL_LEGACY_YAMAHA_VOLUME, INTERNAL_LEGACY_YAMAHA_PHRASE_VOLUME ->
                         sampler.volume(logicalChannel, value / 127.0f);
                 case INTERNAL_LEGACY_YAMAHA_PAN ->
                         sampler.panpot(logicalChannel, midiPanToFloat(value));
+                case INTERNAL_LEGACY_YAMAHA_PITCH ->
+                        pitchBend(logicalChannel, centeredLegacyPitchBend(value, logicalChannel));
                 default -> {
                     return true;
                 }
@@ -197,6 +205,12 @@ final class Ma3SmafAudioEngine implements YamahaAudioEngine {
                 return 0.0f;
             }
             return semitones / rangeSemitones;
+        }
+
+        private float centeredLegacyPitchBend(int value, int channel) {
+            int clampedChannel = channel >= 0 && channel < CHANNEL_COUNT ? channel : 0;
+            float normalized = value >= 127 ? 1.0f : (value - 64.0f) / 64.0f;
+            return normalized * pitchBendRanges[clampedChannel];
         }
 
         private static float normalizePitchBendRange(float rangeSemitones) {

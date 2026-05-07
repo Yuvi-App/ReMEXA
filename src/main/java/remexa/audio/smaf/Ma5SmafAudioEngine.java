@@ -59,6 +59,12 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
 
     @Override
     public SmafStreamingSession openStream(SmafRenderContext context) throws Exception {
+        MA5PacketInventory inventory = MA5PacketInventory.analyze(
+                context.source(),
+                context.startupPackets(),
+                context.exclusiveVoices(),
+                context.sequenceSysExEvents());
+        inventory.log("ma5");
         return renderer.openStream(
                 context.sequence(),
                 context.sequenceSysExEvents(),
@@ -71,11 +77,13 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
         private static final int CHANNEL_COUNT = 16;
         private static final int INTERNAL_LEGACY_YAMAHA_MESSAGE = 0x72;
         private static final int INTERNAL_LEGACY_YAMAHA_SELECTOR = 0x06;
+        private static final int INTERNAL_LEGACY_YAMAHA_MODULATION = 0x07;
         private static final int INTERNAL_LEGACY_YAMAHA_VOLUME = 0x08;
         private static final int INTERNAL_LEGACY_YAMAHA_PAN = 0x09;
         private static final int INTERNAL_LEGACY_YAMAHA_PHRASE_VOLUME = 0x0a;
         private static final int INTERNAL_LEGACY_YAMAHA_PROGRAM = 0x0b;
         private static final int INTERNAL_LEGACY_YAMAHA_BANK = 0x0c;
+        private static final int INTERNAL_LEGACY_YAMAHA_PITCH = 0x11;
         private static final int MIDI_PERCUSSION_CHANNEL = 9;
         private static final float DEFAULT_PITCH_BEND_RANGE_SEMITONES = 2.0f;
         private static final float SEMITONES_PER_OCTAVE = 12.0f;
@@ -92,26 +100,13 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
                 Boolean.parseBoolean(System.getProperty("remexa.ma5PcmEnvelope", "true"));
         private static final float PCM_GAIN =
                 Float.parseFloat(System.getProperty("remexa.ma5PcmGain", "0.35"));
-        private static final float PCM_PHASE_REFERENCE_RATE = 48_000.0f;
-        private static final float PCM_PHASE_FRACTION_SCALE = 65_536.0f;
-
         /**
-         * Multiplier on the PCM phase increment to compensate for the unknown
-         * SMW-driver-side scaling of {@code frequencySetting} into chip
-         * register {@code +0x8040}.
+         * Multiplier on the authored PCM sample rate.
          *
-         * <p>The chip's phase increment (struct {@code +0x80b4}, written by
-         * {@code sub_10013a10} from {@code +0x8084} which {@code sub_100139c0}
-         * computes as {@code (freq * keyMul) >> 16} at chip rate 48 kHz)
-         * matches the {@code freq * 48000 / (outSR * 65536)} shape this
-         * engine uses, but the {@code keyMul} and the SMW driver's scaling
-         * of the SysEx {@code frequencySetting} field into {@code +0x8040}
-         * could not be located (driver DLL is stripped).</p>
-         *
-         * <p>Tunable via {@code -Dremexa.ma5PcmFreqScale=N} so the user can
-         * audition with values like 0.5, 2, 4, 8, 16 to find a calibration
-         * that brings FF4 melodic phrases into tune. Default {@code 1.0}
-         * preserves prior behavior.</p>
+         * <p>MGS Mobile's one-shot MA-5 PCM voices use round values such as
+         * 4000 and 6000, matching low-rate ADPCM sample rates rather than a
+         * 16.16 phase increment. Tunable via
+         * {@code -Dremexa.ma5PcmFreqScale=N} for future hardware calibration.</p>
          */
         private static final float PCM_FREQ_SCALE =
                 Float.parseFloat(System.getProperty("remexa.ma5PcmFreqScale", "1.0"));
@@ -400,6 +395,12 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
                         bankChange(MIDI_PERCUSSION_CHANNEL, value);
                     }
                 }
+                case INTERNAL_LEGACY_YAMAHA_MODULATION -> {
+                    modulation(logicalChannel, value);
+                    if (logicalChannel >= 0 && logicalChannel < CHANNEL_COUNT && channelDrumBanks[logicalChannel]) {
+                        modulation(MIDI_PERCUSSION_CHANNEL, value);
+                    }
+                }
                 case INTERNAL_LEGACY_YAMAHA_VOLUME, INTERNAL_LEGACY_YAMAHA_PHRASE_VOLUME -> {
                     float normalized = value / 127.0f;
                     volume(logicalChannel, normalized);
@@ -412,6 +413,13 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
                     panpot(logicalChannel, normalized);
                     if (logicalChannel >= 0 && logicalChannel < CHANNEL_COUNT && channelDrumBanks[logicalChannel]) {
                         panpot(MIDI_PERCUSSION_CHANNEL, normalized);
+                    }
+                }
+                case INTERNAL_LEGACY_YAMAHA_PITCH -> {
+                    float semitones = centeredLegacyPitchBend(value, logicalChannel);
+                    pitchBend(logicalChannel, semitones);
+                    if (logicalChannel >= 0 && logicalChannel < CHANNEL_COUNT && channelDrumBanks[logicalChannel]) {
+                        pitchBend(MIDI_PERCUSSION_CHANNEL, semitones);
                     }
                 }
                 default -> {
@@ -489,11 +497,11 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
 
                 for (int frame = 0; frame < frames; frame++) {
                     if (note.position >= end) {
-                        if (loop < end) {
+                        if (note.voice.repeatMode() && loop < end) {
                             note.position = loop + (note.position - loop) % (end - loop);
                         } else {
-                            note.position = Math.max(0, end - 1);
-                            note.holding = true;
+                            note.finished = true;
+                            break;
                         }
                     }
 
@@ -506,9 +514,7 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
                     int output = offset + frame * 2;
                     samples[output] += sample * noteLeft;
                     samples[output + 1] += sample * noteRight;
-                    if (!note.holding) {
-                        note.position += note.advance(pitchBendSemitones[note.channel]);
-                    }
+                    note.position += note.advance(pitchBendSemitones[note.channel]);
                     note.advanceLfo();
 
                     if (note.releasing) {
@@ -654,6 +660,12 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
             return semitones / rangeSemitones;
         }
 
+        private float centeredLegacyPitchBend(int value, int channel) {
+            int clampedChannel = channel >= 0 && channel < CHANNEL_COUNT ? channel : 0;
+            float normalized = value >= 127 ? 1.0f : (value - 64.0f) / 64.0f;
+            return normalized * pitchBendRanges[clampedChannel];
+        }
+
         private static float normalizePitchBendRange(float rangeSemitones) {
             return rangeSemitones / SEMITONES_PER_OCTAVE;
         }
@@ -689,15 +701,10 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
                 this.velocity = Math.max(0.0f, velocity);
                 this.voice = voice;
                 this.wave = wave;
-                // MA-5 PCM phase increment per output sample, in 16.16 wave-sample units.
-                // Derived from M5_EmuHw.dll: sub_10013a10 writes voice +0x80b4 from
-                // +0x8084 = (freq * keyMul) >> 16 at chip rate 48 kHz (sub_100139c0).
-                // The SMW driver's exact scaling of the SysEx frequencySetting field
-                // into chip register +0x8040 lives in stripped code; PCM_FREQ_SCALE
-                // exposes that calibration constant for empirical tuning.
+                // The VM35 frequency field stores the wave's authored sample
+                // rate for the one-shot MA-5 PCM effects seen in MGS Mobile.
                 this.baseAdvance = Math.max(0.001f,
-                        voice.frequencySetting() * PCM_PHASE_REFERENCE_RATE * PCM_FREQ_SCALE
-                                / (outputSampleRate * PCM_PHASE_FRACTION_SCALE));
+                        voice.frequencySetting() * PCM_FREQ_SCALE / outputSampleRate);
                 this.totalLevelGain = PCM_ENVELOPE_ENABLED ? totalLevelGain(voice.totalLevel()) : 1.0f;
                 this.attackDelta = attackDelta(voice.attackRate(), outputSampleRate);
                 this.decayCoef = decayCoef(voice.decayRate(), outputSampleRate);
@@ -743,11 +750,14 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
                     }
                     return baseAdvance * hardwarePitchRatio(totalSemitones);
                 }
+                // SmafSequencedRenderer passes keys relative to MIDI note 69;
+                // convert back to absolute MIDI before applying PCM tuning.
+                int midiKey = key + 69;
                 // Melodic PCM transposes relative to a chip-defined center
                 // key. The voice's frequencySetting is calibrated for that
                 // key; above it plays faster, below it slower.
                 return baseAdvance
-                        * hardwarePitchRatio(key - PCM_REFERENCE_KEY + bendSemitones + vibrato);
+                        * hardwarePitchRatio(midiKey - PCM_REFERENCE_KEY + bendSemitones + vibrato);
             }
 
             /**

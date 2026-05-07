@@ -27,6 +27,7 @@ public final class PhraseTrack {
     private int volume = 127;
     private int panpot = 64;
     private boolean muted;
+    private boolean terminalEventDispatched;
 
     PhraseTrack(int id) {
         this.id = id;
@@ -49,8 +50,10 @@ public final class PhraseTrack {
                 + (phrase == null ? 0 : phrase.getSize()) + ")");
         try {
             cancelLoopCoordinator();
+            dispatchTerminalEventIfNeeded("replace");
             closePlayback();
             this.phrase = phrase;
+            terminalEventDispatched = false;
             if (phrase == null) {
                 return;
             }
@@ -68,11 +71,15 @@ public final class PhraseTrack {
 
     public void removePhrase() {
         DebugLog.log(LogCategory.MEDIA, PhraseTrack.class.getName(), "Track " + id + " removePhrase()");
+        boolean dispatchTerminalEvent = shouldDispatchTerminalEvent();
         cancelLoopCoordinator();
         stopInternal(new HashSet<>());
         clearSyncRelationship();
         closePlayback();
         this.phrase = null;
+        if (dispatchTerminalEvent) {
+            dispatchTerminalEvent("removePhrase");
+        }
     }
 
     public void setEventListener(PhraseTrackListener listener) {
@@ -143,8 +150,12 @@ public final class PhraseTrack {
         if (subjectTo != null) {
             return;
         }
+        boolean dispatchTerminalEvent = shouldDispatchTerminalEvent();
         cancelLoopCoordinator();
         stopInternal(new HashSet<>());
+        if (dispatchTerminalEvent) {
+            dispatchTerminalEvent("stop");
+        }
     }
 
     public void pause() {
@@ -221,6 +232,7 @@ public final class PhraseTrack {
             return;
         }
         ensurePlayback();
+        terminalEventDispatched = false;
         playback.play(loop);
         for (PhraseTrack slaveTrack : slaveTracks) {
             slaveTrack.playInternal(loop, visited);
@@ -267,6 +279,7 @@ public final class PhraseTrack {
         List<PhraseTrack> started = new ArrayList<>(group.size());
         try {
             for (PhraseTrack track : group) {
+                track.terminalEventDispatched = false;
                 track.playback.play(loop);
                 started.add(track);
             }
@@ -283,6 +296,7 @@ public final class PhraseTrack {
 
     private void handlePlaybackEvent(int eventId) {
         if (eventId == -1) {
+            terminalEventDispatched = true;
             GroupLoopCoordinator coordinator = loopCoordinator;
             if (coordinator != null) {
                 coordinator.onTrackCompleted(this);
@@ -297,6 +311,27 @@ public final class PhraseTrack {
         if (currentListener != null) {
             currentListener.eventOccurred(eventId);
         }
+    }
+
+    private void dispatchTerminalEventIfNeeded(String reason) {
+        if (shouldDispatchTerminalEvent()) {
+            dispatchTerminalEvent(reason);
+        }
+    }
+
+    private boolean shouldDispatchTerminalEvent() {
+        if (terminalEventDispatched || playback == null) {
+            return false;
+        }
+        int state = playback.getState();
+        return state == PLAYING || state == PAUSED;
+    }
+
+    private void dispatchTerminalEvent(String reason) {
+        terminalEventDispatched = true;
+        DebugLog.log(LogCategory.AUDIO, PhraseTrack.class.getName(),
+                "Track " + id + " dispatch terminal event after " + reason);
+        dispatchExternalEvent(-1);
     }
 
     private void stopInternal(Set<PhraseTrack> visited) {
