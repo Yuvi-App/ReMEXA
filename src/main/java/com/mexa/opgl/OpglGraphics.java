@@ -671,10 +671,11 @@ public class OpglGraphics {
     public void release () {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "release");
         if (boundTarget instanceof Graphics graphics) {
+            forceSurfaceOpaque();
             if (boundBackingImage != null) {
                 boundBackingImage.setRGB(0, 0, surfaceWidth, surfaceHeight, surfacePixels, 0, surfaceWidth);
             } else {
-                graphics.drawRGB(surfacePixels, 0, surfaceWidth, 0, 0, surfaceWidth, surfaceHeight, true);
+                graphics.drawRGB(surfacePixels, 0, surfaceWidth, 0, 0, surfaceWidth, surfaceHeight, false);
             }
         }
         boundBackingImage = null;
@@ -2145,6 +2146,12 @@ public class OpglGraphics {
             surfacePixels = new int[size];
             surfaceDepth = new float[size];
             surfaceStencil = new int[size];
+        }
+    }
+
+    private void forceSurfaceOpaque() {
+        for (int i = 0; i < surfacePixels.length; i++) {
+            surfacePixels[i] |= 0xFF000000;
         }
     }
 
