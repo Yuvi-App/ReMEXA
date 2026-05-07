@@ -62,6 +62,10 @@ public abstract class Canvas extends Displayable {
     protected void keyStateChanged(int keyCode, boolean pressed) {
     }
 
+    protected void keyStateChanged(int keyCode, boolean pressed, boolean latchPress) {
+        keyStateChanged(keyCode, pressed);
+    }
+
     protected void sizeChanged(int width, int height) {
     }
 
@@ -198,19 +202,19 @@ public abstract class Canvas extends Displayable {
 
     public final void fireKeyPressed(int keyCode) {
         pressedKeys.add(keyCode);
-        keyStateChanged(keyCode, true);
+        keyStateChanged(keyCode, true, true);
         keyPressed(keyCode);
     }
 
     public final void fireKeyReleased(int keyCode) {
         pressedKeys.remove(keyCode);
-        keyStateChanged(keyCode, false);
+        keyStateChanged(keyCode, false, false);
         keyReleased(keyCode);
     }
 
     public final void fireKeyRepeated(int keyCode) {
         pressedKeys.add(keyCode);
-        keyStateChanged(keyCode, true);
+        keyStateChanged(keyCode, true, false);
         keyRepeated(keyCode);
     }
 
@@ -220,7 +224,7 @@ public abstract class Canvas extends Displayable {
         } else {
             pressedKeys.remove(keyCode);
         }
-        keyStateChanged(keyCode, pressed);
+        keyStateChanged(keyCode, pressed, false);
     }
 
     public final void firePointerPressed(int x, int y) {

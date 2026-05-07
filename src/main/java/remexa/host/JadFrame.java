@@ -870,11 +870,31 @@ public final class JadFrame extends JFrame {
     private void dispatchPhoneKey(int phoneKeyCode, KeyDispatchKind dispatchKind) {
         switch (dispatchKind) {
             case PRESS -> MidletRuntime.dispatchKeyPressed(phoneKeyCode);
-            case REPEAT -> MidletRuntime.dispatchKeyRepeated(phoneKeyCode);
+            case REPEAT -> {
+                if (!shouldSuppressGameCanvasDirectionalRepeat(phoneKeyCode)) {
+                    MidletRuntime.dispatchKeyRepeated(phoneKeyCode);
+                }
+            }
             case RELEASE -> MidletRuntime.dispatchKeyReleased(phoneKeyCode);
             case STATE_PRESS -> MidletRuntime.dispatchKeyStateChanged(phoneKeyCode, true);
-            case STATE_RELEASE -> MidletRuntime.dispatchKeyStateChanged(phoneKeyCode, false);
+            case STATE_RELEASE -> {
+                if (shouldDispatchGameCanvasDirectionalStateRelease(phoneKeyCode)) {
+                    MidletRuntime.dispatchKeyReleased(phoneKeyCode);
+                } else {
+                    MidletRuntime.dispatchKeyStateChanged(phoneKeyCode, false);
+                }
+            }
         }
+    }
+
+    private static boolean shouldSuppressGameCanvasDirectionalRepeat(int phoneKeyCode) {
+        return isDirectionalPhoneKey(phoneKeyCode)
+                && MidletRuntime.currentDisplayable() instanceof javax.microedition.lcdui.game.GameCanvas;
+    }
+
+    private static boolean shouldDispatchGameCanvasDirectionalStateRelease(int phoneKeyCode) {
+        return isDirectionalPhoneKey(phoneKeyCode)
+                && MidletRuntime.currentDisplayable() instanceof javax.microedition.lcdui.game.GameCanvas;
     }
 
     public void showTouchControlsDisabledWarning() {

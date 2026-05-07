@@ -68,13 +68,20 @@ public abstract class GameCanvas extends Canvas {
 
     @Override
     protected void keyStateChanged(int keyCode, boolean pressed) {
+        keyStateChanged(keyCode, pressed, pressed);
+    }
+
+    @Override
+    protected void keyStateChanged(int keyCode, boolean pressed, boolean latchPress) {
         int stateBit = stateBitFor(keyCode);
         if (stateBit == 0) {
             return;
         }
         if (pressed) {
+            if (latchPress && (currentKeyState & stateBit) == 0) {
+                latchedKeyState |= stateBit;
+            }
             currentKeyState |= stateBit;
-            latchedKeyState |= stateBit;
         } else {
             currentKeyState &= ~stateBit;
         }
