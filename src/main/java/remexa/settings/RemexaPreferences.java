@@ -19,6 +19,9 @@ public final class RemexaPreferences {
     public static final String HOST_SCALE_KEY = "hostScale";
     public static final String FRAME_RATE_KEY = "frameRate";
     public static final String TOUCH_CONTROLS_ENABLED_KEY = "touchControlsEnabled";
+    public static final String MOTION_CONTROLS_ENABLED_KEY = "motionControlsEnabled";
+    public static final String MOTION_SENSITIVITY_KEY = "motionSensitivity";
+    public static final String MOTION_TRACKING_MODE_KEY = "motionTrackingMode";
     public static final String FLASH_BACKLIGHT_ENABLED_KEY = "flashBacklightEnabled";
     public static final String CAMERA_INPUT_MODE_KEY = "cameraInputMode";
     public static final String LIVE_TRANSLATION_ENABLED_KEY = "liveTranslationEnabled";

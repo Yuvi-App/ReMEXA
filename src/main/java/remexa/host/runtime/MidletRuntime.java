@@ -23,6 +23,7 @@ import remexa.host.LaunchConfig;
 import remexa.host.input.HostCameraCaptureRequest;
 import remexa.host.input.HostCameraCaptureResult;
 import remexa.host.input.HostTextInputRequest;
+import remexa.host.input.MotionPosture;
 import remexa.host.jad.JadDescriptor;
 import remexa.host.profile.DisplayMetrics;
 import remexa.host.profile.LaunchProfile;
@@ -201,6 +202,11 @@ public final class MidletRuntime {
 
         context = activeContext();
         return context == null ? null : HOST_FRAMES.get(context.classLoader());
+    }
+
+    public static MotionPosture currentMotionPosture() {
+        var hostFrame = currentHostFrame();
+        return hostFrame == null ? MotionPosture.neutral() : hostFrame.currentMotionPosture();
     }
 
     public static String requestTextInput(HostTextInputRequest request) {
@@ -717,6 +723,25 @@ public final class MidletRuntime {
         }
     }
 
+    public static void noteMotionApiUsage(String apiName) {
+        if (LaunchConfig.resolveConfiguredMotionControlsEnabled()) {
+            return;
+        }
+        var context = activeContext();
+        if (context == null || context.markMotionControlsWarningShown()) {
+            return;
+        }
+        DebugLog.log(
+                LogCategory.UI,
+                MidletRuntime.class.getName(),
+                "Motion API requested while mouse motion controls are disabled: " + apiName
+        );
+        var hostFrame = HOST_FRAMES.get(context.classLoader());
+        if (hostFrame != null) {
+            hostFrame.showMotionControlsDisabledWarning();
+        }
+    }
+
     private static boolean overridesPointerMethod(Canvas canvas, String methodName) {
         Class<?> current = canvas.getClass();
         while (current != null && Canvas.class.isAssignableFrom(current)) {
@@ -821,6 +846,7 @@ public final class MidletRuntime {
         private volatile DisplayMetrics displayMetrics;
         private volatile Displayable currentDisplayable;
         private volatile boolean touchControlsWarningShown;
+        private volatile boolean motionControlsWarningShown;
 
         private LaunchContext(
                 JadDescriptor descriptor,
@@ -912,6 +938,14 @@ public final class MidletRuntime {
                 return true;
             }
             touchControlsWarningShown = true;
+            return false;
+        }
+
+        private boolean markMotionControlsWarningShown() {
+            if (motionControlsWarningShown) {
+                return true;
+            }
+            motionControlsWarningShown = true;
             return false;
         }
 

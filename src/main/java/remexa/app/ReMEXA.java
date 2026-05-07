@@ -38,6 +38,9 @@ public final class ReMEXA {
         LaunchConfig.applyHostScale(launchRequest.hostScale() == null ? HostUiSettings.hostScale() : launchRequest.hostScale());
         LaunchConfig.applyFrameRateOption(launchRequest.frameRateOption() == null ? HostUiSettings.frameRateOption() : launchRequest.frameRateOption());
         LaunchConfig.applyTouchControlsEnabled(HostUiSettings.touchControlsEnabled());
+        LaunchConfig.applyMotionControlsEnabled(HostUiSettings.motionControlsEnabled());
+        LaunchConfig.applyMotionSensitivityPercent(HostUiSettings.motionSensitivityPercent());
+        LaunchConfig.applyMotionTrackingMode(HostUiSettings.motionTrackingMode());
         LaunchConfig.applyFlashBacklightEnabled(HostUiSettings.flashBacklightEnabled());
         LaunchConfig.applyFpsOverlayEnabled(HostUiSettings.fpsOverlayEnabled());
         LaunchConfig.applyCameraInputMode(HostUiSettings.cameraInputMode());

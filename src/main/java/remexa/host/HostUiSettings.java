@@ -116,6 +116,44 @@ public final class HostUiSettings {
         RemexaPreferences.ui().putBoolean(RemexaPreferences.TOUCH_CONTROLS_ENABLED_KEY, enabled);
     }
 
+    public static boolean motionControlsEnabled() {
+        return RemexaPreferences.ui().getBoolean(RemexaPreferences.MOTION_CONTROLS_ENABLED_KEY, false);
+    }
+
+    public static void setMotionControlsEnabled(boolean enabled) {
+        RemexaPreferences.ui().putBoolean(RemexaPreferences.MOTION_CONTROLS_ENABLED_KEY, enabled);
+    }
+
+    public static int motionSensitivityPercent() {
+        return LaunchConfig.normalizeMotionSensitivityPercent(
+                RemexaPreferences.ui().get(
+                        RemexaPreferences.MOTION_SENSITIVITY_KEY,
+                        Integer.toString(LaunchConfig.DEFAULT_MOTION_SENSITIVITY_PERCENT)
+                )
+        );
+    }
+
+    public static void setMotionSensitivityPercent(int sensitivityPercent) {
+        RemexaPreferences.ui().putInt(
+                RemexaPreferences.MOTION_SENSITIVITY_KEY,
+                LaunchConfig.clampMotionSensitivityPercent(sensitivityPercent)
+        );
+    }
+
+    public static LaunchConfig.MotionTrackingMode motionTrackingMode() {
+        return LaunchConfig.MotionTrackingMode.normalize(
+                RemexaPreferences.ui().get(
+                        RemexaPreferences.MOTION_TRACKING_MODE_KEY,
+                        LaunchConfig.MotionTrackingMode.JAD_FRAME.id()
+                )
+        );
+    }
+
+    public static void setMotionTrackingMode(LaunchConfig.MotionTrackingMode mode) {
+        var resolved = mode == null ? LaunchConfig.MotionTrackingMode.JAD_FRAME : mode;
+        RemexaPreferences.ui().put(RemexaPreferences.MOTION_TRACKING_MODE_KEY, resolved.id());
+    }
+
     public static boolean flashBacklightEnabled() {
         return RemexaPreferences.ui().getBoolean(RemexaPreferences.FLASH_BACKLIGHT_ENABLED_KEY, true);
     }

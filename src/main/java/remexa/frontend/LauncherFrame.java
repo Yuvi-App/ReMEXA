@@ -315,6 +315,66 @@ public final class LauncherFrame extends JFrame {
             );
         });
         controlsMenu.add(touchControlsItem);
+        var motionMenu = new JMenu("Motion");
+        styleMenu(motionMenu);
+        var motionControlsItem = new JCheckBoxMenuItem("Enable Mouse Motion", HostUiSettings.motionControlsEnabled());
+        styleMenuItem(motionControlsItem);
+        motionControlsItem.addActionListener(event -> {
+            HostUiSettings.setMotionControlsEnabled(motionControlsItem.isSelected());
+            LaunchConfig.applyMotionControlsEnabled(motionControlsItem.isSelected());
+            DebugLog.log(
+                    LogCategory.FRONTEND,
+                    LauncherFrame.class.getName(),
+                    "Mouse motion controls set to " + motionControlsItem.isSelected()
+            );
+        });
+        motionMenu.add(motionControlsItem);
+        var motionTrackingMenu = new JMenu("Tracking Area");
+        styleMenu(motionTrackingMenu);
+        var motionTrackingGroup = new ButtonGroup();
+        for (var trackingMode : LaunchConfig.MotionTrackingMode.values()) {
+            var trackingItem = new JRadioButtonMenuItem(
+                    trackingMode.toString(),
+                    HostUiSettings.motionTrackingMode() == trackingMode
+            );
+            styleMenuItem(trackingItem);
+            motionTrackingGroup.add(trackingItem);
+            trackingItem.addActionListener(event -> {
+                HostUiSettings.setMotionTrackingMode(trackingMode);
+                LaunchConfig.applyMotionTrackingMode(trackingMode);
+                DebugLog.log(
+                        LogCategory.FRONTEND,
+                        LauncherFrame.class.getName(),
+                        "Motion tracking area set to " + trackingMode.id()
+                );
+            });
+            motionTrackingMenu.add(trackingItem);
+        }
+        motionMenu.add(motionTrackingMenu);
+        var motionSensitivityMenu = new JMenu("Sensitivity");
+        styleMenu(motionSensitivityMenu);
+        var motionSensitivityGroup = new ButtonGroup();
+        for (int sensitivity : new int[]{50, 75, 100, 150, 200, 300}) {
+            var sensitivityPercent = sensitivity;
+            var sensitivityItem = new JRadioButtonMenuItem(
+                    sensitivityPercent + "%",
+                    HostUiSettings.motionSensitivityPercent() == sensitivityPercent
+            );
+            styleMenuItem(sensitivityItem);
+            motionSensitivityGroup.add(sensitivityItem);
+            sensitivityItem.addActionListener(event -> {
+                HostUiSettings.setMotionSensitivityPercent(sensitivityPercent);
+                LaunchConfig.applyMotionSensitivityPercent(sensitivityPercent);
+                DebugLog.log(
+                        LogCategory.FRONTEND,
+                        LauncherFrame.class.getName(),
+                        "Motion sensitivity set to " + sensitivityPercent + "%"
+                );
+            });
+            motionSensitivityMenu.add(sensitivityItem);
+        }
+        motionMenu.add(motionSensitivityMenu);
+        controlsMenu.add(motionMenu);
         settingsMenu.add(controlsMenu);
 
         var phoneFeaturesMenu = new JMenu("Phone Features");

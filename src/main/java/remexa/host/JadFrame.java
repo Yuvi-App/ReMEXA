@@ -15,6 +15,10 @@ import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
 import java.awt.Image;
+import java.awt.MouseInfo;
+import java.awt.Point;
+import java.awt.PointerInfo;
+import java.awt.Rectangle;
 import java.awt.Dialog;
 import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
@@ -64,6 +68,7 @@ import remexa.host.input.HostCameraCaptureResult;
 import remexa.host.input.HostKeyMapper;
 import remexa.host.input.HostTextInputRequest;
 import remexa.host.input.InputProfile;
+import remexa.host.input.MotionPosture;
 import remexa.host.jad.JadDescriptor;
 import remexa.host.media.VlcVideoWindow;
 import remexa.host.profile.DisplayMetrics;
@@ -137,12 +142,17 @@ public final class JadFrame extends JFrame {
     private final AtomicBoolean disposed = new AtomicBoolean();
     private final AtomicBoolean fatalFailure = new AtomicBoolean();
     private final Object closeHandlerLock = new Object();
+    private final Object motionLock = new Object();
     private final int hostScale;
     private final FpsMeter fpsMeter = new FpsMeter();
     private volatile long backlightFlashUntilMs;
     private volatile ActiveTextInput activeTextInput;
     private volatile ActiveHostedVideo activeHostedVideo;
     private volatile long lastChromeRefreshNanos;
+    private int lastMotionYaw;
+    private int lastMotionRoll;
+    private int lastMotionPitch;
+    private boolean hasLastMotionSample;
     private Runnable closeHandler;
 
     public JadFrame(JadDescriptor descriptor, LaunchProfile launchProfile, boolean showHostDetails) {
@@ -789,6 +799,124 @@ public final class JadFrame extends JFrame {
         } else {
             SwingUtilities.invokeLater(showTask);
         }
+    }
+
+    public void showMotionControlsDisabledWarning() {
+        Runnable showTask = () -> {
+            if (disposed.get()) {
+                return;
+            }
+            showThemedInfoDialog(
+                    "Motion Controls Required",
+                    "This application uses motion controls. Enable Mouse Motion in Settings, then center the mouse before calibration."
+            );
+        };
+        if (SwingUtilities.isEventDispatchThread()) {
+            showTask.run();
+        } else {
+            SwingUtilities.invokeLater(showTask);
+        }
+    }
+
+    public MotionPosture currentMotionPosture() {
+        if (disposed.get() || !LaunchConfig.resolveConfiguredMotionControlsEnabled()) {
+            return resetMotionPosture();
+        }
+        if (java.awt.GraphicsEnvironment.isHeadless()) {
+            return resetMotionPosture();
+        }
+
+        PointerInfo pointerInfo;
+        try {
+            pointerInfo = MouseInfo.getPointerInfo();
+        } catch (java.awt.HeadlessException exception) {
+            return resetMotionPosture();
+        }
+        if (pointerInfo == null) {
+            return resetMotionPosture();
+        }
+
+        var bounds = currentMotionTrackingBounds(pointerInfo);
+        if (bounds == null || bounds.width <= 0 || bounds.height <= 0) {
+            return resetMotionPosture();
+        }
+
+        Point pointer = pointerInfo.getLocation();
+        if (!bounds.contains(pointer)) {
+            return resetMotionPosture();
+        }
+
+        double normalizedX = clampUnit((pointer.x - bounds.getCenterX()) / Math.max(1.0, bounds.width / 2.0));
+        double normalizedY = clampUnit((pointer.y - bounds.getCenterY()) / Math.max(1.0, bounds.height / 2.0));
+        int maxTilt = Math.max(
+                1,
+                Math.round(32.0f * LaunchConfig.resolveConfiguredMotionSensitivityPercent() / 100.0f)
+        );
+        int roll = (int) Math.round(normalizedX * maxTilt);
+        int pitch = (int) Math.round(-normalizedY * maxTilt);
+        return sampleMotionPosture(0, roll, pitch);
+    }
+
+    private Rectangle currentMotionTrackingBounds(PointerInfo pointerInfo) {
+        if (LaunchConfig.MotionTrackingMode.resolveConfigured() == LaunchConfig.MotionTrackingMode.DESKTOP) {
+            var device = pointerInfo.getDevice();
+            var configuration = device == null ? null : device.getDefaultConfiguration();
+            return configuration == null ? null : configuration.getBounds();
+        }
+
+        var viewport = currentRenderViewport();
+        if (viewport == null || !renderSurface.isShowing()) {
+            return null;
+        }
+        try {
+            Point origin = renderSurface.getLocationOnScreen();
+            return new Rectangle(
+                    origin.x + viewport.drawX(),
+                    origin.y + viewport.drawY(),
+                    viewport.drawWidth(),
+                    viewport.drawHeight()
+            );
+        } catch (java.awt.IllegalComponentStateException exception) {
+            return null;
+        }
+    }
+
+    private MotionPosture sampleMotionPosture(int yaw, int roll, int pitch) {
+        synchronized (motionLock) {
+            int dynamicYaw = hasLastMotionSample ? yaw - lastMotionYaw : 0;
+            int dynamicRoll = hasLastMotionSample ? roll - lastMotionRoll : 0;
+            int dynamicPitch = hasLastMotionSample ? pitch - lastMotionPitch : 0;
+            lastMotionYaw = yaw;
+            lastMotionRoll = roll;
+            lastMotionPitch = pitch;
+            hasLastMotionSample = true;
+            return new MotionPosture(
+                    yaw,
+                    roll,
+                    pitch,
+                    dynamicRoll,
+                    dynamicPitch,
+                    dynamicYaw,
+                    roll,
+                    pitch,
+                    0,
+                    0
+            );
+        }
+    }
+
+    private MotionPosture resetMotionPosture() {
+        synchronized (motionLock) {
+            hasLastMotionSample = false;
+            lastMotionYaw = 0;
+            lastMotionRoll = 0;
+            lastMotionPitch = 0;
+            return MotionPosture.neutral();
+        }
+    }
+
+    private static double clampUnit(double value) {
+        return Math.max(-1.0, Math.min(1.0, value));
     }
 
     private void dispatchHostPointer(MouseEvent event, PointerAction action) {

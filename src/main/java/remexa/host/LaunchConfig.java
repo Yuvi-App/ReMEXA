@@ -11,6 +11,9 @@ public final class LaunchConfig {
     public static final String HOST_SCALE_PROPERTY = "remexa.hostScale";
     public static final String FRAME_INTERVAL_PROPERTY = "remexa.frameIntervalMs";
     public static final String TOUCH_CONTROLS_PROPERTY = "remexa.touchControls";
+    public static final String MOTION_CONTROLS_PROPERTY = "remexa.motionControls";
+    public static final String MOTION_SENSITIVITY_PROPERTY = "remexa.motionSensitivity";
+    public static final String MOTION_TRACKING_MODE_PROPERTY = "remexa.motionTrackingMode";
     public static final String FLASH_BACKLIGHT_PROPERTY = "remexa.flashBacklight";
     public static final String FPS_OVERLAY_PROPERTY = "remexa.fpsOverlay";
     public static final String CAMERA_INPUT_MODE_PROPERTY = "remexa.cameraInputMode";
@@ -25,6 +28,9 @@ public final class LaunchConfig {
     public static final String BLUETOOTH_PORT_PROPERTY = "remexa.bluetoothPort";
     public static final int MIN_HOST_SCALE = 1;
     public static final int MAX_HOST_SCALE = 5;
+    public static final int DEFAULT_MOTION_SENSITIVITY_PERCENT = 100;
+    public static final int MIN_MOTION_SENSITIVITY_PERCENT = 25;
+    public static final int MAX_MOTION_SENSITIVITY_PERCENT = 300;
     public static final int DEFAULT_BLUETOOTH_PORT = 23024;
     public static final int MIN_BLUETOOTH_PORT = 1;
     public static final int MAX_BLUETOOTH_PORT = 65535;
@@ -439,6 +445,103 @@ public final class LaunchConfig {
 
     public static void applyTouchControlsEnabled(Boolean enabled) {
         System.setProperty(TOUCH_CONTROLS_PROPERTY, Boolean.toString(enabled != null && enabled));
+    }
+
+    public static boolean resolveConfiguredMotionControlsEnabled() {
+        return Boolean.parseBoolean(System.getProperty(MOTION_CONTROLS_PROPERTY, Boolean.FALSE.toString()));
+    }
+
+    public static void applyMotionControlsEnabled(Boolean enabled) {
+        System.setProperty(MOTION_CONTROLS_PROPERTY, Boolean.toString(enabled != null && enabled));
+    }
+
+    public enum MotionTrackingMode {
+        JAD_FRAME("jad-frame", "JAD Frame Only"),
+        DESKTOP("desktop", "Whole Desktop");
+
+        private final String id;
+        private final String label;
+
+        MotionTrackingMode(String id, String label) {
+            this.id = id;
+            this.label = label;
+        }
+
+        public String id() {
+            return id;
+        }
+
+        @Override
+        public String toString() {
+            return label;
+        }
+
+        public static MotionTrackingMode fromId(String candidate) {
+            if (candidate == null) {
+                return null;
+            }
+            var normalized = candidate.trim().toLowerCase(Locale.ROOT);
+            for (var mode : values()) {
+                if (mode.id.equals(normalized) || mode.label.toLowerCase(Locale.ROOT).equals(normalized)) {
+                    return mode;
+                }
+            }
+            return null;
+        }
+
+        public static MotionTrackingMode normalize(String candidate) {
+            var mode = fromId(candidate);
+            return mode == null ? JAD_FRAME : mode;
+        }
+
+        public static MotionTrackingMode resolveConfigured() {
+            return normalize(System.getProperty(MOTION_TRACKING_MODE_PROPERTY, JAD_FRAME.id));
+        }
+    }
+
+    public static void applyMotionTrackingMode(MotionTrackingMode mode) {
+        var resolved = mode == null ? MotionTrackingMode.JAD_FRAME : mode;
+        System.setProperty(MOTION_TRACKING_MODE_PROPERTY, resolved.id());
+    }
+
+    public static Integer parseMotionSensitivityPercent(String candidate) {
+        if (candidate == null) {
+            return null;
+        }
+        var normalized = candidate.trim();
+        if (normalized.endsWith("%")) {
+            normalized = normalized.substring(0, normalized.length() - 1).trim();
+        }
+        try {
+            return Integer.parseInt(normalized);
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
+    public static int normalizeMotionSensitivityPercent(String candidate) {
+        var parsed = parseMotionSensitivityPercent(candidate);
+        return parsed == null ? DEFAULT_MOTION_SENSITIVITY_PERCENT : clampMotionSensitivityPercent(parsed);
+    }
+
+    public static int resolveConfiguredMotionSensitivityPercent() {
+        return normalizeMotionSensitivityPercent(
+                System.getProperty(
+                        MOTION_SENSITIVITY_PROPERTY,
+                        Integer.toString(DEFAULT_MOTION_SENSITIVITY_PERCENT)
+                )
+        );
+    }
+
+    public static void applyMotionSensitivityPercent(Integer sensitivityPercent) {
+        var resolved = sensitivityPercent == null
+                ? DEFAULT_MOTION_SENSITIVITY_PERCENT
+                : clampMotionSensitivityPercent(sensitivityPercent);
+        System.setProperty(MOTION_SENSITIVITY_PROPERTY, Integer.toString(resolved));
+    }
+
+    public static int clampMotionSensitivityPercent(int sensitivityPercent) {
+        return Math.max(MIN_MOTION_SENSITIVITY_PERCENT, Math.min(MAX_MOTION_SENSITIVITY_PERCENT, sensitivityPercent));
     }
 
     public static boolean resolveConfiguredFlashBacklightEnabled() {
