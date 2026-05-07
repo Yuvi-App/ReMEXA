@@ -3,12 +3,15 @@ package remexa.host.runtime;
 import java.io.InputStream;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 import remexa.probes.DebugLog;
 import remexa.probes.LogCategory;
 
 public final class LegacyRuntimeSupport {
     private static final Object SPIN_MONITOR = new Object();
     private static final Set<String> COMPLETED_BOOTSTRAP_TARGETS = ConcurrentHashMap.newKeySet();
+    private static final long LEGACY_GC_INTERVAL_NANOS = 250_000_000L;
+    private static final AtomicLong LAST_LEGACY_GC_NANOS = new AtomicLong();
 
     private LegacyRuntimeSupport() {
     }
@@ -19,6 +22,25 @@ public final class LegacyRuntimeSupport {
             // a happens-before edge inside busy-spin loops.
         }
         Thread.onSpinWait();
+    }
+
+    public static void gcHint() {
+        // CLDC-era apps often call System.gc() in tight loading loops as an
+        // advisory memory hint. Honor it occasionally so memory-settle loops
+        // can complete, but avoid repeatedly stopping the whole desktop VM.
+        long now = System.nanoTime();
+        long previous = LAST_LEGACY_GC_NANOS.get();
+        if (now - previous >= LEGACY_GC_INTERVAL_NANOS
+                && LAST_LEGACY_GC_NANOS.compareAndSet(previous, now)) {
+            System.gc();
+            return;
+        }
+        Thread.onSpinWait();
+    }
+
+    public static void legacyMemorySettle() {
+        gcHint();
+        Thread.yield();
     }
 
     public static void publishLegacyState() {

@@ -39,6 +39,9 @@ final class ClassFileSanitizer {
     private static final String RUNNABLE_INTERNAL_NAME = "java/lang/Runnable";
     private static final String GRAPHICS_DESCRIPTOR = "Ljavax/microedition/lcdui/Graphics;";
     private static final MethodTypeDesc SPIN_HINT_DESCRIPTOR = MethodTypeDesc.ofDescriptor("()V");
+    private static final MethodTypeDesc GC_HINT_DESCRIPTOR = MethodTypeDesc.ofDescriptor("()V");
+    private static final MethodTypeDesc MEMORY_SETTLE_DESCRIPTOR = MethodTypeDesc.ofDescriptor("()V");
+    private static final MethodTypeDesc VOID_DESCRIPTOR = MethodTypeDesc.ofDescriptor("()V");
     private static final MethodTypeDesc BOOLEAN_STRING_DESCRIPTOR = MethodTypeDesc.ofDescriptor("(Ljava/lang/String;)Z");
     private static final MethodTypeDesc RESOURCE_STREAM_DESCRIPTOR = MethodTypeDesc.of(
             ClassDesc.of("java.io.InputStream"),
@@ -118,6 +121,10 @@ final class ClassFileSanitizer {
                             .andThen(ClassTransform.transformingMethods(
                                     ClassFileSanitizer::isLegacyBootstrapStub,
                                     MethodTransform.ofStateful(() -> new LegacyBootstrapStubTransform(changes))
+                            ))
+                            .andThen(ClassTransform.transformingMethods(
+                                    ClassFileSanitizer::isLegacyMemorySettleLoop,
+                                    MethodTransform.ofStateful(() -> new LegacyMemorySettleLoopTransform(changes))
                             ))
                             .andThen(ClassTransform.transformingMethodBodies(
                                     CodeTransform.ofStateful(() -> new LegacyCodeTransform(changes))
@@ -282,6 +289,50 @@ final class ClassFileSanitizer {
         return sawPadding;
     }
 
+    private static boolean isLegacyMemorySettleLoop(MethodModel method) {
+        if (!VOID_DESCRIPTOR.equals(method.methodTypeSymbol())) {
+            return false;
+        }
+        var code = method.code().orElse(null);
+        if (code == null) {
+            return false;
+        }
+
+        int currentTimeMillisCalls = 0;
+        int totalMemoryCalls = 0;
+        int freeMemoryCalls = 0;
+        boolean sawRuntimeGet = false;
+        boolean sawSystemGc = false;
+        boolean sawThreadYield = false;
+        for (CodeElement element : code) {
+            if (!(element instanceof InvokeInstruction invoke)) {
+                continue;
+            }
+            String owner = invoke.owner().asInternalName();
+            String name = invoke.name().stringValue();
+            String type = invoke.type().stringValue();
+            if (owner.equals("java/lang/Runtime") && name.equals("getRuntime") && type.equals("()Ljava/lang/Runtime;")) {
+                sawRuntimeGet = true;
+            } else if (owner.equals("java/lang/Runtime") && name.equals("totalMemory") && type.equals("()J")) {
+                totalMemoryCalls++;
+            } else if (owner.equals("java/lang/Runtime") && name.equals("freeMemory") && type.equals("()J")) {
+                freeMemoryCalls++;
+            } else if (owner.equals("java/lang/System") && name.equals("currentTimeMillis") && type.equals("()J")) {
+                currentTimeMillisCalls++;
+            } else if (owner.equals("java/lang/System") && name.equals("gc") && type.equals("()V")) {
+                sawSystemGc = true;
+            } else if (owner.equals("java/lang/Thread") && name.equals("yield") && type.equals("()V")) {
+                sawThreadYield = true;
+            }
+        }
+        return sawRuntimeGet
+                && totalMemoryCalls >= 1
+                && freeMemoryCalls >= 1
+                && currentTimeMillisCalls >= 2
+                && sawSystemGc
+                && sawThreadYield;
+    }
+
     private static final class LegacyCodeTransform implements CodeTransform {
         private final AtomicInteger changeCount;
         private final Set<Label> seenLabels = Collections.newSetFromMap(new IdentityHashMap<>());
@@ -302,6 +353,11 @@ final class ClassFileSanitizer {
                 changeCount.incrementAndGet();
                 return;
             }
+            if (element instanceof InvokeInstruction invoke && isSystemGc(invoke)) {
+                builder.invokestatic(SPIN_SUPPORT, "gcHint", GC_HINT_DESCRIPTOR);
+                changeCount.incrementAndGet();
+                return;
+            }
             if (element instanceof BranchInstruction branch && seenLabels.contains(branch.target())) {
                 builder.invokestatic(SPIN_SUPPORT, "spinLoopHint", SPIN_HINT_DESCRIPTOR);
                 changeCount.incrementAndGet();
@@ -313,6 +369,37 @@ final class ClassFileSanitizer {
             return invoke.owner().asInternalName().equals("java/lang/Class")
                     && invoke.name().equalsString("getResourceAsStream")
                     && invoke.type().equalsString("(Ljava/lang/String;)Ljava/io/InputStream;");
+        }
+
+        private static boolean isSystemGc(InvokeInstruction invoke) {
+            return invoke.owner().asInternalName().equals("java/lang/System")
+                    && invoke.name().equalsString("gc")
+                    && invoke.type().equalsString("()V");
+        }
+    }
+
+    private static final class LegacyMemorySettleLoopTransform implements MethodTransform {
+        private final AtomicInteger changeCount;
+        private boolean replaced;
+
+        private LegacyMemorySettleLoopTransform(AtomicInteger changeCount) {
+            this.changeCount = changeCount;
+        }
+
+        @Override
+        public void accept(MethodBuilder builder, MethodElement element) {
+            if (element instanceof CodeModel) {
+                builder.withCode(code -> {
+                    code.invokestatic(SPIN_SUPPORT, "legacyMemorySettle", MEMORY_SETTLE_DESCRIPTOR);
+                    code.return_();
+                });
+                if (!replaced) {
+                    changeCount.incrementAndGet();
+                    replaced = true;
+                }
+                return;
+            }
+            builder.with(element);
         }
     }
 
