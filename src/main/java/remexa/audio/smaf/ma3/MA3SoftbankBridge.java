@@ -14,18 +14,29 @@ public final class MA3SoftbankBridge {
     private static final int MANUFACTURER_YAMAHA = 0x43;
     private static final int YAMAHA_MA_LEGACY_FAMILY = 0x03;
     private static final int SOFTBANK_EXVO_FAMILY = 0x05;
+    private static final int LEGACY_NOTE_REGISTER_LOW = 0xb0;
+    private static final int LEGACY_NOTE_REGISTER_CONTROL = 0xc0;
+    private static final int LEGACY_NOTE_KEY_ON = 0x20;
+    private static final int LEGACY_NOTE_CHANNEL_COUNT = 16;
+    private static final float LEGACY_NOTE_VELOCITY = 64.0f / 127.0f;
+    private static final double LEGACY_NOTE_NUMBER_OFFSET = -88.0;
 
     private final Sampler sampler;
     private final Set<String> loggedUnsupportedPackets = new HashSet<>();
+    private final int[] legacyNoteLow = new int[LEGACY_NOTE_CHANNEL_COUNT];
+    private final int[] legacyNoteControl = new int[LEGACY_NOTE_CHANNEL_COUNT];
+    private final int[] legacyNoteKey = new int[LEGACY_NOTE_CHANNEL_COUNT];
     private int implicitLegacyProgramSlot;
 
     public MA3SoftbankBridge(Sampler sampler) {
         this.sampler = sampler;
+        resetLegacyNoteState();
     }
 
     public void reset() {
         implicitLegacyProgramSlot = 0;
         loggedUnsupportedPackets.clear();
+        resetLegacyNoteState();
     }
 
     public boolean sysEx(int sourceBank, byte[] message) {
@@ -45,10 +56,7 @@ public final class MA3SoftbankBridge {
         if (family == YAMAHA_MA_LEGACY_FAMILY) {
             return switch (type) {
                 case 0x00 -> applyLegacyVoiceProgram(message);
-                case 0x90 -> {
-                    debugRawPacket("legacy-note-control", message);
-                    yield true;
-                }
+                case 0x90 -> applyLegacyNoteControl(sourceBank, message);
                 default -> unsupported(message);
             };
         }
@@ -82,6 +90,67 @@ public final class MA3SoftbankBridge {
                     voice.operatorCount()));
         }
         return true;
+    }
+
+    private boolean applyLegacyNoteControl(int sourceBank, byte[] message) {
+        if (message.length < 5) {
+            return true;
+        }
+        int register = message[3] & 0xff;
+        int selector = register & 0xf0;
+        if (selector != LEGACY_NOTE_REGISTER_LOW && selector != LEGACY_NOTE_REGISTER_CONTROL) {
+            debugRawPacket("legacy-note-control-unsupported", message);
+            return true;
+        }
+
+        int channel = ((Math.max(0, sourceBank) & 0x03) << 2) | (register & 0x03);
+        if (channel < 0 || channel >= LEGACY_NOTE_CHANNEL_COUNT) {
+            return true;
+        }
+        int value = message[4] & 0xff;
+        if (selector == LEGACY_NOTE_REGISTER_LOW) {
+            legacyNoteLow[channel] = value;
+        } else {
+            legacyNoteControl[channel] = value;
+        }
+        updateLegacyNote(channel);
+        return true;
+    }
+
+    private void updateLegacyNote(int channel) {
+        int control = legacyNoteControl[channel];
+        int activeKey = legacyNoteKey[channel];
+        if ((control & LEGACY_NOTE_KEY_ON) == 0) {
+            if (activeKey != Integer.MIN_VALUE) {
+                sampler.keyOff(channel, activeKey);
+                legacyNoteKey[channel] = Integer.MIN_VALUE;
+            }
+            return;
+        }
+
+        int fNumber = legacyNoteLow[channel] | ((control & 0x03) << 8);
+        if (fNumber <= 0) {
+            return;
+        }
+        int block = (control >> 2) & 0x07;
+        int midiNote = (int) Math.round((Math.log(fNumber) / Math.log(2.0) * 12.0)
+                + (block * 12.0)
+                + LEGACY_NOTE_NUMBER_OFFSET);
+        int key = Math.max(-69, Math.min(58, midiNote - 69));
+        if (activeKey == key) {
+            return;
+        }
+        if (activeKey != Integer.MIN_VALUE) {
+            sampler.keyOff(channel, activeKey);
+        }
+        sampler.keyOn(channel, key, LEGACY_NOTE_VELOCITY);
+        legacyNoteKey[channel] = key;
+    }
+
+    private void resetLegacyNoteState() {
+        Arrays.fill(legacyNoteLow, 0);
+        Arrays.fill(legacyNoteControl, 0);
+        Arrays.fill(legacyNoteKey, Integer.MIN_VALUE);
     }
 
     private void registerFmAlgorithm(LegacyVoiceProgram voice, int bank, int program) {
