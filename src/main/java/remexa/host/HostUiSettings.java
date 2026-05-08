@@ -94,6 +94,14 @@ public final class HostUiSettings {
         );
     }
 
+    public static boolean disableDpiScaling() {
+        return RemexaPreferences.ui().getBoolean(RemexaPreferences.DISABLE_DPI_SCALING_KEY, false);
+    }
+
+    public static void setDisableDpiScaling(boolean disabled) {
+        RemexaPreferences.ui().putBoolean(RemexaPreferences.DISABLE_DPI_SCALING_KEY, disabled);
+    }
+
     public static LaunchConfig.FrameRateOption frameRateOption() {
         return LaunchConfig.FrameRateOption.normalize(
                 RemexaPreferences.ui().get(

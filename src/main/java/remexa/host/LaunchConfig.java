@@ -9,6 +9,7 @@ public final class LaunchConfig {
     public static final String MEXA_PHONE_TYPE_PROPERTY = "remexa.mexaPhoneType";
     public static final String SMAF_SYNTH_PROPERTY = "remexa.smafSynth";
     public static final String HOST_SCALE_PROPERTY = "remexa.hostScale";
+    public static final String DISABLE_DPI_SCALING_PROPERTY = "remexa.disableDpiScaling";
     public static final String FRAME_INTERVAL_PROPERTY = "remexa.frameIntervalMs";
     public static final String TOUCH_CONTROLS_PROPERTY = "remexa.touchControls";
     public static final String MOTION_CONTROLS_PROPERTY = "remexa.motionControls";
@@ -341,6 +342,14 @@ public final class LaunchConfig {
     public static void applyHostScale(Integer hostScale) {
         var resolved = hostScale == null ? 3 : clampHostScale(hostScale);
         System.setProperty(HOST_SCALE_PROPERTY, Integer.toString(resolved));
+    }
+
+    public static boolean resolveConfiguredDisableDpiScaling() {
+        return Boolean.parseBoolean(System.getProperty(DISABLE_DPI_SCALING_PROPERTY, Boolean.FALSE.toString()));
+    }
+
+    public static void applyDisableDpiScaling(Boolean disabled) {
+        System.setProperty(DISABLE_DPI_SCALING_PROPERTY, Boolean.toString(disabled != null && disabled));
     }
 
     public enum FrameRateOption {

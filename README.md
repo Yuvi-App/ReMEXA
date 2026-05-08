@@ -68,6 +68,8 @@ Useful launch options:
 --vodafone-phone Vodafone-Generic|V604SH
 --mexa-phone MEXA-Generic|930SH
 --host-scale 1|2|3|4|5
+--disable-dpi-scaling
+--enable-dpi-scaling
 --frame-rate uncapped|5|10|15|20|30|60
 --bluetooth-backend off|virtual-ip
 --bluetooth-role host|client

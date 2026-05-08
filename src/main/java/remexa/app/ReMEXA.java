@@ -20,6 +20,9 @@ public final class ReMEXA {
     private static final String DEFAULT_LEGACY_ENCODING = "windows-31j";
     private static final String ENCODING_BOOTSTRAPPED_PROPERTY = "remexa.encoding.applied";
     private static final String NATIVE_ACCESS_BOOTSTRAPPED_PROPERTY = "remexa.nativeAccess.applied";
+    private static final String DPI_SCALING_BOOTSTRAPPED_PROPERTY = "remexa.dpiScaling.applied";
+    private static final String JAVA2D_UI_SCALE_PROPERTY = "sun.java2d.uiScale";
+    private static final String JAVA2D_UNSCALED_VALUE = "1.0";
     private static final String NATIVE_ACCESS_FLAG = "--enable-native-access=ALL-UNNAMED";
 
     private ReMEXA() {
@@ -29,6 +32,7 @@ public final class ReMEXA {
         bootstrapJvmConfigurationIfNeeded(args);
         AppIcons.applyToTaskbar();
         var arguments = List.of(args);
+        var disableDpiScalingOverride = parseDisableDpiScalingOverride(arguments);
         var launchRequest = parseLaunchRequest(arguments);
         LaunchConfig.applyFontType(launchRequest.fontType() == null ? HostUiSettings.fontType() : launchRequest.fontType());
         LaunchConfig.applyJskyPhoneType(launchRequest.jskyPhoneType() == null ? HostUiSettings.jskyPhoneType() : launchRequest.jskyPhoneType());
@@ -36,6 +40,7 @@ public final class ReMEXA {
         LaunchConfig.applyMexaPhoneType(launchRequest.mexaPhoneType() == null ? HostUiSettings.mexaPhoneType() : launchRequest.mexaPhoneType());
         LaunchConfig.applySmafSynthType(HostUiSettings.smafSynthType());
         LaunchConfig.applyHostScale(launchRequest.hostScale() == null ? HostUiSettings.hostScale() : launchRequest.hostScale());
+        LaunchConfig.applyDisableDpiScaling(disableDpiScalingOverride == null ? HostUiSettings.disableDpiScaling() : disableDpiScalingOverride);
         LaunchConfig.applyFrameRateOption(launchRequest.frameRateOption() == null ? HostUiSettings.frameRateOption() : launchRequest.frameRateOption());
         LaunchConfig.applyTouchControlsEnabled(HostUiSettings.touchControlsEnabled());
         LaunchConfig.applyMotionControlsEnabled(HostUiSettings.motionControlsEnabled());
@@ -72,12 +77,20 @@ public final class ReMEXA {
     }
 
     private static void bootstrapJvmConfigurationIfNeeded(String[] args) {
+        var arguments = List.of(args);
         var configured = configuredLegacyEncoding();
+        var disableDpiScalingOverride = parseDisableDpiScalingOverride(arguments);
+        boolean disableDpiScaling = disableDpiScalingOverride == null
+                ? HostUiSettings.disableDpiScaling()
+                : disableDpiScalingOverride;
+        LaunchConfig.applyDisableDpiScaling(disableDpiScaling);
         boolean encodingReady = Boolean.getBoolean(ENCODING_BOOTSTRAPPED_PROPERTY)
                 || Charset.defaultCharset().name().equalsIgnoreCase(configured);
         boolean nativeAccessReady = Boolean.getBoolean(NATIVE_ACCESS_BOOTSTRAPPED_PROPERTY)
                 || hasNativeAccessFlag();
-        if (encodingReady && nativeAccessReady) {
+        boolean dpiScalingReady = !disableDpiScaling
+                || JAVA2D_UNSCALED_VALUE.equals(System.getProperty(JAVA2D_UI_SCALE_PROPERTY));
+        if (encodingReady && nativeAccessReady && dpiScalingReady) {
             return;
         }
 
@@ -93,9 +106,15 @@ public final class ReMEXA {
                 command.add(NATIVE_ACCESS_FLAG);
                 command.add("-D" + NATIVE_ACCESS_BOOTSTRAPPED_PROPERTY + "=true");
             }
+            if (disableDpiScaling) {
+                command.add("-D" + JAVA2D_UI_SCALE_PROPERTY + "=" + JAVA2D_UNSCALED_VALUE);
+                command.add("-D" + DPI_SCALING_BOOTSTRAPPED_PROPERTY + "=true");
+            } else if (!Boolean.FALSE.equals(disableDpiScalingOverride)) {
+                appendSystemPropertyIfPresent(command, JAVA2D_UI_SCALE_PROPERTY);
+            }
             appendRemexaSystemProperties(command);
             appendCurrentLaunchTarget(command);
-            command.addAll(List.of(args));
+            command.addAll(arguments);
 
             var exitCode = new ProcessBuilder(command)
                     .inheritIO()
@@ -134,10 +153,20 @@ public final class ReMEXA {
             if (NATIVE_ACCESS_BOOTSTRAPPED_PROPERTY.equals(propertyName)) {
                 continue;
             }
+            if (DPI_SCALING_BOOTSTRAPPED_PROPERTY.equals(propertyName)) {
+                continue;
+            }
             var value = System.getProperty(propertyName);
             if (value == null) {
                 continue;
             }
+            command.add("-D" + propertyName + "=" + value);
+        }
+    }
+
+    private static void appendSystemPropertyIfPresent(List<String> command, String propertyName) {
+        var value = System.getProperty(propertyName);
+        if (value != null) {
             command.add("-D" + propertyName + "=" + value);
         }
     }
@@ -230,6 +259,9 @@ public final class ReMEXA {
             var argument = arguments.get(index);
             if ("--show-host-details".equals(argument)) {
                 showHostDetails = true;
+                continue;
+            }
+            if ("--disable-dpi-scaling".equals(argument) || "--enable-dpi-scaling".equals(argument)) {
                 continue;
             }
             if ("--font".equals(argument)) {
@@ -419,6 +451,18 @@ public final class ReMEXA {
                 bluetoothRemoteHost,
                 bluetoothPort
         );
+    }
+
+    private static Boolean parseDisableDpiScalingOverride(List<String> arguments) {
+        Boolean override = null;
+        for (var argument : arguments) {
+            if ("--disable-dpi-scaling".equals(argument)) {
+                override = true;
+            } else if ("--enable-dpi-scaling".equals(argument)) {
+                override = false;
+            }
+        }
+        return override;
     }
 
     private record LaunchRequest(

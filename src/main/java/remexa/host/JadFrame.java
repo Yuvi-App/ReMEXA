@@ -148,6 +148,7 @@ public final class JadFrame extends JFrame {
     private final Set<Integer> pressedHostKeyCodes = new HashSet<>();
     private final Set<Integer> stateOnlyHostKeyCodes = new HashSet<>();
     private final int hostScale;
+    private final boolean disableDpiScaling;
     private final FpsMeter fpsMeter = new FpsMeter();
     private volatile long backlightFlashUntilMs;
     private volatile ActiveTextInput activeTextInput;
@@ -164,6 +165,7 @@ public final class JadFrame extends JFrame {
         this.launchProfile = launchProfile;
         this.showHostDetails = showHostDetails;
         this.hostScale = LaunchConfig.resolveConfiguredHostScale();
+        this.disableDpiScaling = LaunchConfig.resolveConfiguredDisableDpiScaling();
         AppIcons.applyTo(this);
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
         setLayout(new BorderLayout());
@@ -202,6 +204,7 @@ public final class JadFrame extends JFrame {
         pack();
         setLocationRelativeTo(null);
         setVisible(true);
+        updateDisplayMetrics(launchProfile.initialDisplay());
         SwingUtilities.invokeLater(() -> getRootPane().requestFocusInWindow());
     }
 
@@ -1634,11 +1637,47 @@ public final class JadFrame extends JFrame {
     }
 
     private int scaledWidth(DisplayMetrics displayMetrics) {
-        return displayMetrics.width() * hostScale;
+        return logicalPixelsForDevicePixels(displayMetrics.width() * hostScale, currentDpiScaleX());
     }
 
     private int scaledHeight(DisplayMetrics displayMetrics) {
-        return displayMetrics.height() * hostScale;
+        return logicalPixelsForDevicePixels(displayMetrics.height() * hostScale, currentDpiScaleY());
+    }
+
+    private int logicalPixelsForDevicePixels(int devicePixels, double dpiScale) {
+        if (!disableDpiScaling) {
+            return devicePixels;
+        }
+        return Math.max(1, (int) Math.round(devicePixels / sanitizeDpiScale(dpiScale)));
+    }
+
+    private double currentDpiScaleX() {
+        if (!disableDpiScaling) {
+            return 1.0;
+        }
+        var configuration = getGraphicsConfiguration();
+        if (configuration == null) {
+            return 1.0;
+        }
+        return configuration.getDefaultTransform().getScaleX();
+    }
+
+    private double currentDpiScaleY() {
+        if (!disableDpiScaling) {
+            return 1.0;
+        }
+        var configuration = getGraphicsConfiguration();
+        if (configuration == null) {
+            return 1.0;
+        }
+        return configuration.getDefaultTransform().getScaleY();
+    }
+
+    private static double sanitizeDpiScale(double dpiScale) {
+        if (!Double.isFinite(dpiScale) || dpiScale <= 0.0) {
+            return 1.0;
+        }
+        return dpiScale;
     }
 
     private Dimension minimumWindowSize(DisplayMetrics displayMetrics, boolean showHostDetails) {

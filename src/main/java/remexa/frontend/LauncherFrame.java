@@ -238,6 +238,21 @@ public final class LauncherFrame extends JFrame {
             frameRateMenu.add(frameRateItem);
         }
         displayMenu.add(frameRateMenu);
+        var disableDpiScalingItem = new JCheckBoxMenuItem(
+                "Disable DPI Scaling",
+                HostUiSettings.disableDpiScaling()
+        );
+        styleMenuItem(disableDpiScalingItem);
+        disableDpiScalingItem.addActionListener(event -> {
+            HostUiSettings.setDisableDpiScaling(disableDpiScalingItem.isSelected());
+            LaunchConfig.applyDisableDpiScaling(disableDpiScalingItem.isSelected());
+            DebugLog.log(
+                    LogCategory.FRONTEND,
+                    LauncherFrame.class.getName(),
+                    "Disable DPI scaling set to " + disableDpiScalingItem.isSelected()
+            );
+        });
+        displayMenu.add(disableDpiScalingItem);
         settingsMenu.add(displayMenu);
 
         var deviceMenu = new JMenu("Device");
