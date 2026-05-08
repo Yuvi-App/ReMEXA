@@ -118,7 +118,7 @@ public final class Connector {
     }
 
     private static InputStream wrapLegacyResourceStream(InputStream input) {
-        return input == null ? null : new LegacyResourceInputStream(input);
+        return input == null ? null : new DataInputStream(new LegacyResourceInputStream(input));
     }
 
     private static final class LegacyResourceInputStream extends FilterInputStream {
