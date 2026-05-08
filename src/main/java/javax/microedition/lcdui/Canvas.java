@@ -31,6 +31,13 @@ public abstract class Canvas extends Displayable {
     private boolean fullScreenMode;
     private boolean paintInProgress;
     private boolean repaintQueued;
+    private boolean repaintScheduled;
+    private boolean repaintPending;
+    private boolean repaintPendingRegion;
+    private int repaintX;
+    private int repaintY;
+    private int repaintWidth;
+    private int repaintHeight;
     private boolean shown;
 
     protected abstract void paint(Graphics graphics);
@@ -118,34 +125,18 @@ public abstract class Canvas extends Displayable {
         if (deferRepaintIfPainting(this::repaint)) {
             return;
         }
-        MidletRuntime.renderCanvas(this, graphics -> {
-            beginHostPaint();
-            try {
-                paint(graphics);
-            } finally {
-                endHostPaint();
-                graphics.dispose();
-            }
-        });
+        queueRepaint(0, 0, getWidth(), getHeight(), false);
     }
 
     public void repaint(int x, int y, int width, int height) {
         if (deferRepaintIfPainting(() -> repaint(x, y, width, height))) {
             return;
         }
-        MidletRuntime.renderCanvas(this, graphics -> {
-            beginHostPaint();
-            try {
-                graphics.setClip(x, y, width, height);
-                paint(graphics);
-            } finally {
-                endHostPaint();
-                graphics.dispose();
-            }
-        });
+        queueRepaint(x, y, width, height, true);
     }
 
     public void serviceRepaints() {
+        runQueuedRepaint();
         MidletRuntime.serviceCanvasRepaints(this);
     }
 
@@ -412,6 +403,75 @@ public abstract class Canvas extends Displayable {
             repaintAction.run();
         });
         return true;
+    }
+
+    private void queueRepaint(int x, int y, int width, int height, boolean region) {
+        if (width <= 0 || height <= 0) {
+            return;
+        }
+        synchronized (this) {
+            if (!repaintPending) {
+                repaintX = x;
+                repaintY = y;
+                repaintWidth = width;
+                repaintHeight = height;
+                repaintPendingRegion = region;
+            } else if (!repaintPendingRegion || !region) {
+                repaintX = 0;
+                repaintY = 0;
+                repaintWidth = getWidth();
+                repaintHeight = getHeight();
+                repaintPendingRegion = false;
+            } else {
+                int left = Math.min(repaintX, x);
+                int top = Math.min(repaintY, y);
+                int right = Math.max(repaintX + repaintWidth, x + width);
+                int bottom = Math.max(repaintY + repaintHeight, y + height);
+                repaintX = left;
+                repaintY = top;
+                repaintWidth = right - left;
+                repaintHeight = bottom - top;
+            }
+            repaintPending = true;
+            if (repaintScheduled) {
+                return;
+            }
+            repaintScheduled = true;
+        }
+        SwingUtilities.invokeLater(this::runQueuedRepaint);
+    }
+
+    private void runQueuedRepaint() {
+        int x;
+        int y;
+        int width;
+        int height;
+        boolean region;
+        synchronized (this) {
+            if (!repaintPending) {
+                repaintScheduled = false;
+                return;
+            }
+            x = repaintX;
+            y = repaintY;
+            width = repaintWidth;
+            height = repaintHeight;
+            region = repaintPendingRegion;
+            repaintPending = false;
+            repaintScheduled = false;
+        }
+        MidletRuntime.renderCanvas(this, graphics -> {
+            beginHostPaint();
+            try {
+                if (region) {
+                    graphics.setClip(x, y, width, height);
+                }
+                paint(graphics);
+            } finally {
+                endHostPaint();
+                graphics.dispose();
+            }
+        });
     }
 
     public final int phoneKeyStateMask(boolean eightDirectionsEnabled) {
