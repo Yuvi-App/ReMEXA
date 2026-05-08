@@ -603,6 +603,12 @@ public final class MidletRuntime {
         return context == null ? null : context.currentDisplayable();
     }
 
+    public static boolean currentInputProfileUsesJPhoneKeyCodes() {
+        var context = activeContext();
+        return context != null
+                && context.launchProfile().profile().inputProfile().usesJPhoneKeyCodes();
+    }
+
     public static void dispatchKeyPressed(int keyCode) {
         var displayable = currentDisplayable();
         if (displayable instanceof Canvas canvas) {

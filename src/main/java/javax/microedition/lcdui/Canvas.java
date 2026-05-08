@@ -150,6 +150,16 @@ public abstract class Canvas extends Displayable {
     }
 
     public int getGameAction(int keyCode) {
+        if (!keypadDigitsMapToGameActions()) {
+            return switch (keyCode) {
+                case KEYCODE_UP, UP -> UP;
+                case KEYCODE_LEFT, LEFT -> LEFT;
+                case KEYCODE_RIGHT, RIGHT -> RIGHT;
+                case KEYCODE_DOWN, DOWN -> DOWN;
+                case KEYCODE_FIRE, '\n', FIRE -> FIRE;
+                default -> 0;
+            };
+        }
         return switch (keyCode) {
             case KEYCODE_UP, '2', UP -> UP;
             case KEYCODE_LEFT, '4', LEFT -> LEFT;
@@ -245,11 +255,22 @@ public abstract class Canvas extends Displayable {
 
     public final int deviceKeyStateMask(boolean eightDirectionsEnabled) {
         // MIDP allows directional game actions to be mapped either to dedicated
-        // navigation keys or to the phone keypad (2/4/6/8, 5 for FIRE).
-        var up = containsAnyKey(KEYCODE_UP, UP, (int) '2');
-        var left = containsAnyKey(KEYCODE_LEFT, LEFT, (int) '4');
-        var right = containsAnyKey(KEYCODE_RIGHT, RIGHT, (int) '6');
-        var down = containsAnyKey(KEYCODE_DOWN, DOWN, (int) '8');
+        // navigation keys or to the phone keypad (2/4/6/8, 5 for FIRE). The
+        // J-Phone family exposes keypad digits as raw handset keys instead, so
+        // keep those digit bits separate from the dedicated directional bits.
+        var keypadDigitsMapToGameActions = keypadDigitsMapToGameActions();
+        var up = keypadDigitsMapToGameActions
+                ? containsAnyKey(KEYCODE_UP, UP, (int) '2')
+                : containsAnyKey(KEYCODE_UP, UP);
+        var left = keypadDigitsMapToGameActions
+                ? containsAnyKey(KEYCODE_LEFT, LEFT, (int) '4')
+                : containsAnyKey(KEYCODE_LEFT, LEFT);
+        var right = keypadDigitsMapToGameActions
+                ? containsAnyKey(KEYCODE_RIGHT, RIGHT, (int) '6')
+                : containsAnyKey(KEYCODE_RIGHT, RIGHT);
+        var down = keypadDigitsMapToGameActions
+                ? containsAnyKey(KEYCODE_DOWN, DOWN, (int) '8')
+                : containsAnyKey(KEYCODE_DOWN, DOWN);
         boolean upRight = eightDirectionsEnabled && up && right;
         boolean upLeft = eightDirectionsEnabled && up && left;
         boolean downRight = eightDirectionsEnabled && down && right;
@@ -287,7 +308,10 @@ public abstract class Canvas extends Displayable {
                 state |= 0x8000;
             }
         }
-        if (containsAnyKey(KEYCODE_FIRE, (int) '\n', FIRE, (int) '5')) {
+        var fire = keypadDigitsMapToGameActions
+                ? containsAnyKey(KEYCODE_FIRE, (int) '\n', FIRE, (int) '5')
+                : containsAnyKey(KEYCODE_FIRE, (int) '\n', FIRE);
+        if (fire) {
             state |= 0x10000;
         }
         // Raw J-Phone key presses arrive as -21/-22/-23 for the physical
@@ -496,5 +520,9 @@ public abstract class Canvas extends Displayable {
             }
         }
         return false;
+    }
+
+    private static boolean keypadDigitsMapToGameActions() {
+        return !MidletRuntime.currentInputProfileUsesJPhoneKeyCodes();
     }
 }
