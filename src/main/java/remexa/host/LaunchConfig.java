@@ -8,6 +8,7 @@ public final class LaunchConfig {
     public static final String VODAFONE_PHONE_TYPE_PROPERTY = "remexa.vodafonePhoneType";
     public static final String MEXA_PHONE_TYPE_PROPERTY = "remexa.mexaPhoneType";
     public static final String SMAF_SYNTH_PROPERTY = "remexa.smafSynth";
+    public static final String MIDI_SYNTH_PROPERTY = "remexa.midiSynth";
     public static final String HOST_SCALE_PROPERTY = "remexa.hostScale";
     public static final String DISABLE_DPI_SCALING_PROPERTY = "remexa.disableDpiScaling";
     public static final String FRAME_INTERVAL_PROPERTY = "remexa.frameIntervalMs";
@@ -309,6 +310,56 @@ public final class LaunchConfig {
     public static void applySmafSynthType(SmafSynthType synthType) {
         var resolved = synthType == null ? SmafSynthType.AUTO : synthType;
         System.setProperty(SMAF_SYNTH_PROPERTY, resolved.id());
+    }
+
+    public enum MidiSynthType {
+        HOST("host", "Host MIDI"),
+        MA3("ma3", "Yamaha MA3"),
+        MA5("ma5", "Yamaha MA5");
+
+        private final String id;
+        private final String label;
+
+        MidiSynthType(String id, String label) {
+            this.id = id;
+            this.label = label;
+        }
+
+        public String id() {
+            return id;
+        }
+
+        @Override
+        public String toString() {
+            return label;
+        }
+
+        public static MidiSynthType fromId(String candidate) {
+            if (candidate == null) {
+                return null;
+            }
+            var normalized = candidate.trim().toLowerCase(Locale.ROOT);
+            for (var type : values()) {
+                if (type.id.equals(normalized) || type.label.toLowerCase(Locale.ROOT).equals(normalized)) {
+                    return type;
+                }
+            }
+            return null;
+        }
+
+        public static MidiSynthType normalize(String candidate) {
+            var type = fromId(candidate);
+            return type == null ? MA3 : type;
+        }
+
+        public static MidiSynthType resolveConfigured() {
+            return normalize(System.getProperty(MIDI_SYNTH_PROPERTY, MA3.id));
+        }
+    }
+
+    public static void applyMidiSynthType(MidiSynthType synthType) {
+        var resolved = synthType == null ? MidiSynthType.MA3 : synthType;
+        System.setProperty(MIDI_SYNTH_PROPERTY, resolved.id());
     }
 
     public static Integer parseHostScale(String candidate) {

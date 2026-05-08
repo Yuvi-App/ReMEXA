@@ -16,6 +16,7 @@ public final class RemexaPreferences {
     public static final String VODAFONE_PHONE_TYPE_KEY = "vodafonePhoneType";
     public static final String MEXA_PHONE_TYPE_KEY = "mexaPhoneType";
     public static final String SMAF_SYNTH_TYPE_KEY = "smafSynthType";
+    public static final String MIDI_SYNTH_TYPE_KEY = "midiSynthType";
     public static final String HOST_SCALE_KEY = "hostScale";
     public static final String DISABLE_DPI_SCALING_KEY = "disableDpiScaling";
     public static final String FRAME_RATE_KEY = "frameRate";

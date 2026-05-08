@@ -448,6 +448,28 @@ public final class LauncherFrame extends JFrame {
             audioTypeMenu.add(audioItem);
         }
         audioMenu.add(audioTypeMenu);
+        var midiTypeMenu = new JMenu("MIDI Type");
+        styleMenu(midiTypeMenu);
+        var midiGroup = new ButtonGroup();
+        for (var midiSynthType : LaunchConfig.MidiSynthType.values()) {
+            var midiItem = new JRadioButtonMenuItem(
+                    midiSynthType.toString(),
+                    HostUiSettings.midiSynthType() == midiSynthType
+            );
+            styleMenuItem(midiItem);
+            midiGroup.add(midiItem);
+            midiItem.addActionListener(event -> {
+                HostUiSettings.setMidiSynthType(midiSynthType);
+                LaunchConfig.applyMidiSynthType(midiSynthType);
+                DebugLog.log(
+                        LogCategory.FRONTEND,
+                        LauncherFrame.class.getName(),
+                        "MIDI synth type set to " + midiSynthType.id()
+                );
+            });
+            midiTypeMenu.add(midiItem);
+        }
+        audioMenu.add(midiTypeMenu);
         settingsMenu.add(audioMenu);
 
         var connectivityMenu = new JMenu("Connectivity");

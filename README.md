@@ -71,6 +71,7 @@ Useful launch options:
 --disable-dpi-scaling
 --enable-dpi-scaling
 --frame-rate uncapped|5|10|15|20|30|60
+--midi-synth host|ma3|ma5
 --bluetooth-backend off|virtual-ip
 --bluetooth-role host|client
 --bluetooth-local-name <name>

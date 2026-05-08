@@ -800,11 +800,38 @@ public final class JadFrame extends JFrame {
         if (stateOnlyHostKeyCodes.contains(awtKeyCode)) {
             return KeyDispatchKind.STATE_PRESS;
         }
-        if (dispatchKind == KeyDispatchKind.PRESS && hasOtherDirectionalHostKeyPressed(awtKeyCode)) {
+        if (dispatchKind == KeyDispatchKind.PRESS
+                && hasOtherDirectionalHostKeyPressed(awtKeyCode)
+                && shouldUseStateOnlyDirectionalChord()) {
             stateOnlyHostKeyCodes.add(awtKeyCode);
             return KeyDispatchKind.STATE_PRESS;
         }
         return dispatchKind;
+    }
+
+    private static boolean shouldUseStateOnlyDirectionalChord() {
+        var displayable = MidletRuntime.currentDisplayable();
+        if (displayable instanceof javax.microedition.lcdui.game.GameCanvas) {
+            return true;
+        }
+        if (displayable instanceof javax.microedition.lcdui.Canvas) {
+            return !overridesCanvasKeyReleased(displayable.getClass());
+        }
+        return false;
+    }
+
+    private static boolean overridesCanvasKeyReleased(Class<?> displayableClass) {
+        for (Class<?> type = displayableClass;
+                type != null && type != javax.microedition.lcdui.Canvas.class;
+                type = type.getSuperclass()) {
+            try {
+                type.getDeclaredMethod("keyReleased", int.class);
+                return true;
+            } catch (NoSuchMethodException ignored) {
+                // Keep walking toward Canvas.
+            }
+        }
+        return false;
     }
 
     private boolean hasOtherDirectionalHostKeyPressed(int awtKeyCode) {

@@ -33,12 +33,14 @@ public final class ReMEXA {
         AppIcons.applyToTaskbar();
         var arguments = List.of(args);
         var disableDpiScalingOverride = parseDisableDpiScalingOverride(arguments);
+        var midiSynthOverride = parseMidiSynthOverride(arguments);
         var launchRequest = parseLaunchRequest(arguments);
         LaunchConfig.applyFontType(launchRequest.fontType() == null ? HostUiSettings.fontType() : launchRequest.fontType());
         LaunchConfig.applyJskyPhoneType(launchRequest.jskyPhoneType() == null ? HostUiSettings.jskyPhoneType() : launchRequest.jskyPhoneType());
         LaunchConfig.applyVodafonePhoneType(launchRequest.vodafonePhoneType() == null ? HostUiSettings.vodafonePhoneType() : launchRequest.vodafonePhoneType());
         LaunchConfig.applyMexaPhoneType(launchRequest.mexaPhoneType() == null ? HostUiSettings.mexaPhoneType() : launchRequest.mexaPhoneType());
         LaunchConfig.applySmafSynthType(HostUiSettings.smafSynthType());
+        LaunchConfig.applyMidiSynthType(midiSynthOverride == null ? HostUiSettings.midiSynthType() : midiSynthOverride);
         LaunchConfig.applyHostScale(launchRequest.hostScale() == null ? HostUiSettings.hostScale() : launchRequest.hostScale());
         LaunchConfig.applyDisableDpiScaling(disableDpiScalingOverride == null ? HostUiSettings.disableDpiScaling() : disableDpiScalingOverride);
         LaunchConfig.applyFrameRateOption(launchRequest.frameRateOption() == null ? HostUiSettings.frameRateOption() : launchRequest.frameRateOption());
@@ -261,6 +263,14 @@ public final class ReMEXA {
                 showHostDetails = true;
                 continue;
             }
+            if ("--midi-synth".equals(argument)) {
+                if (index + 1 >= arguments.size()) {
+                    System.err.println("ReMEXA launch failed: --midi-synth requires 'host', 'ma3', or 'ma5'.");
+                    return new LaunchRequest(null, showHostDetails, true, null, 0, false, null, null, null, null, hostScale, frameRateOption, null, null, null, null, null);
+                }
+                index++;
+                continue;
+            }
             if ("--disable-dpi-scaling".equals(argument) || "--enable-dpi-scaling".equals(argument)) {
                 continue;
             }
@@ -461,6 +471,27 @@ public final class ReMEXA {
             } else if ("--enable-dpi-scaling".equals(argument)) {
                 override = false;
             }
+        }
+        return override;
+    }
+
+    private static LaunchConfig.MidiSynthType parseMidiSynthOverride(List<String> arguments) {
+        LaunchConfig.MidiSynthType override = null;
+        for (int index = 0; index < arguments.size(); index++) {
+            var argument = arguments.get(index);
+            if (!"--midi-synth".equals(argument)) {
+                continue;
+            }
+            if (index + 1 >= arguments.size()) {
+                System.err.println("ReMEXA launch failed: --midi-synth requires 'host', 'ma3', or 'ma5'.");
+                return override;
+            }
+            var candidate = LaunchConfig.MidiSynthType.fromId(arguments.get(++index));
+            if (candidate == null) {
+                System.err.println("ReMEXA launch failed: unsupported MIDI synth. Use 'host', 'ma3', or 'ma5'.");
+                return override;
+            }
+            override = candidate;
         }
         return override;
     }

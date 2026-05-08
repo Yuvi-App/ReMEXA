@@ -31,6 +31,7 @@ import javax.microedition.media.decoders.WAVYamahaADPCMDecoder;
 import remexa.audio.pcm.RenderedPcmAudio;
 import remexa.audio.pcm.RenderedPcmPlayer;
 import remexa.audio.smaf.SmafPlayback;
+import remexa.audio.smaf.YamahaMidiPlayback;
 import remexa.host.runtime.MidletRuntime;
 
 public final class Manager {
@@ -631,6 +632,7 @@ public final class Manager {
         private Synthesizer synthesizer;
         private Receiver receiver;
         private Transmitter transmitter;
+        private YamahaMidiPlayback yamahaPlayback;
 
         private MidiPlayer(byte[] source, String contentType) {
             super(contentType);
@@ -639,6 +641,19 @@ public final class Manager {
 
         @Override
         protected synchronized void doRealize() throws MediaException {
+            var midiSynth = System.getProperty("remexa.midiSynth", YamahaMidiPlayback.SYNTH_MA3)
+                    .trim()
+                    .toLowerCase(Locale.ROOT);
+            if (YamahaMidiPlayback.SYNTH_MA3.equals(midiSynth) || YamahaMidiPlayback.SYNTH_MA5.equals(midiSynth)) {
+                try {
+                    yamahaPlayback = YamahaMidiPlayback.create(source, midiSynth);
+                    yamahaPlayback.setCompletionListener(this::notifyEndOfMedia);
+                    onVolumeChanged();
+                    return;
+                } catch (Exception ignored) {
+                    closeQuietly();
+                }
+            }
             try {
                 sequencer = MidiSystem.getSequencer(false);
                 synthesizer = MidiSystem.getSynthesizer();
@@ -662,6 +677,19 @@ public final class Manager {
 
         @Override
         protected synchronized void doStart() throws MediaException {
+            if (yamahaPlayback != null) {
+                try {
+                    onVolumeChanged();
+                    if (yamahaPlayback.getState() == YamahaMidiPlayback.PAUSED) {
+                        yamahaPlayback.resume();
+                    } else {
+                        yamahaPlayback.play(loopsForever(loopCount()) ? 0 : Math.max(1, loopCount()));
+                    }
+                    return;
+                } catch (RuntimeException exception) {
+                    throw new MediaException("Failed to start Yamaha MIDI player.", exception);
+                }
+            }
             if (sequencer == null) {
                 notifyEndOfMediaSoon();
                 return;
@@ -680,6 +708,14 @@ public final class Manager {
 
         @Override
         protected synchronized void doStop() throws MediaException {
+            if (yamahaPlayback != null) {
+                try {
+                    yamahaPlayback.pause();
+                    return;
+                } catch (RuntimeException exception) {
+                    throw new MediaException("Failed to stop Yamaha MIDI player.", exception);
+                }
+            }
             if (sequencer == null) {
                 return;
             }
@@ -711,6 +747,11 @@ public final class Manager {
 
         @Override
         protected synchronized void onVolumeChanged() {
+            if (yamahaPlayback != null) {
+                int level = muted() ? 0 : Math.max(0, Math.min(127, Math.round(volumeLevel() * 127.0f / 100.0f)));
+                yamahaPlayback.setVolume(level);
+                return;
+            }
             if (synthesizer == null) {
                 return;
             }
@@ -724,11 +765,20 @@ public final class Manager {
 
         @Override
         protected synchronized boolean isStarted() {
+            if (yamahaPlayback != null) {
+                return yamahaPlayback.getState() == YamahaMidiPlayback.PLAYING;
+            }
             return sequencer != null && sequencer.isRunning();
         }
 
         @Override
         protected synchronized long doSetMediaTime(long now) throws MediaException {
+            if (yamahaPlayback != null) {
+                if (now > 0L) {
+                    throw new MediaException("Yamaha MIDI seeking is not supported.");
+                }
+                return yamahaPlayback.setMediaTime(now);
+            }
             if (sequencer == null) {
                 return 0L;
             }
@@ -747,15 +797,28 @@ public final class Manager {
 
         @Override
         protected synchronized long doGetMediaTime() {
+            if (yamahaPlayback != null) {
+                return yamahaPlayback.mediaTimeMillis();
+            }
             return sequencer == null ? 0L : sequencer.getMicrosecondPosition() / 1000L;
         }
 
         @Override
         protected synchronized long doGetDuration() {
+            if (yamahaPlayback != null) {
+                return yamahaPlayback.durationMillis();
+            }
             return sequencer == null ? TIME_UNKNOWN : sequencer.getMicrosecondLength() / 1000L;
         }
 
         private void closeQuietly() {
+            if (yamahaPlayback != null) {
+                try {
+                    yamahaPlayback.close();
+                } catch (RuntimeException ignored) {
+                }
+                yamahaPlayback = null;
+            }
             if (transmitter != null) {
                 try {
                     transmitter.close();
