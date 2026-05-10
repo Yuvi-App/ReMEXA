@@ -27,6 +27,7 @@ public abstract class Canvas extends Displayable {
     public static final int JPHONE_SOFT_LEFT = -21;
     public static final int JPHONE_SOFT_RIGHT = -22;
     public static final int JPHONE_SOFT_CENTER = -23;
+    private final Object repaintLock = new Object();
     private final Set<Integer> pressedKeys = new HashSet<>();
     private boolean fullScreenMode;
     private boolean paintInProgress;
@@ -369,25 +370,25 @@ public abstract class Canvas extends Displayable {
     }
 
     protected final void beginHostPaint() {
-        synchronized (this) {
+        synchronized (repaintLock) {
             paintInProgress = true;
         }
     }
 
     protected final void endHostPaint() {
-        synchronized (this) {
+        synchronized (repaintLock) {
             paintInProgress = false;
         }
     }
 
     protected final boolean isHostPaintInProgress() {
-        synchronized (this) {
+        synchronized (repaintLock) {
             return paintInProgress;
         }
     }
 
     protected final boolean deferRepaintIfPainting(Runnable repaintAction) {
-        synchronized (this) {
+        synchronized (repaintLock) {
             if (!paintInProgress) {
                 return false;
             }
@@ -397,7 +398,7 @@ public abstract class Canvas extends Displayable {
             repaintQueued = true;
         }
         SwingUtilities.invokeLater(() -> {
-            synchronized (Canvas.this) {
+            synchronized (repaintLock) {
                 repaintQueued = false;
             }
             repaintAction.run();
@@ -409,7 +410,7 @@ public abstract class Canvas extends Displayable {
         if (width <= 0 || height <= 0) {
             return;
         }
-        synchronized (this) {
+        synchronized (repaintLock) {
             if (!repaintPending) {
                 repaintX = x;
                 repaintY = y;
@@ -447,7 +448,7 @@ public abstract class Canvas extends Displayable {
         int width;
         int height;
         boolean region;
-        synchronized (this) {
+        synchronized (repaintLock) {
             if (!repaintPending) {
                 repaintScheduled = false;
                 return;

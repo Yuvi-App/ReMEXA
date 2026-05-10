@@ -4,6 +4,9 @@ import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Optional;
 import java.util.jar.JarFile;
 import java.util.concurrent.locks.LockSupport;
@@ -31,12 +34,10 @@ public final class AppRuntime {
         var jarPath = descriptor.resolveJarPath()
                 .orElseThrow(() -> new LaunchException("No JAR path was found in the JAD."));
         var mergedDescriptor = mergeDescriptorWithJarManifest(descriptor, jarPath);
-        var entryClass = descriptor.entryClassName();
-        if (entryClass.isEmpty()) {
-            entryClass = entryClassFromJarManifest(jarPath);
+        var entryCandidates = entryClassCandidates(descriptor, jarPath);
+        if (entryCandidates.isEmpty()) {
+            throw new LaunchException("No entry class was found in the JAD or JAR manifest.");
         }
-        var resolvedEntryClass = entryClass
-                .orElseThrow(() -> new LaunchException("No entry class was found in the JAD."));
 
         if (!jarPath.toFile().exists()) {
             throw new LaunchException("Resolved JAR does not exist: " + jarPath);
@@ -55,7 +56,9 @@ public final class AppRuntime {
             classLoader = new LegacyJarClassLoader(jarPath.toUri().toURL(), getClass().getClassLoader());
             MidletRuntime.registerTextInputHandler(classLoader, textInputHandler);
             MidletRuntime.registerHostFrame(classLoader, hostFrame);
-            var appClass = classLoader.loadClass(resolvedEntryClass);
+            var loadedEntryClass = loadEntryClass(classLoader, entryCandidates);
+            var resolvedEntryClass = loadedEntryClass.className();
+            var appClass = loadedEntryClass.appClass();
             Object instance;
             MIDlet midlet = null;
             SystemPropertyProfile.apply(launchProfile.profile());
@@ -362,6 +365,35 @@ public final class AppRuntime {
         }
     }
 
+    private List<String> entryClassCandidates(JadDescriptor descriptor, java.nio.file.Path jarPath) throws LaunchException {
+        var candidates = new LinkedHashSet<String>();
+        descriptor.entryClassName().ifPresent(candidates::add);
+        entryClassFromJarManifest(jarPath).ifPresent(candidates::add);
+        return List.copyOf(candidates);
+    }
+
+    private LoadedEntryClass loadEntryClass(LegacyJarClassLoader classLoader, List<String> entryCandidates)
+            throws ClassNotFoundException {
+        var missingClassNames = new ArrayList<String>();
+        for (int index = 0; index < entryCandidates.size(); index++) {
+            var className = entryCandidates.get(index);
+            try {
+                var appClass = classLoader.loadClass(className);
+                if (index > 0) {
+                    DebugLog.log(
+                            LogCategory.HOST,
+                            AppRuntime.class.getName(),
+                            "Fell back to JAR manifest entry class: " + className
+                    );
+                }
+                return new LoadedEntryClass(className, appClass);
+            } catch (ClassNotFoundException exception) {
+                missingClassNames.add(className);
+            }
+        }
+        throw new ClassNotFoundException("Entry class not found: " + String.join(", ", missingClassNames));
+    }
+
     private Optional<String> entryClassFromJarManifest(java.nio.file.Path jarPath) throws LaunchException {
         try (var jarFile = new JarFile(jarPath.toFile())) {
             var manifest = jarFile.getManifest();
@@ -402,6 +434,9 @@ public final class AppRuntime {
         }
         var className = parts[parts.length - 1].trim();
         return className.isEmpty() ? Optional.empty() : Optional.of(className);
+    }
+
+    private record LoadedEntryClass(String className, Class<?> appClass) {
     }
 
     private void invokeLifecycle(MIDlet midlet, String methodName, Object... arguments) {

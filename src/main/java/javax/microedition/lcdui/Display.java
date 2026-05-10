@@ -93,6 +93,14 @@ public final class Display {
         if (runnable == null) {
             throw new NullPointerException("Runnable must be non-null.");
         }
+        if (runnable instanceof Canvas canvas && canvas == current) {
+            SwingUtilities.invokeLater(() -> {
+                if (canvas.isShown() && current == canvas) {
+                    canvas.serviceRepaints();
+                }
+            });
+            return;
+        }
         synchronized (pendingSerialCallbacks) {
             pendingSerialCallbacks.add(runnable);
             if (serialCallbackDrainScheduled) {
@@ -201,11 +209,7 @@ public final class Display {
         }
         if (displayable instanceof Canvas canvas) {
             canvas.fireShowNotify();
-            SwingUtilities.invokeLater(() -> {
-                if (canvas.isShown()) {
-                    canvas.repaint();
-                }
-            });
+            paintInitialCanvasFrame(canvas);
             return;
         }
         if (displayable instanceof Screen screen && !(displayable instanceof TextBox)) {
@@ -215,6 +219,14 @@ public final class Display {
                 }
             });
         }
+    }
+
+    private static void paintInitialCanvasFrame(Canvas canvas) {
+        if (!canvas.isShown()) {
+            return;
+        }
+        canvas.repaint();
+        canvas.serviceRepaints();
     }
 
     private static void deactivateDisplayable(Displayable previous, Displayable next) {
