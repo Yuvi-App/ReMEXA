@@ -170,7 +170,6 @@ public final class JadFrame extends JFrame {
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
         setLayout(new BorderLayout());
         renderSurface.setBackground(new Color(22, 24, 29));
-        renderSurface.setBorder(BorderFactory.createLineBorder(new Color(68, 74, 83)));
 
         if (showHostDetails) {
             buildDetailedLayout();
