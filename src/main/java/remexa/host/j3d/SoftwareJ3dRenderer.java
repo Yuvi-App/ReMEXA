@@ -1146,10 +1146,6 @@ public final class SoftwareJ3dRenderer {
                 || !Float.isFinite(x2) || !Float.isFinite(y2)) {
             return;
         }
-        if (!polygon.doubleSided()) {
-            // Mascot figures still contain some front-facing panels with mixed winding after skinning,
-            // so keep single-sided faces visible here and rely on the corrected quad split instead.
-        }
         int minX = Math.max(clipX, Math.max(0, (int) Math.floor(Math.min(x0, Math.min(x1, x2)))));
         int minY = Math.max(clipY, Math.max(0, (int) Math.floor(Math.min(y0, Math.min(y1, y2)))));
         int maxX = Math.min(clipX + clipWidth - 1, Math.min(surfaceWidth - 1, (int) Math.ceil(Math.max(x0, Math.max(x1, x2)))));
@@ -1165,6 +1161,12 @@ public final class SoftwareJ3dRenderer {
         int fy2 = toRasterFixed(y2);
         long rasterArea = edgeFixed(fx0, fy0, fx1, fy1, fx2, fy2);
         if (rasterArea == 0L) {
+            return;
+        }
+        if (!polygon.doubleSided()
+                && polygon.textureCoords() != null
+                && polygon.attributes() == 0
+                && rasterArea > 0L) {
             return;
         }
         boolean flipped = rasterArea < 0L;
