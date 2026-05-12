@@ -143,6 +143,12 @@ public final class CanvasGraphics3D extends Graphics implements Graphics3D {
     }
 
     @Override
+    public void copyArea(int xSrc, int ySrc, int width, int height, int xDest, int yDest, int anchor) {
+        flush();
+        super.copyArea(xSrc, ySrc, width, height, xDest, yDest, anchor);
+    }
+
+    @Override
     public void renderFigure(Figure figure, int x, int y, FigureLayout layout, Effect3D effect) {
         enqueueFigure(figure, x, y, layout, effect);
     }

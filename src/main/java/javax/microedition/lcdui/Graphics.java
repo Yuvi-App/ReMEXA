@@ -255,6 +255,17 @@ public class Graphics {
         delegate.drawImage(image, x + translateX, y + translateY, null);
     }
 
+    public void copyArea(int xSrc, int ySrc, int width, int height, int xDest, int yDest, int anchor) {
+        if (width <= 0 || height <= 0) {
+            return;
+        }
+        int sourceX = xSrc + translateX;
+        int sourceY = ySrc + translateY;
+        int targetX = anchoredX(xDest + translateX, anchor, width);
+        int targetY = anchoredYForImage(yDest + translateY, anchor, height);
+        delegate.copyArea(sourceX, sourceY, width, height, targetX - sourceX, targetY - sourceY);
+    }
+
     public void setClip(int x, int y, int width, int height) {
         delegate.setClip(x + translateX, y + translateY, width, height);
     }
