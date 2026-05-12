@@ -244,13 +244,29 @@ public class Graphics {
     }
 
     public void drawRGB(int[] rgbData, int offset, int scanlength, int x, int y, int width, int height, boolean processAlpha) {
-        if (rgbData == null || width <= 0 || height <= 0) {
+        if (rgbData == null) {
+            throw new NullPointerException("rgbData");
+        }
+        if (width <= 0 || height <= 0) {
             return;
         }
         BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
-        for (int row = 0; row < height; row++) {
-            int rowStart = offset + row * scanlength;
-            image.setRGB(0, row, width, 1, rgbData, rowStart, scanlength);
+        if (processAlpha) {
+            for (int row = 0; row < height; row++) {
+                int rowStart = offset + row * scanlength;
+                image.setRGB(0, row, width, 1, rgbData, rowStart, scanlength);
+            }
+        } else {
+            int[] opaquePixels = new int[width * height];
+            int sourceRowStart = offset;
+            int targetIndex = 0;
+            for (int row = 0; row < height; row++) {
+                for (int column = 0; column < width; column++) {
+                    opaquePixels[targetIndex++] = rgbData[sourceRowStart + column] | 0xFF000000;
+                }
+                sourceRowStart += scanlength;
+            }
+            image.setRGB(0, 0, width, height, opaquePixels, 0, width);
         }
         delegate.drawImage(image, x + translateX, y + translateY, null);
     }
