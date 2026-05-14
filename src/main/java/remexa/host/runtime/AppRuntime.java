@@ -2,6 +2,7 @@ package remexa.host.runtime;
 
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
+import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.util.ArrayList;
@@ -53,7 +54,7 @@ public final class AppRuntime {
         LegacyJarClassLoader classLoader = null;
         var launched = false;
         try {
-            classLoader = new LegacyJarClassLoader(jarPath.toUri().toURL(), getClass().getClassLoader());
+            classLoader = new LegacyJarClassLoader(jarFileUrl(jarPath), getClass().getClassLoader());
             MidletRuntime.registerTextInputHandler(classLoader, textInputHandler);
             MidletRuntime.registerHostFrame(classLoader, hostFrame);
             var loadedEntryClass = loadEntryClass(classLoader, entryCandidates);
@@ -112,6 +113,12 @@ public final class AppRuntime {
                 closeClassLoader(classLoader, descriptor.title());
             }
         }
+    }
+
+    private static URL jarFileUrl(java.nio.file.Path jarPath) throws MalformedURLException {
+        // JarURLConnection uses "!" as its archive-entry separator, so literal bangs in
+        // host paths must be escaped before URLClassLoader expands resource URLs.
+        return new URL(jarPath.toUri().toASCIIString().replace("!", "%21"));
     }
 
     public void shutdown(LaunchResult result) {
