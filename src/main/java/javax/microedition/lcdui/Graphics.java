@@ -7,6 +7,7 @@ import java.awt.Rectangle;
 import java.awt.RenderingHints;
 import java.awt.geom.AffineTransform;
 import java.awt.image.BufferedImage;
+import java.awt.image.DataBufferInt;
 import remexa.host.translate.AutoTranslate;
 
 public class Graphics {
@@ -35,6 +36,8 @@ public class Graphics {
     private Graphics2D drawRegionSourceGraphics;
     private BufferedImage drawRegionTransformScratch;
     private Graphics2D drawRegionTransformGraphics;
+    private BufferedImage drawRgbScratch;
+    private int[] drawRgbPixels;
 
     public Graphics(Graphics2D delegate, int surfaceWidth, int surfaceHeight) {
         this(delegate, surfaceWidth, surfaceHeight, true);
@@ -251,23 +254,21 @@ public class Graphics {
         if (width <= 0 || height <= 0) {
             return;
         }
-        BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+        BufferedImage image = prepareDrawRgbScratch(width, height);
         if (processAlpha) {
             for (int row = 0; row < height; row++) {
                 int rowStart = offset + row * scanlength;
-                image.setRGB(0, row, width, 1, rgbData, rowStart, scanlength);
+                System.arraycopy(rgbData, rowStart, drawRgbPixels, row * width, width);
             }
         } else {
-            int[] opaquePixels = new int[width * height];
             int sourceRowStart = offset;
             int targetIndex = 0;
             for (int row = 0; row < height; row++) {
                 for (int column = 0; column < width; column++) {
-                    opaquePixels[targetIndex++] = rgbData[sourceRowStart + column] | 0xFF000000;
+                    drawRgbPixels[targetIndex++] = rgbData[sourceRowStart + column] | 0xFF000000;
                 }
                 sourceRowStart += scanlength;
             }
-            image.setRGB(0, 0, width, height, opaquePixels, 0, width);
         }
         delegate.drawImage(image, x + translateX, y + translateY, null);
     }
@@ -470,6 +471,16 @@ public class Graphics {
         graphics.setComposite(AlphaComposite.Clear);
         graphics.fillRect(0, 0, width, height);
         graphics.setComposite(AlphaComposite.SrcOver);
+    }
+
+    private BufferedImage prepareDrawRgbScratch(int width, int height) {
+        if (drawRgbScratch == null
+                || drawRgbScratch.getWidth() != width
+                || drawRgbScratch.getHeight() != height) {
+            drawRgbScratch = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+            drawRgbPixels = ((DataBufferInt) drawRgbScratch.getRaster().getDataBuffer()).getData();
+        }
+        return drawRgbScratch;
     }
 
     private void disposeDrawRegionScratch() {

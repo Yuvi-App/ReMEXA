@@ -56,6 +56,8 @@ public final class SoftwareJ3dRenderer {
     private static final int PRIMITIVE_POINT_SPRITES = 0x05;
     private static final ThreadLocal<DrawFigureBuffers> DRAW_FIGURE_BUFFERS =
             ThreadLocal.withInitial(DrawFigureBuffers::new);
+    private static final ThreadLocal<VertexProjectionBuffers> VERTEX_PROJECTION_BUFFERS =
+            ThreadLocal.withInitial(VertexProjectionBuffers::new);
 
     private SoftwareJ3dRenderer() {
     }
@@ -603,6 +605,26 @@ public final class SoftwareJ3dRenderer {
         }
     }
 
+    private static final class VertexProjectionBuffers {
+        private float[] viewX;
+        private float[] viewY;
+        private float[] viewZ;
+        private float[] screenX;
+        private float[] screenY;
+        private float[] depth;
+
+        private void prepare(int vertexCount) {
+            if (viewX == null || viewX.length < vertexCount) {
+                viewX = new float[vertexCount];
+                viewY = new float[vertexCount];
+                viewZ = new float[vertexCount];
+                screenX = new float[vertexCount];
+                screenY = new float[vertexCount];
+                depth = new float[vertexCount];
+            }
+        }
+    }
+
     public static void renderFigureToBuffers(
             int[] pixels,
             float[] depthBuffer,
@@ -681,12 +703,14 @@ public final class SoftwareJ3dRenderer {
         }
         float[] posedVertices = figure.vertices();
         int vertexCount = posedVertices.length / 3;
-        float[] viewX = new float[vertexCount];
-        float[] viewY = new float[vertexCount];
-        float[] viewZ = new float[vertexCount];
-        float[] screenX = new float[vertexCount];
-        float[] screenY = new float[vertexCount];
-        float[] depth = new float[vertexCount];
+        VertexProjectionBuffers vertexBuffers = VERTEX_PROJECTION_BUFFERS.get();
+        vertexBuffers.prepare(vertexCount);
+        float[] viewX = vertexBuffers.viewX;
+        float[] viewY = vertexBuffers.viewY;
+        float[] viewZ = vertexBuffers.viewZ;
+        float[] screenX = vertexBuffers.screenX;
+        float[] screenY = vertexBuffers.screenY;
+        float[] depth = vertexBuffers.depth;
         Texture sphereMap = effect == null ? null : effect.getSphereMap();
         for (int i = 0; i < vertexCount; i++) {
             int source = i * 3;
