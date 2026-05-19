@@ -75,7 +75,13 @@ public final class Manager {
         if (isWavType(normalizedType, source)) {
             return new WavPlayer(source, normalizedType.isEmpty() ? "audio/x-wav" : normalizedType);
         }
-        return new SilentPlayer(normalizedType.isEmpty() ? "application/octet-stream" : normalizedType);
+        String fallbackType = normalizedType.isEmpty() ? "application/octet-stream" : normalizedType;
+        DebugLog.log(
+                LogCategory.MEDIA,
+                Manager.class.getName(),
+                "Unsupported media type " + fallbackType + "; using SilentPlayer fallback."
+        );
+        return new SilentPlayer(fallbackType);
     }
 
     public static void shutdownOwnedPlayers(ClassLoader ownerClassLoader) {
