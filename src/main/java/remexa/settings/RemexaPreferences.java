@@ -21,6 +21,7 @@ public final class RemexaPreferences {
     public static final String DISABLE_DPI_SCALING_KEY = "disableDpiScaling";
     public static final String FRAME_RATE_KEY = "frameRate";
     public static final String TOUCH_CONTROLS_ENABLED_KEY = "touchControlsEnabled";
+    public static final String ROTATE_WIDESCREEN_KEYS_ENABLED_KEY = "rotateWidescreenKeysEnabled";
     public static final String MOTION_CONTROLS_ENABLED_KEY = "motionControlsEnabled";
     public static final String MOTION_SENSITIVITY_KEY = "motionSensitivity";
     public static final String MOTION_TRACKING_MODE_KEY = "motionTrackingMode";

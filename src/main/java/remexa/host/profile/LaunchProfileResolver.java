@@ -70,7 +70,13 @@ public final class LaunchProfileResolver {
         var initialDisplay = resolveDisplayMetrics(descriptor, profile)
                 .map(displayMetrics -> applyWideScreen(displayMetrics, wideScreen))
                 .orElseGet(() -> applyWideScreen(profile.fallbackDisplay(), wideScreen));
-        return new LaunchProfile(profile, initialDisplay, wideScreen && profile.inputProfile() == InputProfile.MEXA);
+        return new LaunchProfile(profile, initialDisplay, shouldRotateInputForWideScreen(profile, wideScreen));
+    }
+
+    private static boolean shouldRotateInputForWideScreen(AppProfile profile, boolean wideScreen) {
+        return wideScreen
+                && LaunchConfig.resolveConfiguredRotateWidescreenKeysEnabled()
+                && profile.inputProfile() == InputProfile.MEXA;
     }
 
     private static AppProfile resolveProfile(JadDescriptor descriptor) {

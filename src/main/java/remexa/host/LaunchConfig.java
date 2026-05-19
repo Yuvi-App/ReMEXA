@@ -13,6 +13,7 @@ public final class LaunchConfig {
     public static final String DISABLE_DPI_SCALING_PROPERTY = "remexa.disableDpiScaling";
     public static final String FRAME_INTERVAL_PROPERTY = "remexa.frameIntervalMs";
     public static final String TOUCH_CONTROLS_PROPERTY = "remexa.touchControls";
+    public static final String ROTATE_WIDESCREEN_KEYS_PROPERTY = "remexa.rotateWidescreenKeys";
     public static final String MOTION_CONTROLS_PROPERTY = "remexa.motionControls";
     public static final String MOTION_SENSITIVITY_PROPERTY = "remexa.motionSensitivity";
     public static final String MOTION_TRACKING_MODE_PROPERTY = "remexa.motionTrackingMode";
@@ -505,6 +506,14 @@ public final class LaunchConfig {
 
     public static void applyTouchControlsEnabled(Boolean enabled) {
         System.setProperty(TOUCH_CONTROLS_PROPERTY, Boolean.toString(enabled != null && enabled));
+    }
+
+    public static boolean resolveConfiguredRotateWidescreenKeysEnabled() {
+        return Boolean.parseBoolean(System.getProperty(ROTATE_WIDESCREEN_KEYS_PROPERTY, Boolean.FALSE.toString()));
+    }
+
+    public static void applyRotateWidescreenKeysEnabled(Boolean enabled) {
+        System.setProperty(ROTATE_WIDESCREEN_KEYS_PROPERTY, Boolean.toString(enabled != null && enabled));
     }
 
     public static boolean resolveConfiguredMotionControlsEnabled() {

@@ -33,6 +33,7 @@ public final class ReMEXA {
         AppIcons.applyToTaskbar();
         var arguments = List.of(args);
         var disableDpiScalingOverride = parseDisableDpiScalingOverride(arguments);
+        var rotateWidescreenKeysOverride = parseRotateWidescreenKeysOverride(arguments);
         var midiSynthOverride = parseMidiSynthOverride(arguments);
         var launchRequest = parseLaunchRequest(arguments);
         LaunchConfig.applyFontType(launchRequest.fontType() == null ? HostUiSettings.fontType() : launchRequest.fontType());
@@ -45,6 +46,11 @@ public final class ReMEXA {
         LaunchConfig.applyDisableDpiScaling(disableDpiScalingOverride == null ? HostUiSettings.disableDpiScaling() : disableDpiScalingOverride);
         LaunchConfig.applyFrameRateOption(launchRequest.frameRateOption() == null ? HostUiSettings.frameRateOption() : launchRequest.frameRateOption());
         LaunchConfig.applyTouchControlsEnabled(HostUiSettings.touchControlsEnabled());
+        LaunchConfig.applyRotateWidescreenKeysEnabled(
+                rotateWidescreenKeysOverride == null
+                        ? HostUiSettings.rotateWidescreenKeysEnabled()
+                        : rotateWidescreenKeysOverride
+        );
         LaunchConfig.applyMotionControlsEnabled(HostUiSettings.motionControlsEnabled());
         LaunchConfig.applyMotionSensitivityPercent(HostUiSettings.motionSensitivityPercent());
         LaunchConfig.applyMotionTrackingMode(HostUiSettings.motionTrackingMode());
@@ -274,6 +280,9 @@ public final class ReMEXA {
             if ("--disable-dpi-scaling".equals(argument) || "--enable-dpi-scaling".equals(argument)) {
                 continue;
             }
+            if ("--rotate-widescreen-keys".equals(argument) || "--no-rotate-widescreen-keys".equals(argument)) {
+                continue;
+            }
             if ("--font".equals(argument)) {
                 if (index + 1 >= arguments.size()) {
                     System.err.println("ReMEXA launch failed: --font requires 'bitmap' or 'system'.");
@@ -469,6 +478,18 @@ public final class ReMEXA {
             if ("--disable-dpi-scaling".equals(argument)) {
                 override = true;
             } else if ("--enable-dpi-scaling".equals(argument)) {
+                override = false;
+            }
+        }
+        return override;
+    }
+
+    private static Boolean parseRotateWidescreenKeysOverride(List<String> arguments) {
+        Boolean override = null;
+        for (var argument : arguments) {
+            if ("--rotate-widescreen-keys".equals(argument)) {
+                override = true;
+            } else if ("--no-rotate-widescreen-keys".equals(argument)) {
                 override = false;
             }
         }

@@ -138,6 +138,14 @@ public final class HostUiSettings {
         RemexaPreferences.ui().putBoolean(RemexaPreferences.TOUCH_CONTROLS_ENABLED_KEY, enabled);
     }
 
+    public static boolean rotateWidescreenKeysEnabled() {
+        return RemexaPreferences.ui().getBoolean(RemexaPreferences.ROTATE_WIDESCREEN_KEYS_ENABLED_KEY, false);
+    }
+
+    public static void setRotateWidescreenKeysEnabled(boolean enabled) {
+        RemexaPreferences.ui().putBoolean(RemexaPreferences.ROTATE_WIDESCREEN_KEYS_ENABLED_KEY, enabled);
+    }
+
     public static boolean motionControlsEnabled() {
         return RemexaPreferences.ui().getBoolean(RemexaPreferences.MOTION_CONTROLS_ENABLED_KEY, false);
     }

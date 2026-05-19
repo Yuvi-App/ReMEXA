@@ -330,6 +330,21 @@ public final class LauncherFrame extends JFrame {
             );
         });
         controlsMenu.add(touchControlsItem);
+        var rotateWidescreenKeysItem = new JCheckBoxMenuItem(
+                "Rotate Widescreen Keys",
+                HostUiSettings.rotateWidescreenKeysEnabled()
+        );
+        styleMenuItem(rotateWidescreenKeysItem);
+        rotateWidescreenKeysItem.addActionListener(event -> {
+            HostUiSettings.setRotateWidescreenKeysEnabled(rotateWidescreenKeysItem.isSelected());
+            LaunchConfig.applyRotateWidescreenKeysEnabled(rotateWidescreenKeysItem.isSelected());
+            DebugLog.log(
+                    LogCategory.FRONTEND,
+                    LauncherFrame.class.getName(),
+                    "Rotate widescreen keys set to " + rotateWidescreenKeysItem.isSelected()
+            );
+        });
+        controlsMenu.add(rotateWidescreenKeysItem);
         var motionMenu = new JMenu("Motion");
         styleMenu(motionMenu);
         var motionControlsItem = new JCheckBoxMenuItem("Enable Mouse Motion", HostUiSettings.motionControlsEnabled());
