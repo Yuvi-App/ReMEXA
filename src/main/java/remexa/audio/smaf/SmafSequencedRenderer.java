@@ -373,7 +373,7 @@ final class SmafSequencedRenderer {
                 continue;
             }
             PcmClip clip = resolved.clip();
-            mixedFrameCount = Math.max(mixedFrameCount, tickToFrames(trigger.triggerTick()) + clip.frameCount);
+            mixedFrameCount = Math.max(mixedFrameCount, tickToFrames(trigger.startTick()) + clip.frameCount);
         }
         return mixedFrameCount;
     }
@@ -388,7 +388,7 @@ final class SmafSequencedRenderer {
                 continue;
             }
             PcmClip clip = resolved.clip();
-            int startFrame = tickToFrames(trigger.triggerTick());
+            int startFrame = tickToFrames(trigger.startTick());
             int clipFrames = clip.frameCount;
             if (clipFrames <= 0) {
                 continue;
@@ -398,8 +398,8 @@ final class SmafSequencedRenderer {
                 SmafDebug.info("render",
                         "Mixing PCM trigger note=" + trigger.noteValue()
                                 + " resolvedClip=" + resolved.index()
-                                + " triggerTick=" + trigger.triggerTick()
                                 + " startTick=" + trigger.startTick()
+                                + " triggerTick=" + trigger.triggerTick()
                                 + " gateTime=" + trigger.gateTime()
                                 + " gateTimeMs=" + trigger.gateTimeMs()
                                 + " clipFrames=" + clipFrames
@@ -518,7 +518,7 @@ final class SmafSequencedRenderer {
             if (clip == null || clip.frameCount <= 0) {
                 continue;
             }
-            int startFrame = tickToFrames(trigger.triggerTick());
+            int startFrame = tickToFrames(trigger.startTick());
             float gain = Math.max(0.0f, Math.min(1.0f, trigger.velocity() / 127.0f));
             scheduled.add(new ScheduledPcmClip(startFrame, clip, gain));
         }
