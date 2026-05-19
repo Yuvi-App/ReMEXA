@@ -26,6 +26,8 @@ public class Graphics {
     private final boolean disposable;
     private Font font = Font.getDefaultFont();
     private int argbColor = 0xFF000000;
+    private int cachedColorArgb;
+    private Color cachedColor;
     private int translateX;
     private int translateY;
     private int strokeStyle = SOLID;
@@ -50,7 +52,7 @@ public class Graphics {
 
     public void setColor(int rgb) {
         argbColor = 0xFF000000 | (rgb & 0x00FFFFFF);
-        delegate.setColor(new Color(argbColor, true));
+        setDelegateColor(argbColor);
     }
 
     public void setColor(int red, int green, int blue) {
@@ -58,7 +60,7 @@ public class Graphics {
         validateColorComponent(green);
         validateColorComponent(blue);
         argbColor = 0xFF000000 | (red << 16) | (green << 8) | blue;
-        delegate.setColor(new Color(argbColor, true));
+        setDelegateColor(argbColor);
     }
 
     public int getColor() {
@@ -348,7 +350,7 @@ public class Graphics {
         strokeStyle = SOLID;
         delegate.setClip(0, 0, surfaceWidth, surfaceHeight);
         delegate.setFont(font.awtFont());
-        delegate.setColor(new Color(argbColor, true));
+        setDelegateColor(argbColor);
     }
 
     public void clearSurface(int argbColor) {
@@ -358,7 +360,7 @@ public class Graphics {
         try {
             delegate.setComposite(AlphaComposite.Src);
             delegate.setClip(0, 0, surfaceWidth, surfaceHeight);
-            delegate.setColor(new Color(argbColor, true));
+            delegate.setColor(cachedColor(argbColor));
             delegate.fillRect(0, 0, surfaceWidth, surfaceHeight);
         } finally {
             delegate.setComposite(previousComposite);
@@ -373,6 +375,18 @@ public class Graphics {
             return new Rectangle(0, 0, surfaceWidth, surfaceHeight);
         }
         return bounds;
+    }
+
+    private void setDelegateColor(int argb) {
+        delegate.setColor(cachedColor(argb));
+    }
+
+    private Color cachedColor(int argb) {
+        if (cachedColor == null || cachedColorArgb != argb) {
+            cachedColorArgb = argb;
+            cachedColor = new Color(argb, true);
+        }
+        return cachedColor;
     }
 
     private int anchoredX(int x, int anchor, int width) {
