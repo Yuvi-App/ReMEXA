@@ -19,6 +19,7 @@ public class Graphics {
     public static final int BASELINE = 64;
     public static final int SOLID = 0;
     public static final int DOTTED = 1;
+    private static final AffineTransform IDENTITY_TRANSFORM = new AffineTransform();
     private final Graphics2D delegate;
     private final int surfaceWidth;
     private final int surfaceHeight;
@@ -28,6 +29,10 @@ public class Graphics {
     private int translateX;
     private int translateY;
     private int strokeStyle = SOLID;
+    private BufferedImage drawRegionSourceScratch;
+    private Graphics2D drawRegionSourceGraphics;
+    private BufferedImage drawRegionTransformScratch;
+    private Graphics2D drawRegionTransformGraphics;
 
     public Graphics(Graphics2D delegate, int surfaceWidth, int surfaceHeight) {
         this(delegate, surfaceWidth, surfaceHeight, true);
@@ -207,35 +212,29 @@ public class Graphics {
             return;
         }
 
-        BufferedImage sourceRegion = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
-        Graphics2D regionGraphics = sourceRegion.createGraphics();
-        try {
-            regionGraphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
-            int clipLeft = Math.max(0, xSrc);
-            int clipTop = Math.max(0, ySrc);
-            int clipRight = Math.min(image.getWidth(), xSrc + width);
-            int clipBottom = Math.min(image.getHeight(), ySrc + height);
-            if (clipLeft < clipRight && clipTop < clipBottom) {
-                int destLeft = clipLeft - xSrc;
-                int destTop = clipTop - ySrc;
-                regionGraphics.drawImage(
-                        image.awtImage(),
-                        destLeft,
-                        destTop,
-                        destLeft + (clipRight - clipLeft),
-                        destTop + (clipBottom - clipTop),
-                        clipLeft,
-                        clipTop,
-                        clipRight,
-                        clipBottom,
-                        null
-                );
-            }
-        } finally {
-            regionGraphics.dispose();
+        BufferedImage sourceRegion = prepareDrawRegionSource(width, height);
+        int clipLeft = Math.max(0, xSrc);
+        int clipTop = Math.max(0, ySrc);
+        int clipRight = Math.min(image.getWidth(), xSrc + width);
+        int clipBottom = Math.min(image.getHeight(), ySrc + height);
+        if (clipLeft < clipRight && clipTop < clipBottom) {
+            int destLeft = clipLeft - xSrc;
+            int destTop = clipTop - ySrc;
+            drawRegionSourceGraphics.drawImage(
+                    image.awtImage(),
+                    destLeft,
+                    destTop,
+                    destLeft + (clipRight - clipLeft),
+                    destTop + (clipBottom - clipTop),
+                    clipLeft,
+                    clipTop,
+                    clipRight,
+                    clipBottom,
+                    null
+            );
         }
 
-        BufferedImage transformed = transformRegion(sourceRegion, transform);
+        BufferedImage transformed = transform == 0 ? sourceRegion : transformRegion(sourceRegion, transform);
         int drawWidth = widthDest;
         int drawHeight = heightDest;
         int drawX = anchoredX(xDest + translateX, anchor, drawWidth);
@@ -323,6 +322,7 @@ public class Graphics {
 
     public void dispose() {
         if (disposable) {
+            disposeDrawRegionScratch();
             delegate.dispose();
         }
     }
@@ -414,20 +414,71 @@ public class Graphics {
         }
     }
 
-    private static BufferedImage transformRegion(BufferedImage image, int transform) {
+    private BufferedImage prepareDrawRegionSource(int width, int height) {
+        if (drawRegionSourceScratch == null
+                || drawRegionSourceScratch.getWidth() != width
+                || drawRegionSourceScratch.getHeight() != height) {
+            if (drawRegionSourceGraphics != null) {
+                drawRegionSourceGraphics.dispose();
+            }
+            drawRegionSourceScratch = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+            drawRegionSourceGraphics = drawRegionSourceScratch.createGraphics();
+            drawRegionSourceGraphics.setRenderingHint(
+                    RenderingHints.KEY_INTERPOLATION,
+                    RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR
+            );
+        }
+        clearScratch(drawRegionSourceGraphics, width, height);
+        return drawRegionSourceScratch;
+    }
+
+    private BufferedImage prepareDrawRegionTransform(int width, int height) {
+        if (drawRegionTransformScratch == null
+                || drawRegionTransformScratch.getWidth() != width
+                || drawRegionTransformScratch.getHeight() != height) {
+            if (drawRegionTransformGraphics != null) {
+                drawRegionTransformGraphics.dispose();
+            }
+            drawRegionTransformScratch = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+            drawRegionTransformGraphics = drawRegionTransformScratch.createGraphics();
+            drawRegionTransformGraphics.setRenderingHint(
+                    RenderingHints.KEY_INTERPOLATION,
+                    RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR
+            );
+        }
+        clearScratch(drawRegionTransformGraphics, width, height);
+        return drawRegionTransformScratch;
+    }
+
+    private void clearScratch(Graphics2D graphics, int width, int height) {
+        graphics.setTransform(IDENTITY_TRANSFORM);
+        graphics.setClip(0, 0, width, height);
+        graphics.setComposite(AlphaComposite.Clear);
+        graphics.fillRect(0, 0, width, height);
+        graphics.setComposite(AlphaComposite.SrcOver);
+    }
+
+    private void disposeDrawRegionScratch() {
+        if (drawRegionSourceGraphics != null) {
+            drawRegionSourceGraphics.dispose();
+            drawRegionSourceGraphics = null;
+        }
+        if (drawRegionTransformGraphics != null) {
+            drawRegionTransformGraphics.dispose();
+            drawRegionTransformGraphics = null;
+        }
+        drawRegionSourceScratch = null;
+        drawRegionTransformScratch = null;
+    }
+
+    private BufferedImage transformRegion(BufferedImage image, int transform) {
         int sourceWidth = image.getWidth();
         int sourceHeight = image.getHeight();
         int targetWidth = swapsAxes(transform) ? sourceHeight : sourceWidth;
         int targetHeight = swapsAxes(transform) ? sourceWidth : sourceHeight;
-        BufferedImage transformed = new BufferedImage(targetWidth, targetHeight, BufferedImage.TYPE_INT_ARGB);
-        Graphics2D graphics = transformed.createGraphics();
-        try {
-            graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
-            graphics.transform(transformMatrix(transform, sourceWidth, sourceHeight));
-            graphics.drawImage(image, 0, 0, null);
-        } finally {
-            graphics.dispose();
-        }
+        BufferedImage transformed = prepareDrawRegionTransform(targetWidth, targetHeight);
+        drawRegionTransformGraphics.transform(transformMatrix(transform, sourceWidth, sourceHeight));
+        drawRegionTransformGraphics.drawImage(image, 0, 0, null);
         return transformed;
     }
 
