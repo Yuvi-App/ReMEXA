@@ -2,6 +2,8 @@ package remexa.audio.smaf;
 
 import com.jblend.media.smaf.phrase.PhraseTrackListener;
 import org.recompile.mobile.Mobile;
+import remexa.probes.DebugLog;
+import remexa.probes.LogCategory;
 
 import javax.microedition.media.decoders.SMAFDecoder;
 import javax.sound.midi.MidiDevice;
@@ -1048,7 +1050,13 @@ public final class SmafPlayback implements AutoCloseable {
         }
         try {
             task.get();
-        } catch (Exception ignored) {
+        } catch (Exception exception) {
+            DebugLog.log(
+                    LogCategory.AUDIO,
+                    SmafPlayback.class.getName(),
+                    "Rendered SMAF warmup failed; falling back to synchronous render: "
+                            + describeException(exception)
+            );
             // Fall back to the synchronous render path below.
         }
     }

@@ -33,6 +33,8 @@ import remexa.audio.pcm.RenderedPcmPlayer;
 import remexa.audio.smaf.SmafPlayback;
 import remexa.audio.smaf.YamahaMidiPlayback;
 import remexa.host.runtime.MidletRuntime;
+import remexa.probes.DebugLog;
+import remexa.probes.LogCategory;
 
 public final class Manager {
     private static final String CONTROL_PACKAGE = "javax.microedition.media.control.";
@@ -40,6 +42,16 @@ public final class Manager {
             Collections.synchronizedSet(Collections.newSetFromMap(new IdentityHashMap<>()));
 
     private Manager() {
+    }
+
+    private static void logSuppressed(String action, Throwable exception) {
+        DebugLog.log(LogCategory.MEDIA, Manager.class.getName(), action + ": " + describeException(exception));
+    }
+
+    private static String describeException(Throwable exception) {
+        String message = exception.getMessage();
+        return exception.getClass().getSimpleName()
+                + (message == null || message.isBlank() ? "" : ": " + message);
     }
 
     public static Player createPlayer(InputStream stream, String type) throws IOException, MediaException {
@@ -51,7 +63,8 @@ public final class Manager {
         if (isSmafType(normalizedType, source)) {
             try {
                 SmafPlayback.prewarm(source);
-            } catch (RuntimeException ignored) {
+            } catch (RuntimeException exception) {
+                logSuppressed("SMAF prewarm failed; continuing with lazy playback", exception);
                 // Prewarm is only an optimization; player creation must stay non-fatal.
             }
             return new SmafPlayer(source, normalizedType.isEmpty() ? "application/x-smaf" : normalizedType);
@@ -76,7 +89,8 @@ public final class Manager {
             }
             try {
                 player.close();
-            } catch (RuntimeException ignored) {
+            } catch (RuntimeException exception) {
+                logSuppressed("Player shutdown failed during classloader teardown", exception);
                 // Best-effort shutdown for app teardown.
             }
         }
@@ -407,7 +421,8 @@ public final class Manager {
         private long safeMediaTime() {
             try {
                 return doGetMediaTime();
-            } catch (RuntimeException ignored) {
+            } catch (RuntimeException exception) {
+                logSuppressed("Media time query failed", exception);
                 return TIME_UNKNOWN;
             }
         }
@@ -415,7 +430,8 @@ public final class Manager {
         private long safeDuration() {
             try {
                 return doGetDuration();
-            } catch (RuntimeException ignored) {
+            } catch (RuntimeException exception) {
+                logSuppressed("Media duration query failed", exception);
                 return TIME_UNKNOWN;
             }
         }
@@ -424,7 +440,8 @@ public final class Manager {
             for (PlayerListener listener : listeners) {
                 try {
                     listener.playerUpdate(this, event, eventData);
-                } catch (RuntimeException ignored) {
+                } catch (RuntimeException exception) {
+                    logSuppressed("Player listener threw during " + event, exception);
                 }
             }
         }
@@ -650,7 +667,8 @@ public final class Manager {
                     yamahaPlayback.setCompletionListener(this::notifyEndOfMedia);
                     onVolumeChanged();
                     return;
-                } catch (Exception ignored) {
+                } catch (Exception exception) {
+                    logSuppressed("Yamaha MIDI playback init failed; falling back to Java MIDI", exception);
                     closeQuietly();
                 }
             }
@@ -815,39 +833,45 @@ public final class Manager {
             if (yamahaPlayback != null) {
                 try {
                     yamahaPlayback.close();
-                } catch (RuntimeException ignored) {
+                } catch (RuntimeException exception) {
+                    logSuppressed("Yamaha MIDI playback close failed", exception);
                 }
                 yamahaPlayback = null;
             }
             if (transmitter != null) {
                 try {
                     transmitter.close();
-                } catch (RuntimeException ignored) {
+                } catch (RuntimeException exception) {
+                    logSuppressed("MIDI transmitter close failed", exception);
                 }
                 transmitter = null;
             }
             if (receiver != null) {
                 try {
                     receiver.close();
-                } catch (RuntimeException ignored) {
+                } catch (RuntimeException exception) {
+                    logSuppressed("MIDI receiver close failed", exception);
                 }
                 receiver = null;
             }
             if (sequencer != null) {
                 try {
                     sequencer.stop();
-                } catch (RuntimeException ignored) {
+                } catch (RuntimeException exception) {
+                    logSuppressed("MIDI sequencer stop failed", exception);
                 }
                 try {
                     sequencer.close();
-                } catch (RuntimeException ignored) {
+                } catch (RuntimeException exception) {
+                    logSuppressed("MIDI sequencer close failed", exception);
                 }
                 sequencer = null;
             }
             if (synthesizer != null) {
                 try {
                     synthesizer.close();
-                } catch (RuntimeException ignored) {
+                } catch (RuntimeException exception) {
+                    logSuppressed("MIDI synthesizer close failed", exception);
                 }
                 synthesizer = null;
             }
@@ -1120,7 +1144,8 @@ public final class Manager {
             if (currentPlayback != null) {
                 try {
                     currentPlayback.close();
-                } catch (RuntimeException ignored) {
+                } catch (RuntimeException exception) {
+                    logSuppressed("Rendered PCM playback close failed", exception);
                 }
             }
         }

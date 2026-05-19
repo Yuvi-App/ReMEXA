@@ -42,6 +42,11 @@ final class LegacyJarClassLoader extends URLClassLoader {
             }
             return new DataInputStream(stream);
         } catch (IOException exception) {
+            DebugLog.log(
+                    LogCategory.HOST,
+                    LegacyJarClassLoader.class.getName(),
+                    "Unable to open resource stream for " + name + ": " + describeException(exception)
+            );
             return null;
         }
     }
@@ -149,6 +154,12 @@ final class LegacyJarClassLoader extends URLClassLoader {
         URLConnection connection = resource.openConnection();
         connection.setUseCaches(false);
         return connection.getInputStream();
+    }
+
+    private static String describeException(Throwable exception) {
+        String message = exception.getMessage();
+        return exception.getClass().getSimpleName()
+                + (message == null || message.isBlank() ? "" : ": " + message);
     }
 
     private static final class LegacyResourceStream extends FilterInputStream {

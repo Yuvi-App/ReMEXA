@@ -32,6 +32,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import remexa.probes.DebugLog;
+import remexa.probes.LogCategory;
 
 final class ClassFileSanitizer {
     private static final ClassDesc SPIN_SUPPORT = ClassDesc.of("remexa.host.runtime.LegacyRuntimeSupport");
@@ -131,9 +133,20 @@ final class ClassFileSanitizer {
                             ))
             );
             return changes.get() == 0 ? new SanitizeResult(classBytes, 0) : new SanitizeResult(transformed, changes.get());
-        } catch (RuntimeException ignored) {
+        } catch (RuntimeException exception) {
+            DebugLog.log(
+                    LogCategory.HOST,
+                    ClassFileSanitizer.class.getName(),
+                    "Class file sanitizer failed; using original class bytes: " + describeException(exception)
+            );
             return new SanitizeResult(classBytes, 0);
         }
+    }
+
+    private static String describeException(Throwable exception) {
+        String message = exception.getMessage();
+        return exception.getClass().getSimpleName()
+                + (message == null || message.isBlank() ? "" : ": " + message);
     }
 
     private static int LAST_MEMBER_CHANGE_COUNT;
