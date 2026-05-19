@@ -47,6 +47,7 @@ public final class PhraseTrack {
     }
 
     public void setPhrase(Phrase phrase) {
+        rememberCurrentOwner();
         DebugLog.log(LogCategory.MEDIA, PhraseTrack.class.getName(), "Track " + id + " setPhrase(size="
                 + (phrase == null ? 0 : phrase.getSize()) + ")");
         try {
@@ -71,6 +72,7 @@ public final class PhraseTrack {
     }
 
     public void removePhrase() {
+        rememberCurrentOwner();
         DebugLog.log(LogCategory.MEDIA, PhraseTrack.class.getName(), "Track " + id + " removePhrase()");
         boolean dispatchTerminalEvent = shouldDispatchTerminalEvent();
         cancelLoopCoordinator();
@@ -84,10 +86,12 @@ public final class PhraseTrack {
     }
 
     public void setEventListener(PhraseTrackListener listener) {
+        rememberCurrentOwner();
         this.listener = listener;
     }
 
     public void setSubjectTo(PhraseTrack masterTrack) {
+        rememberCurrentOwner();
         if (subjectTo != null) {
             subjectTo.slaveTracks.remove(this);
         }
@@ -102,6 +106,7 @@ public final class PhraseTrack {
     }
 
     public void setVolume(int value) {
+        rememberCurrentOwner();
         this.volume = Math.max(0, Math.min(127, value));
         if (playback != null) {
             playback.setVolume(effectiveVolume());
@@ -109,6 +114,7 @@ public final class PhraseTrack {
     }
 
     public void mute(boolean value) {
+        rememberCurrentOwner();
         muted = value;
         if (playback != null) {
             playback.setVolume(effectiveVolume());
@@ -133,6 +139,7 @@ public final class PhraseTrack {
 
     public void play(int loop) {
         MidletRuntime.ensureThreadActive();
+        rememberCurrentOwner();
         DebugLog.log(LogCategory.MEDIA, PhraseTrack.class.getName(), "Track " + id + " play(loop=" + loop + ")");
         if (subjectTo != null) {
             return;
@@ -147,6 +154,7 @@ public final class PhraseTrack {
     }
 
     public void stop() {
+        rememberCurrentOwner();
         DebugLog.log(LogCategory.MEDIA, PhraseTrack.class.getName(), "Track " + id + " stop()");
         if (subjectTo != null) {
             return;
@@ -160,6 +168,7 @@ public final class PhraseTrack {
     }
 
     public void pause() {
+        rememberCurrentOwner();
         DebugLog.log(LogCategory.MEDIA, PhraseTrack.class.getName(), "Track " + id + " pause()");
         if (subjectTo != null) {
             return;
@@ -168,6 +177,7 @@ public final class PhraseTrack {
     }
 
     public void resume() {
+        rememberCurrentOwner();
         DebugLog.log(LogCategory.MEDIA, PhraseTrack.class.getName(), "Track " + id + " resume()");
         if (subjectTo != null) {
             return;
@@ -216,6 +226,7 @@ public final class PhraseTrack {
     }
 
     public void setPanpot(int value) {
+        rememberCurrentOwner();
         panpot = Math.max(0, Math.min(127, value));
         if (playback != null) {
             playback.setPanpot(panpot);
@@ -406,6 +417,13 @@ public final class PhraseTrack {
         if (playback != null) {
             playback.close();
             playback = null;
+        }
+    }
+
+    private void rememberCurrentOwner() {
+        ClassLoader currentOwner = MidletRuntime.currentAppClassLoader();
+        if (currentOwner != null) {
+            ownerClassLoader = currentOwner;
         }
     }
 
