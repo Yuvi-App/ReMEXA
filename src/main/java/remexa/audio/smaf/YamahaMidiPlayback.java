@@ -13,15 +13,13 @@ import javax.sound.midi.MidiSystem;
 import javax.sound.midi.Sequence;
 import javax.sound.midi.ShortMessage;
 import javax.sound.midi.Track;
-import remexa.audio.pcm.RenderedPcmAudio;
-import remexa.audio.pcm.RenderedPcmPlayer;
 
 public final class YamahaMidiPlayback implements AutoCloseable {
     public static final String SYNTH_MA3 = "ma3";
     public static final String SYNTH_MA5 = "ma5";
-    public static final int READY = RenderedPcmPlayer.READY;
-    public static final int PLAYING = RenderedPcmPlayer.PLAYING;
-    public static final int PAUSED = RenderedPcmPlayer.PAUSED;
+    public static final int READY = SmafPlayback.READY;
+    public static final int PLAYING = SmafPlayback.PLAYING;
+    public static final int PAUSED = SmafPlayback.PAUSED;
 
     private static final int MIDI_TICKS_PER_QUARTER = 1_000;
     private static final int DEFAULT_TEMPO_MICROS_PER_QUARTER = 500_000;
@@ -30,29 +28,22 @@ public final class YamahaMidiPlayback implements AutoCloseable {
     private static final Ma3SmafAudioEngine MA3_ENGINE = new Ma3SmafAudioEngine();
     private static final Ma5SmafAudioEngine MA5_ENGINE = new Ma5SmafAudioEngine();
 
-    private final SmafRenderedAudio audio;
-    private final RenderedPcmPlayer player;
+    private final SmafAudioPlayer player;
     private final long durationMillis;
 
     private long startedAtMillis;
     private long pausedAtMillis;
 
-    private YamahaMidiPlayback(SmafRenderedAudio audio) {
-        this.audio = audio;
-        this.player = new RenderedPcmPlayer(new RenderedPcmAudio(
-                audio.sampleRate(),
-                audio.channelCount(),
-                audio.frameCount(),
-                audio.pcm16Le()
-        ));
-        this.durationMillis = Math.max(0L, audio.frameCount() * 1_000L / Math.max(1, audio.sampleRate()));
+    private YamahaMidiPlayback(SmafStreamingSession session, long durationMillis) {
+        this.player = new SmafStreamingPlayer(session, Collections.emptyList());
+        this.durationMillis = Math.max(0L, durationMillis);
     }
 
     public static YamahaMidiPlayback create(byte[] source, String synthType) throws Exception {
         var sourceSequence = MidiSystem.getSequence(new ByteArrayInputStream(source));
         var renderSequence = normalizeMidiTiming(sourceSequence);
         var engine = resolveEngine(synthType);
-        var rendered = engine.render(new SmafRenderContext(
+        var session = engine.openStream(new SmafRenderContext(
                 source.clone(),
                 renderSequence,
                 Collections.emptyList(),
@@ -61,7 +52,7 @@ public final class YamahaMidiPlayback implements AutoCloseable {
                 Collections.emptyList(),
                 Collections.emptyList()
         ));
-        return new YamahaMidiPlayback(rendered);
+        return new YamahaMidiPlayback(session, sequenceDurationMillis(renderSequence));
     }
 
     private static List<byte[]> drumStartupPackets() {
@@ -73,7 +64,11 @@ public final class YamahaMidiPlayback implements AutoCloseable {
     }
 
     public void setCompletionListener(Runnable listener) {
-        player.setCompletionListener(listener);
+        player.setListener(eventId -> {
+            if (eventId == -1 && listener != null) {
+                listener.run();
+            }
+        });
     }
 
     public void setVolume(int value) {
@@ -149,6 +144,16 @@ public final class YamahaMidiPlayback implements AutoCloseable {
             targetTrack.add(new MidiEvent(cloneMessage(event.message()), event.tickMillis()));
         }
         return target;
+    }
+
+    private static long sequenceDurationMillis(Sequence sequence) {
+        long duration = 0L;
+        for (Track track : sequence.getTracks()) {
+            for (int index = 0; index < track.size(); index++) {
+                duration = Math.max(duration, track.get(index).getTick());
+            }
+        }
+        return duration;
     }
 
     private static List<TimedMidiEvent> collectTimedEvents(Sequence source) {
