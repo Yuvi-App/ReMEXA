@@ -449,6 +449,10 @@ public abstract class Canvas extends Displayable {
         int height;
         boolean region;
         synchronized (repaintLock) {
+            if (paintInProgress) {
+                scheduleRepaintDrainLocked();
+                return;
+            }
             if (!repaintPending) {
                 repaintScheduled = false;
                 return;
@@ -460,19 +464,36 @@ public abstract class Canvas extends Displayable {
             region = repaintPendingRegion;
             repaintPending = false;
             repaintScheduled = false;
+            paintInProgress = true;
         }
         MidletRuntime.renderCanvas(this, graphics -> {
-            beginHostPaint();
             try {
                 if (region) {
                     graphics.setClip(x, y, width, height);
                 }
                 paint(graphics);
             } finally {
-                endHostPaint();
+                finishQueuedPaint();
                 graphics.dispose();
             }
         });
+    }
+
+    private void finishQueuedPaint() {
+        synchronized (repaintLock) {
+            paintInProgress = false;
+            if (repaintPending) {
+                scheduleRepaintDrainLocked();
+            }
+        }
+    }
+
+    private void scheduleRepaintDrainLocked() {
+        if (repaintScheduled) {
+            return;
+        }
+        repaintScheduled = true;
+        SwingUtilities.invokeLater(this::runQueuedRepaint);
     }
 
     public final int phoneKeyStateMask(boolean eightDirectionsEnabled) {
