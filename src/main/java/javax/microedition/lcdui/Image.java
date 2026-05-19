@@ -51,7 +51,7 @@ public class Image {
         try (var stream = new java.io.ByteArrayInputStream(imageData, imageOffset, imageLength)) {
             var decoded = ImageIO.read(stream);
             if (decoded != null) {
-                return new Image(decoded);
+                return new Image(normalizeDecodedImage(decoded));
             }
         } catch (IOException exception) {
             DebugLog.log(LogCategory.UI, Image.class.getName(), "Failed to decode image bytes: " + exception.getMessage());
@@ -67,7 +67,7 @@ public class Image {
         if (decoded == null) {
             throw new IOException("Unsupported image format");
         }
-        return new Image(decoded);
+        return new Image(normalizeDecodedImage(decoded));
     }
 
     public static Image createRGBImage(int[] rgb, int width, int height, boolean processAlpha) {
@@ -106,7 +106,7 @@ public class Image {
             if (decoded == null) {
                 throw new IOException("Unsupported image format: " + name);
             }
-            return new Image(decoded);
+            return new Image(normalizeDecodedImage(decoded));
         } catch (IOException exception) {
             DebugLog.log(LogCategory.UI, Image.class.getName(), "Failed to load image " + name + ": " + exception.getMessage());
             throw exception;
@@ -161,6 +161,26 @@ public class Image {
             graphics.dispose();
         }
         return copy;
+    }
+
+    private static BufferedImage normalizeDecodedImage(BufferedImage source) {
+        if (!source.getColorModel().hasAlpha()) {
+            return source;
+        }
+        int width = source.getWidth();
+        int height = source.getHeight();
+        int[] pixels = source.getRGB(0, 0, width, height, null, 0, width);
+        for (int i = 0; i < pixels.length; i++) {
+            if ((pixels[i] & 0xFF000000) == 0) {
+                // Some legacy assets carry chroma-key RGB under transparent PNG pixels.
+                // Games that read those pixels back and redraw with drawRGB(..., false)
+                // expect the hidden color not to become visible.
+                pixels[i] = 0x00000000;
+            }
+        }
+        BufferedImage normalized = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+        normalized.setRGB(0, 0, width, height, pixels, 0, width);
+        return normalized;
     }
 
     private static BufferedImage transformRegion(BufferedImage image, int transform) {
