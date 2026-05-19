@@ -682,7 +682,14 @@ final class SmafSequencedRenderer {
     }
 
     private int tickToFrames(long tick) {
-        return (int) Math.max(0L, tick * framesPerTick);
+        if (tick <= 0L) {
+            return 0;
+        }
+        long maxTick = Integer.MAX_VALUE / Math.max(1, framesPerTick);
+        if (tick > maxTick) {
+            return Integer.MAX_VALUE;
+        }
+        return (int) (tick * framesPerTick);
     }
 
     private static final class MidiChannelState {

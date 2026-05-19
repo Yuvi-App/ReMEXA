@@ -405,6 +405,7 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
         private boolean completionNeedsCurrentWrite;
         private long completionTargetFrame = -1L;
         private RuntimeException playbackFailure;
+        private float[] reusableChannelGains = new float[2];
 
         private PlaybackHandle(SharedEngine engine,
                                SmafStreamingSession session,
@@ -685,13 +686,18 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
 
         private float[] channelGainsLocked(int channelCount) {
             float gain = volume / 127.0f;
+            int gainCount = Math.max(1, channelCount);
+            if (reusableChannelGains.length < gainCount) {
+                reusableChannelGains = new float[gainCount];
+            }
+            float[] gains = reusableChannelGains;
             if (channelCount <= 1) {
-                return new float[]{gain};
+                gains[0] = gain;
+                return gains;
             }
             float pan = Math.max(-1.0f, Math.min(1.0f, (panpot - 64.0f) / 63.0f));
             float leftGain = gain * (pan > 0.0f ? 1.0f - pan : 1.0f);
             float rightGain = gain * (pan < 0.0f ? 1.0f + pan : 1.0f);
-            float[] gains = new float[channelCount];
             gains[0] = leftGain;
             gains[1] = rightGain;
             for (int channel = 2; channel < channelCount; channel++) {
