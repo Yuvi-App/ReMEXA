@@ -54,6 +54,8 @@ public final class SoftwareJ3dRenderer {
     private static final int PRIMITIVE_TRIANGLES = 0x03;
     private static final int PRIMITIVE_QUADS = 0x04;
     private static final int PRIMITIVE_POINT_SPRITES = 0x05;
+    private static final ThreadLocal<DrawFigureBuffers> DRAW_FIGURE_BUFFERS =
+            ThreadLocal.withInitial(DrawFigureBuffers::new);
 
     private SoftwareJ3dRenderer() {
     }
@@ -528,9 +530,10 @@ public final class SoftwareJ3dRenderer {
         if (graphics == null || figure == null || figure.model() == null) {
             return;
         }
-        int[] pixels = new int[surfaceWidth * surfaceHeight];
-        float[] depthBuffer = new float[pixels.length];
-        Arrays.fill(depthBuffer, Float.NEGATIVE_INFINITY);
+        DrawFigureBuffers buffers = DRAW_FIGURE_BUFFERS.get();
+        buffers.prepare(surfaceWidth, surfaceHeight);
+        int[] pixels = buffers.pixels;
+        float[] depthBuffer = buffers.depthBuffer;
         renderFigureToBuffers(
                 pixels,
                 depthBuffer,
@@ -578,6 +581,26 @@ public final class SoftwareJ3dRenderer {
                 RenderPass.TRANSLUCENT
         );
         graphics.drawRGB(pixels, 0, surfaceWidth, 0, 0, surfaceWidth, surfaceHeight, true);
+    }
+
+    private static final class DrawFigureBuffers {
+        private int width;
+        private int height;
+        private int[] pixels;
+        private float[] depthBuffer;
+
+        private void prepare(int surfaceWidth, int surfaceHeight) {
+            int requiredSize = surfaceWidth * surfaceHeight;
+            if (pixels == null || width != surfaceWidth || height != surfaceHeight) {
+                width = surfaceWidth;
+                height = surfaceHeight;
+                pixels = new int[requiredSize];
+                depthBuffer = new float[requiredSize];
+            } else {
+                Arrays.fill(pixels, 0);
+            }
+            Arrays.fill(depthBuffer, Float.NEGATIVE_INFINITY);
+        }
     }
 
     public static void renderFigureToBuffers(
