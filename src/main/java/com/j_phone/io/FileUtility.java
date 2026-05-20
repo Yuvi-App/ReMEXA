@@ -95,22 +95,22 @@ public final class FileUtility {
 
     public com.jblend.media.MediaPlayer getMediaPlayer (java.lang.String path) throws java.io.IOException {
         remexa.probes.SdkStubSupport.log("com.j_phone.io.FileUtility", "getMediaPlayer", path);
-        return null;
+        return com.jblend.media.MediaFactory.getMediaPlayer(loadMediaBytes(path));
     }
 
     public com.jblend.media.MediaPlayer getMediaPlayer (java.lang.String path, int type) throws java.io.IOException {
         remexa.probes.SdkStubSupport.log("com.j_phone.io.FileUtility", "getMediaPlayer", path, type);
-        return null;
+        return com.jblend.media.MediaFactory.getMediaPlayer(loadMediaBytes(path), type);
     }
 
     public com.jblend.media.MediaData getMediaData (java.lang.String path) throws java.io.IOException {
         remexa.probes.SdkStubSupport.log("com.j_phone.io.FileUtility", "getMediaData", path);
-        return null;
+        return mediaDataFor(loadMediaBytes(path), detectMediaType(path));
     }
 
     public com.jblend.media.MediaData getMediaData (java.lang.String path, int type) throws java.io.IOException {
         remexa.probes.SdkStubSupport.log("com.j_phone.io.FileUtility", "getMediaData", path, type);
-        return null;
+        return mediaDataFor(loadMediaBytes(path), type);
     }
 
     public int getFreeSpace (java.lang.String rootpath) throws java.io.IOException {
@@ -136,5 +136,88 @@ public final class FileUtility {
         } catch (IOException exception) {
             return OTHER_ERROR;
         }
+    }
+
+    private static byte[] loadMediaBytes(String path) throws IOException {
+        if (path == null) {
+            throw new NullPointerException("FileUtility: path is null.");
+        }
+        if (isStoragePath(path)) {
+            return Files.readAllBytes(StoragePathSupport.resolve(path).realPath());
+        }
+
+        try (var stream = remexa.host.runtime.MidletRuntime.openResource(normalizeResourceName(path))) {
+            if (stream != null) {
+                return stream.readAllBytes();
+            }
+        }
+
+        return Files.readAllBytes(StoragePathSupport.resolve(path).realPath());
+    }
+
+    private static com.jblend.media.MediaData mediaDataFor(byte[] data, int type) {
+        return switch (type) {
+            case com.jblend.media.MediaFactory.MEDIA_TYPE_KARAOKE -> new com.jblend.media.karaoke.KaraokeData(data);
+            case com.jblend.media.MediaFactory.MEDIA_TYPE_SMAF -> new com.jblend.media.smaf.SmafData(data);
+            default -> {
+                if (startsWith(data, new byte[] {'M', 'M', 'M', 'D'})) {
+                    yield new com.jblend.media.smaf.SmafData(data);
+                }
+                yield new com.jblend.media.smaf.SmafData(data);
+            }
+        };
+    }
+
+    private static int detectMediaType(String path) {
+        var normalized = path == null ? "" : path.toLowerCase(java.util.Locale.ROOT);
+        if (normalized.endsWith(".mmf") || normalized.endsWith(".smaf")) {
+            return com.jblend.media.MediaFactory.MEDIA_TYPE_SMAF;
+        }
+        return com.jblend.media.MediaFactory.MEDIA_TYPE_SMAF;
+    }
+
+    private static boolean isStoragePath(String path) {
+        var normalized = path.trim().replace('\\', '/');
+        if (normalized.regionMatches(true, 0, "file:", 0, "file:".length())) {
+            normalized = normalized.substring("file:".length());
+        }
+        while (normalized.startsWith("//")) {
+            normalized = normalized.substring(1);
+        }
+        if (!normalized.startsWith("/")) {
+            normalized = "/" + normalized;
+        }
+        var lower = normalized.toLowerCase(java.util.Locale.ROOT);
+        return lower.equals("/ms")
+                || lower.equals("/mc")
+                || lower.startsWith("/ms/")
+                || lower.startsWith("/mc/");
+    }
+
+    private static String normalizeResourceName(String path) {
+        var normalized = path;
+        if (normalized.regionMatches(true, 0, "resource://", 0, "resource://".length())) {
+            normalized = normalized.substring("resource://".length());
+        } else if (normalized.regionMatches(true, 0, "resource:/", 0, "resource:/".length())) {
+            normalized = normalized.substring("resource:/".length());
+        } else if (normalized.regionMatches(true, 0, "resource:", 0, "resource:".length())) {
+            normalized = normalized.substring("resource:".length());
+        }
+        while (normalized.startsWith("/")) {
+            normalized = normalized.substring(1);
+        }
+        return normalized;
+    }
+
+    private static boolean startsWith(byte[] data, byte[] magic) {
+        if (data == null || data.length < magic.length) {
+            return false;
+        }
+        for (int i = 0; i < magic.length; i++) {
+            if (data[i] != magic[i]) {
+                return false;
+            }
+        }
+        return true;
     }
 }

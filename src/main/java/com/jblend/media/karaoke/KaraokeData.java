@@ -2,6 +2,9 @@ package com.jblend.media.karaoke;
 
 public class KaraokeData extends com.jblend.media.MediaData {
     public static final java.lang.String type = "karaoke";
+    private static final int DEFAULT_WIDTH = 240;
+    private static final int DEFAULT_HEIGHT = 260;
+    private com.jblend.media.karaoke.ReferenceScore referenceScore;
 
     public KaraokeData () {
         remexa.probes.SdkStubSupport.log("com.jblend.media.karaoke.KaraokeData", "KaraokeData");
@@ -40,20 +43,24 @@ public class KaraokeData extends com.jblend.media.MediaData {
     public void setData (byte[] data) {
         remexa.probes.SdkStubSupport.log("com.jblend.media.karaoke.KaraokeData", "setData", data);
         super.setData(data);
+        referenceScore = null;
     }
 
     public int getWidth () {
         remexa.probes.SdkStubSupport.log("com.jblend.media.karaoke.KaraokeData", "getWidth");
-        return 0;
+        return DEFAULT_WIDTH;
     }
 
     public int getHeight () {
         remexa.probes.SdkStubSupport.log("com.jblend.media.karaoke.KaraokeData", "getHeight");
-        return 0;
+        return DEFAULT_HEIGHT;
     }
 
     public com.jblend.media.karaoke.ReferenceScore getReferenceScore () {
         remexa.probes.SdkStubSupport.log("com.jblend.media.karaoke.KaraokeData", "getReferenceScore");
-        return null;
+        if (referenceScore == null) {
+            referenceScore = com.jblend.media.karaoke.ReferenceScore.empty();
+        }
+        return referenceScore;
     }
 }
