@@ -58,7 +58,12 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
 
     @Override
     public void play(int loopCount) {
-        handle.play(loopCount);
+        handle.play(loopCount, false);
+    }
+
+    @Override
+    public void play(int loopCount, boolean completeAtSequenceEnd) {
+        handle.play(loopCount, completeAtSequenceEnd);
     }
 
     @Override
@@ -401,6 +406,7 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
         private int volume = 127;
         private int panpot = 64;
         private long playbackEpoch;
+        private boolean completeAtSequenceEnd;
         private boolean completionPending;
         private boolean completionNeedsCurrentWrite;
         private long completionTargetFrame = -1L;
@@ -442,12 +448,13 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
             }
         }
 
-        void play(int loopCount) {
+        void play(int loopCount, boolean completeAtSequenceEnd) {
             synchronized (stateLock) {
                 throwIfFailedLocked();
                 try {
                     session.rewind();
-                    session.setLoopMode(loopCount != 1);
+                    this.completeAtSequenceEnd = completeAtSequenceEnd;
+                    session.setLoopMode(completeAtSequenceEnd || loopCount != 1);
                 } catch (Exception exception) {
                     throw new RuntimeException("Failed to prepare streamed SMAF playback", exception);
                 }
@@ -638,7 +645,7 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
                     remainingLoops--;
                 }
                 session.rewind();
-                if (remainingLoops == 0) {
+                if (remainingLoops == 0 && !completeAtSequenceEnd) {
                     // About to enter the final iteration: let the natural FM
                     // tail play out instead of cutting at the SEQU boundary.
                     session.setLoopMode(false);

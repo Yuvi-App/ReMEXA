@@ -246,7 +246,7 @@ public final class PhraseTrack {
         ensurePlayback();
         terminalEventDispatched = false;
         forcedStopTerminalEventAllowed = loop == 1;
-        playback.play(loop);
+        playback.play(loop, true);
         for (PhraseTrack slaveTrack : slaveTracks) {
             slaveTrack.playInternal(loop, visited);
         }
@@ -296,7 +296,7 @@ public final class PhraseTrack {
         try {
             for (PhraseTrack track : group) {
                 track.terminalEventDispatched = false;
-                track.playback.play(loop);
+                track.playback.play(loop, true);
                 started.add(track);
             }
         } catch (RuntimeException exception) {

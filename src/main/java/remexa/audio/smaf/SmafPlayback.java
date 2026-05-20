@@ -205,13 +205,17 @@ public final class SmafPlayback implements AutoCloseable {
     }
 
     public void play(int loopCount) {
+        play(loopCount, false);
+    }
+
+    public void play(int loopCount, boolean completeAtSequenceEnd) {
         try {
             ensureOpen();
             if (audioPlayer != null) {
                 Mobile.log(Mobile.LOG_INFO,
                         "Playing SMAF phrase through " + renderedBackendLabel()
                                 + " audio backend (loop=" + loopCount + ").");
-                audioPlayer.play(loopCount);
+                audioPlayer.play(loopCount, completeAtSequenceEnd);
                 return;
             }
             sequencer.stop();

@@ -13,6 +13,10 @@ interface SmafAudioPlayer extends AutoCloseable {
 
     void play(int loopCount);
 
+    default void play(int loopCount, boolean completeAtSequenceEnd) {
+        play(loopCount);
+    }
+
     void stop();
 
     void pause();

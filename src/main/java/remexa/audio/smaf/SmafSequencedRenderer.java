@@ -803,9 +803,8 @@ final class SmafSequencedRenderer {
             this.scheduledPcmClips = schedulePcmClips(this.pcmClips, pcmTriggers);
             this.events = collectEvents(sequence, sysExEvents, startupPackets, pcmTriggers, this.pcmClips);
             this.pcmEndFrame = scheduledPcmEndFrame(scheduledPcmClips);
-            this.sequenceEndFrame = events.isEmpty()
-                    ? 0
-                    : tickToFrames(events.get(events.size() - 1).tick());
+            long lastEventTick = events.isEmpty() ? 0L : events.get(events.size() - 1).tick();
+            this.sequenceEndFrame = tickToFrames(Math.max(sequence.getTickLength(), lastEventTick));
             this.trailingSilenceGraceFrames = Math.max(1,
                     outputSampleRate * TRAILING_SILENCE_GRACE_MILLIS / 1_000);
             this.maxTailFrames = Math.max(trailingSilenceGraceFrames,
