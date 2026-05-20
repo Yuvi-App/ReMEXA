@@ -530,6 +530,9 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
                 int[] wave = note.wave;
                 int end = Math.min(note.voice.endPoint() + 1, wave.length);
                 int loop = Math.max(0, Math.min(note.voice.loopPoint(), end));
+                boolean repeat = note.voice.repeatMode()
+                        && note.voice.loopPoint() < note.voice.endPoint()
+                        && loop < end;
                 if (end <= 0 || note.position >= end) {
                     iterator.remove();
                     continue;
@@ -546,7 +549,7 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
 
                 for (int frame = 0; frame < frames; frame++) {
                     if (note.position >= end) {
-                        if (note.voice.repeatMode() && loop < end) {
+                        if (repeat) {
                             note.position = loop + (note.position - loop) % (end - loop);
                         } else {
                             note.finished = true;
