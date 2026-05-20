@@ -139,6 +139,11 @@ final class Ma3SmafAudioEngine implements YamahaAudioEngine {
         }
 
         @Override
+        public void modulation(int channel, int value) {
+            sampler.modulation(channel, value);
+        }
+
+        @Override
         public void panpot(int channel, float panpot) {
             sampler.panpot(channel, panpot);
         }
@@ -181,8 +186,7 @@ final class Ma3SmafAudioEngine implements YamahaAudioEngine {
                     sampler.bankChange(logicalChannel, value);
                 }
                 case INTERNAL_LEGACY_YAMAHA_MODULATION -> {
-                    // The MA3 sampler does not currently expose modulation depth,
-                    // but this command is intentionally consumed as chip state.
+                    modulation(logicalChannel, value);
                 }
                 case INTERNAL_LEGACY_YAMAHA_VOLUME, INTERNAL_LEGACY_YAMAHA_PHRASE_VOLUME, INTERNAL_LEGACY_YAMAHA_EXPRESSION ->
                         sampler.volume(logicalChannel, value / 127.0f);

@@ -343,6 +343,11 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
         }
 
         @Override
+        public void modulation(int channel, int value) {
+            sampler.modulation(channel, value);
+        }
+
+        @Override
         public void panpot(int channel, float panpot) {
             if (channel >= 0 && channel < CHANNEL_COUNT) {
                 channelPans[channel] = Math.max(-1.0f, Math.min(1.0f, panpot));

@@ -79,6 +79,11 @@ class MA3Channel
     boolean isDrum;
 
     /**
+     * Channel modulation depth, normalised from MIDI CC1.
+     */
+    float modulationDepth;
+
+    /**
      * Program bank
      */
     int prgBank;
@@ -174,6 +179,7 @@ class MA3Channel
         this.bendOut = 1.0f;
         this.bendRange = 2.0f;
         this.isDrum = false;
+        this.modulationDepth = 1.0f;
         this.prgBank = 0;
         this.prgProgram = 0;
         this.volLevel = 1.0f;

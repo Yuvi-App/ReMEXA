@@ -421,6 +421,7 @@ class MA3Operator
 
         //  Scratch
         int x, y;
+        float modulationDepth = note.channel.modulationDepth;
 
         // The envelope has finished
         if (this.envStage == MA3SamplerProvider.ENV_DONE)
@@ -532,8 +533,8 @@ class MA3Operator
         this.envOut = this.envLevel + this.kslOut + (this.tl << 2);
         if (this.eam)
         {
-            this.envOut +=
-                constAmLfoA[this.amPhase >> 12] << this.dam >> 2;
+            int amDepth = (constAmLfoA[this.amPhase >> 12] << this.dam) >> 2;
+            this.envOut += Math.round(amDepth * modulationDepth);
             this.amPhase =
                 (this.amPhase + constAmLfoB[algorithm.lfo]) % (0x34000);
         }
@@ -565,9 +566,10 @@ class MA3Operator
         // the vibrato thing is pinned down.
         if (this.evb)
         {
-            this.oscPhase +=
-                (instance.vibPhase << 19 >> 31 ^ note.f_number >>
-                    (9 - this.dvb + ((instance.vibPhase >> 10 & 3) == 3 ? 1 : 0)));
+            int vibratoDepth =
+                instance.vibPhase << 19 >> 31 ^ note.f_number >>
+                    (9 - this.dvb + ((instance.vibPhase >> 10 & 3) == 3 ? 1 : 0));
+            this.oscPhase += Math.round(vibratoDepth * modulationDepth);
         }
 
         return this.fb0;

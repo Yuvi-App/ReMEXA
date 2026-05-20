@@ -52,6 +52,7 @@ package remexa.audio.smaf.ma3;
  *    <tr><td>Channel</td><td>Panning</td><td>0.0f</td></tr>
  *    <tr><td>Channel</td><td>Pitch bend</td><td>0.0f</td></tr>
  *    <tr><td>Channel</td><td>Pitch bend range</td><td>2.0f</td></tr>
+ *    <tr><td>Channel</td><td>Modulation depth</td><td>1.0f</td></tr>
  *    <tr><td>Channel</td><td>Program bank</td><td>0</td></tr>
  *    <tr><td>Channel</td><td>Program number</td><td>0</td></tr>
  *    <tr><td>Channel</td><td>Volume</td><td>1.0f</td></tr>
@@ -164,6 +165,17 @@ public interface Sampler
      */
 
     void masterVolume(float volume);
+
+    /**
+     * Specify a channel's modulation depth. The channel value scales the
+     * voice's authored amplitude/vibrato LFO sensitivity.<br><br>
+     * The default modulation depth on all channels is 127, preserving
+     * authored voice LFO until a sequence controller changes it.
+     *
+     * @param channel The index of the channel to configure.
+     * @param value The modulation depth, clamped to {@code 0..127}.
+     */
+    void modulation(int channel, int value);
 
     /**
      * Specify stereo panning on a channel. Panning ranges from -1.0f for

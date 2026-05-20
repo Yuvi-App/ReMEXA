@@ -303,6 +303,20 @@ public class MA3Sampler
     }
 
     /**
+     * Specify a channel's modulation depth.
+     */
+    @Override
+    public void modulation(int channel, int value)
+    {
+        MA3Channel[] channels = this.channels;
+        if (channel < 0 || channel >= channels.length)
+            return;
+
+        channels[channel].modulationDepth =
+            Math.max(0, Math.min(127, value)) / 127.0f;
+    }
+
+    /**
      * Specify stereo panning on a channel.
      */
     @Override
