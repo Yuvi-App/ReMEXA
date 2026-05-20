@@ -28,7 +28,6 @@ public final class PhraseTrack {
     private int panpot = 64;
     private boolean muted;
     private boolean terminalEventDispatched;
-    private boolean forcedStopTerminalEventAllowed = true;
 
     PhraseTrack(int id) {
         this.id = id;
@@ -245,7 +244,6 @@ public final class PhraseTrack {
         }
         ensurePlayback();
         terminalEventDispatched = false;
-        forcedStopTerminalEventAllowed = loop == 1;
         playback.play(loop, true);
         for (PhraseTrack slaveTrack : slaveTracks) {
             slaveTrack.playInternal(loop, visited);
@@ -257,9 +255,6 @@ public final class PhraseTrack {
         List<PhraseTrack> group = new ArrayList<>();
         collectPlaybackGroup(group, new HashSet<>());
         preparePlaybackGroup(group);
-        for (PhraseTrack track : group) {
-            track.forcedStopTerminalEventAllowed = loop == 1;
-        }
         if (group.size() == 1 || loop == 1) {
             startPreparedPlaybackGroup(group, loop);
             return;
@@ -340,7 +335,7 @@ public final class PhraseTrack {
             return false;
         }
         int state = playback.getState();
-        return forcedStopTerminalEventAllowed && (state == PLAYING || state == PAUSED);
+        return state == PLAYING || state == PAUSED;
     }
 
     private void dispatchTerminalEvent(String reason) {
