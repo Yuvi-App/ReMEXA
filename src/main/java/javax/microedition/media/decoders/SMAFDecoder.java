@@ -169,6 +169,7 @@ public final class SMAFDecoder
     private static final int INTERNAL_LEGACY_YAMAHA_PHRASE_VOLUME = 0x0A;
     private static final int INTERNAL_LEGACY_YAMAHA_PROGRAM = 0x0B;
     private static final int INTERNAL_LEGACY_YAMAHA_BANK = 0x0C;
+    private static final int INTERNAL_LEGACY_YAMAHA_EXPRESSION = 0x0D;
     private static final int INTERNAL_LEGACY_YAMAHA_PITCH = 0x11;
 
     private static boolean smafLogEnabled(int level)
@@ -1525,7 +1526,7 @@ public final class SMAFDecoder
                                 totalDuration,
                                 handyChannelIdx >> 2,
                                 (controlEvent >> 6) & 0x03,
-                                INTERNAL_LEGACY_YAMAHA_VOLUME,
+                                INTERNAL_LEGACY_YAMAHA_EXPRESSION,
                                 shortExpressionValues[eventType] & 0x7f);
                     }
                     else if (eventType >= (byte) 0x11 && eventType <= (byte) 0x1E) // Short Pitch Bend event
@@ -1669,6 +1670,12 @@ public final class SMAFDecoder
                         setChannelMessage(event, ShortMessage.CONTROL_CHANGE, channel, 11, eventValue);
                         midiEvent = new MidiEvent(event, totalDuration);
                         track.add(midiEvent);
+                        recordInternalLegacyYamahaStateEvent(
+                                totalDuration,
+                                handyChannelIdx >> 2,
+                                (controlEvent >> 6) & 0x03,
+                                INTERNAL_LEGACY_YAMAHA_EXPRESSION,
+                                eventValue & 0x7f);
                     }
                     else if (eventType == (byte) 0x37) // Volume event
                     {
@@ -1701,7 +1708,7 @@ public final class SMAFDecoder
                                 INTERNAL_LEGACY_YAMAHA_PAN,
                                 eventValue & 0x7f);
                     }
-                    else if (eventType == (byte) 0x3B) // TODO: Expression event again?
+                    else if (eventType == (byte) 0x3B) // Expression event
                     {
                         byte eventValue = (byte) (data[offset++] & 0xFF);
 
@@ -1713,7 +1720,7 @@ public final class SMAFDecoder
                                 totalDuration,
                                 handyChannelIdx >> 2,
                                 (controlEvent >> 6) & 0x03,
-                                INTERNAL_LEGACY_YAMAHA_VOLUME,
+                                INTERNAL_LEGACY_YAMAHA_EXPRESSION,
                                 eventValue & 0x7f);
                     }
                     else 

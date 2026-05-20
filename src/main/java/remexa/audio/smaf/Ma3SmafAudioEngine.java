@@ -55,6 +55,7 @@ final class Ma3SmafAudioEngine implements YamahaAudioEngine {
         private static final int INTERNAL_LEGACY_YAMAHA_PHRASE_VOLUME = 0x0a;
         private static final int INTERNAL_LEGACY_YAMAHA_PROGRAM = 0x0b;
         private static final int INTERNAL_LEGACY_YAMAHA_BANK = 0x0c;
+        private static final int INTERNAL_LEGACY_YAMAHA_EXPRESSION = 0x0d;
         private static final int INTERNAL_LEGACY_YAMAHA_PITCH = 0x11;
         private static final float DEFAULT_PITCH_BEND_RANGE_SEMITONES = 2.0f;
         private static final float SEMITONES_PER_OCTAVE = 12.0f;
@@ -154,7 +155,7 @@ final class Ma3SmafAudioEngine implements YamahaAudioEngine {
 
         @Override
         public void sysEx(int sourceBank, byte[] message) {
-            if (applyInternalSoftbankControl(message)) {
+            if (applyInternalSoftbankControl(sourceBank, message)) {
                 return;
             }
             if (!softbankBridge.sysEx(sourceBank, message)) {
@@ -162,13 +163,13 @@ final class Ma3SmafAudioEngine implements YamahaAudioEngine {
             }
         }
 
-        private boolean applyInternalSoftbankControl(byte[] message) {
+        private boolean applyInternalSoftbankControl(int sourceBank, byte[] message) {
             if (message == null || message.length < 4
                     || (message[0] & 0xff) != INTERNAL_LEGACY_YAMAHA_MESSAGE) {
                 return false;
             }
             int command = message[1] & 0xff;
-            int logicalChannel = message[2] & 0x0f;
+            int logicalChannel = logicalChannel(sourceBank, message[2] & 0xff);
             int rawValue = message[3] & 0xff;
             int value = rawValue & 0x7f;
             switch (command) {
@@ -183,7 +184,7 @@ final class Ma3SmafAudioEngine implements YamahaAudioEngine {
                     // The MA3 sampler does not currently expose modulation depth,
                     // but this command is intentionally consumed as chip state.
                 }
-                case INTERNAL_LEGACY_YAMAHA_VOLUME, INTERNAL_LEGACY_YAMAHA_PHRASE_VOLUME ->
+                case INTERNAL_LEGACY_YAMAHA_VOLUME, INTERNAL_LEGACY_YAMAHA_PHRASE_VOLUME, INTERNAL_LEGACY_YAMAHA_EXPRESSION ->
                         sampler.volume(logicalChannel, value / 127.0f);
                 case INTERNAL_LEGACY_YAMAHA_PAN ->
                         sampler.panpot(logicalChannel, midiPanToFloat(value));
@@ -194,6 +195,14 @@ final class Ma3SmafAudioEngine implements YamahaAudioEngine {
                 }
             }
             return true;
+        }
+
+        private static int logicalChannel(int sourceBank, int channelByte) {
+            int channel = channelByte & 0x0f;
+            if (sourceBank >= 0) {
+                return ((sourceBank & 0x03) << 2) | (channel & 0x03);
+            }
+            return channel;
         }
 
         private static float midiPanToFloat(int value) {

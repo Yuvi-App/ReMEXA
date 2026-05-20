@@ -83,6 +83,7 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
         private static final int INTERNAL_LEGACY_YAMAHA_PHRASE_VOLUME = 0x0a;
         private static final int INTERNAL_LEGACY_YAMAHA_PROGRAM = 0x0b;
         private static final int INTERNAL_LEGACY_YAMAHA_BANK = 0x0c;
+        private static final int INTERNAL_LEGACY_YAMAHA_EXPRESSION = 0x0d;
         private static final int INTERNAL_LEGACY_YAMAHA_PITCH = 0x11;
         private static final int MIDI_PERCUSSION_CHANNEL = 9;
         private static final float DEFAULT_PITCH_BEND_RANGE_SEMITONES = 2.0f;
@@ -223,6 +224,8 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
         private final int[] channelPrograms = new int[CHANNEL_COUNT];
         private final boolean[] channelDrumBanks = new boolean[CHANNEL_COUNT];
         private final float[] channelVolumes = new float[CHANNEL_COUNT];
+        private final float[] internalChannelVolumes = new float[CHANNEL_COUNT];
+        private final float[] internalChannelExpressions = new float[CHANNEL_COUNT];
         private final float[] channelPans = new float[CHANNEL_COUNT];
         private final Map<Integer, MA5PcmVoiceProgram> pcmPrograms = new HashMap<>();
         private final Map<Integer, MA5PcmVoiceProgram> pcmDrumPrograms = new HashMap<>();
@@ -247,6 +250,8 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
             Arrays.fill(channelPrograms, 0);
             Arrays.fill(channelDrumBanks, false);
             Arrays.fill(channelVolumes, 1.0f);
+            Arrays.fill(internalChannelVolumes, 1.0f);
+            Arrays.fill(internalChannelExpressions, 1.0f);
             Arrays.fill(channelPans, 0.0f);
             for (int channel = 0; channel < CHANNEL_COUNT; channel++) {
                 pitchBendSemitones[channel] = 0.0f;
@@ -358,7 +363,7 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
 
         @Override
         public void sysEx(int sourceBank, byte[] message) {
-            if (applyInternalSoftbankControl(message)) {
+            if (applyInternalSoftbankControl(sourceBank, message)) {
                 return;
             }
             if (!softbankBridge.sysEx(message)) {
@@ -366,13 +371,13 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
             }
         }
 
-        private boolean applyInternalSoftbankControl(byte[] message) {
+        private boolean applyInternalSoftbankControl(int sourceBank, byte[] message) {
             if (message == null || message.length < 4
                     || (message[0] & 0xff) != INTERNAL_LEGACY_YAMAHA_MESSAGE) {
                 return false;
             }
             int command = message[1] & 0xff;
-            int logicalChannel = message[2] & 0x0f;
+            int logicalChannel = logicalChannel(sourceBank, message[2] & 0xff);
             int rawValue = message[3] & 0xff;
             int value = rawValue & 0x7f;
             switch (command) {
@@ -403,9 +408,16 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
                 }
                 case INTERNAL_LEGACY_YAMAHA_VOLUME, INTERNAL_LEGACY_YAMAHA_PHRASE_VOLUME -> {
                     float normalized = value / 127.0f;
-                    volume(logicalChannel, normalized);
+                    internalVolume(logicalChannel, normalized);
                     if (logicalChannel >= 0 && logicalChannel < CHANNEL_COUNT && channelDrumBanks[logicalChannel]) {
-                        volume(MIDI_PERCUSSION_CHANNEL, normalized);
+                        internalVolume(MIDI_PERCUSSION_CHANNEL, normalized);
+                    }
+                }
+                case INTERNAL_LEGACY_YAMAHA_EXPRESSION -> {
+                    float normalized = value / 127.0f;
+                    internalExpression(logicalChannel, normalized);
+                    if (logicalChannel >= 0 && logicalChannel < CHANNEL_COUNT && channelDrumBanks[logicalChannel]) {
+                        internalExpression(MIDI_PERCUSSION_CHANNEL, normalized);
                     }
                 }
                 case INTERNAL_LEGACY_YAMAHA_PAN -> {
@@ -427,6 +439,38 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
                 }
             }
             return true;
+        }
+
+        private static int logicalChannel(int sourceBank, int channelByte) {
+            int channel = channelByte & 0x0f;
+            if (sourceBank >= 0) {
+                return ((sourceBank & 0x03) << 2) | (channel & 0x03);
+            }
+            return channel;
+        }
+
+        private void internalVolume(int channel, float volume) {
+            if (channel < 0 || channel >= CHANNEL_COUNT) {
+                return;
+            }
+            internalChannelVolumes[channel] = clampUnit(volume);
+            applyInternalEffectiveVolume(channel);
+        }
+
+        private void internalExpression(int channel, float expression) {
+            if (channel < 0 || channel >= CHANNEL_COUNT) {
+                return;
+            }
+            internalChannelExpressions[channel] = clampUnit(expression);
+            applyInternalEffectiveVolume(channel);
+        }
+
+        private void applyInternalEffectiveVolume(int channel) {
+            volume(channel, internalChannelVolumes[channel] * internalChannelExpressions[channel]);
+        }
+
+        private static float clampUnit(float value) {
+            return Math.max(0.0f, Math.min(1.0f, value));
         }
 
         @Override
