@@ -1708,19 +1708,19 @@ public final class SMAFDecoder
                                 INTERNAL_LEGACY_YAMAHA_PAN,
                                 eventValue & 0x7f);
                     }
-                    else if (eventType == (byte) 0x3B) // Expression event
+                    else if (eventType == (byte) 0x3B) // Phrase volume/fade event
                     {
                         byte eventValue = (byte) (data[offset++] & 0xFF);
 
-                        smafLog(SMAF_LOG_DEBUG, SMAFDecoder.class.getPackage().getName() + "." + SMAFDecoder.class.getSimpleName() + ": " + "Adding expression value 0x" + String.format("%02X", eventValue) + "(" + eventValue + ") to channel " + channel);
-                        setChannelMessage(event, ShortMessage.CONTROL_CHANGE, channel, 11, eventValue);
+                        smafLog(SMAF_LOG_DEBUG, SMAFDecoder.class.getPackage().getName() + "." + SMAFDecoder.class.getSimpleName() + ": " + "Adding phrase volume value 0x" + String.format("%02X", eventValue) + "(" + eventValue + ") to channel " + channel);
+                        setChannelMessage(event, ShortMessage.CONTROL_CHANGE, channel, 7, eventValue);
                         midiEvent = new MidiEvent(event, totalDuration);
                         track.add(midiEvent);
                         recordInternalLegacyYamahaStateEvent(
                                 totalDuration,
                                 handyChannelIdx >> 2,
                                 (controlEvent >> 6) & 0x03,
-                                INTERNAL_LEGACY_YAMAHA_EXPRESSION,
+                                INTERNAL_LEGACY_YAMAHA_PHRASE_VOLUME,
                                 eventValue & 0x7f);
                     }
                     else 

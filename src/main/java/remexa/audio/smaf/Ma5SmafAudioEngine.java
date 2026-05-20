@@ -277,7 +277,7 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
             boolean releasedPcmNote = false;
             for (PcmNote note : pcmNotes) {
                 if (note.channel == channel && note.key == key) {
-                    note.releasing = true;
+                    note.beginRelease();
                     releasedPcmNote = true;
                 }
             }
@@ -566,7 +566,7 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
                     note.position += note.advance(pitchBendSemitones[note.channel]);
                     note.advanceLfo();
 
-                    if (note.releasing) {
+                    if (!PCM_ENVELOPE_ENABLED && note.releasing) {
                         note.release();
                         if (note.finished) {
                             note.finished = true;
@@ -886,6 +886,11 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
                 if (!PCM_ENVELOPE_ENABLED) {
                     return 1.0f;
                 }
+                if (releasing
+                        && envelopeStage != EnvelopeStage.RELEASE
+                        && envelopeStage != EnvelopeStage.OFF) {
+                    envelopeStage = EnvelopeStage.RELEASE;
+                }
                 switch (envelopeStage) {
                     case ATTACK -> {
                         envelopeLevel += attackDelta;
@@ -914,6 +919,16 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
                     case OFF -> finished = true;
                 }
                 return envelopeLevel * totalLevelGain;
+            }
+
+            private void beginRelease() {
+                if (voice.ignoreKeyOff() && !finished) {
+                    return;
+                }
+                releasing = true;
+                if (PCM_ENVELOPE_ENABLED && envelopeStage != EnvelopeStage.OFF) {
+                    envelopeStage = EnvelopeStage.RELEASE;
+                }
             }
 
             private void release() {
