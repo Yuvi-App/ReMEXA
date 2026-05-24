@@ -48,7 +48,9 @@ public final class InflateInputStream extends InputStream {
     @Override
     public int read(byte[] b, int off, int len) throws IOException {
         if (len == 0) {
-            return 0;
+            // Some JBlend-era titles use zero-length reads as their loop
+            // terminator after reconstructing a known-size inflated payload.
+            return -1;
         }
         int total = 0;
         while (total < len) {
