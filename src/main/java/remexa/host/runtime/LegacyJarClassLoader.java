@@ -1,15 +1,21 @@
 package remexa.host.runtime;
 
+import java.io.ByteArrayInputStream;
 import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.DataInputStream;
+import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLConnection;
 import java.net.URLClassLoader;
+import java.nio.file.Path;
 import java.security.CodeSource;
 import java.util.HashSet;
+import java.util.Locale;
 import java.util.Set;
+import java.util.jar.JarFile;
+import java.util.zip.ZipInputStream;
 import remexa.probes.DebugLog;
 import remexa.probes.LogCategory;
 
@@ -20,27 +26,29 @@ final class LegacyJarClassLoader extends URLClassLoader {
 
     private final Object resourceStreamLock = new Object();
     private final Set<LegacyResourceStream> resourceStreams = new HashSet<>();
+    private final URL jarUrl;
     private boolean closed;
 
     LegacyJarClassLoader(URL jarUrl, ClassLoader parent) {
         super(new URL[]{jarUrl}, parent);
+        this.jarUrl = jarUrl;
     }
 
     @Override
     public InputStream getResourceAsStream(String name) {
-        var resource = getResource(name);
+        var normalizedName = normalizeResourceName(name);
+        var resource = getResource(normalizedName);
         if (resource == null) {
-            return null;
+            return openArchivedResource(normalizedName);
         }
+        return openResourceStream(normalizedName, resource);
+    }
+
+    private InputStream openResourceStream(String name, URL resource) {
         try {
             URLConnection connection = resource.openConnection();
             connection.setUseCaches(false);
-            var stream = new LegacyResourceStream(this, connection.getInputStream(), connection.getContentLengthLong());
-            if (!registerResourceStream(stream)) {
-                stream.close();
-                return null;
-            }
-            return new DataInputStream(stream);
+            return openResourceStream(connection.getInputStream(), connection.getContentLengthLong());
         } catch (IOException exception) {
             DebugLog.log(
                     LogCategory.HOST,
@@ -49,6 +57,63 @@ final class LegacyJarClassLoader extends URLClassLoader {
             );
             return null;
         }
+    }
+
+    private InputStream openResourceStream(InputStream input, long contentLength) throws IOException {
+        var stream = new LegacyResourceStream(this, input, contentLength);
+        if (!registerResourceStream(stream)) {
+            stream.close();
+            return null;
+        }
+        return new DataInputStream(stream);
+    }
+
+    private InputStream openArchivedResource(String name) {
+        Path jarPath;
+        try {
+            jarPath = Path.of(jarUrl.toURI());
+        } catch (IllegalArgumentException | URISyntaxException exception) {
+            return null;
+        }
+
+        try (var jar = new JarFile(jarPath.toFile())) {
+            var entries = jar.entries();
+            while (entries.hasMoreElements()) {
+                var entry = entries.nextElement();
+                if (entry.isDirectory() || !isZipDatResource(entry.getName())) {
+                    continue;
+                }
+
+                try (var zip = new ZipInputStream(jar.getInputStream(entry))) {
+                    java.util.zip.ZipEntry zippedEntry;
+                    while ((zippedEntry = zip.getNextEntry()) != null) {
+                        if (zippedEntry.isDirectory() || !resourceNameMatches(name, zippedEntry.getName())) {
+                            continue;
+                        }
+                        byte[] data = zip.readAllBytes();
+                        DebugLog.log(
+                                LogCategory.HOST,
+                                LegacyJarClassLoader.class.getName(),
+                                "Loaded archived resource " + name + " from " + entry.getName()
+                        );
+                        return openResourceStream(new ByteArrayInputStream(data), data.length);
+                    }
+                } catch (IOException exception) {
+                    DebugLog.log(
+                            LogCategory.HOST,
+                            LegacyJarClassLoader.class.getName(),
+                            "Unable to inspect resource archive " + entry.getName() + ": " + describeException(exception)
+                    );
+                }
+            }
+        } catch (IOException exception) {
+            DebugLog.log(
+                    LogCategory.HOST,
+                    LegacyJarClassLoader.class.getName(),
+                    "Unable to scan archived resources: " + describeException(exception)
+            );
+        }
+        return null;
     }
 
     @Override
@@ -154,6 +219,38 @@ final class LegacyJarClassLoader extends URLClassLoader {
         URLConnection connection = resource.openConnection();
         connection.setUseCaches(false);
         return connection.getInputStream();
+    }
+
+    private static String normalizeResourceName(String name) {
+        if (name == null) {
+            return "";
+        }
+        var normalizedName = name;
+        while (normalizedName.startsWith("/")) {
+            normalizedName = normalizedName.substring(1);
+        }
+        return normalizedName;
+    }
+
+    private static boolean isZipDatResource(String name) {
+        return name != null && name.toLowerCase(Locale.ROOT).endsWith(".zip.dat");
+    }
+
+    private static boolean resourceNameMatches(String requestedName, String archiveName) {
+        var normalizedRequestedName = normalizeResourceName(requestedName);
+        var normalizedArchiveName = normalizeResourceName(archiveName);
+        if (normalizedArchiveName.equals(normalizedRequestedName)) {
+            return true;
+        }
+        int requestedFileNameIndex = normalizedRequestedName.lastIndexOf('/');
+        var requestedFileName = requestedFileNameIndex < 0
+                ? normalizedRequestedName
+                : normalizedRequestedName.substring(requestedFileNameIndex + 1);
+        int archiveFileNameIndex = normalizedArchiveName.lastIndexOf('/');
+        var archiveFileName = archiveFileNameIndex < 0
+                ? normalizedArchiveName
+                : normalizedArchiveName.substring(archiveFileNameIndex + 1);
+        return archiveFileName.equals(requestedFileName);
     }
 
     private static String describeException(Throwable exception) {
