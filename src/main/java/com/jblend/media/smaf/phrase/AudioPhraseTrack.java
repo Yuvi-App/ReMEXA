@@ -25,12 +25,16 @@ public final class AudioPhraseTrack {
     public static final int READY = PhraseTrack.READY;
     public static final int PLAYING = PhraseTrack.PLAYING;
     public static final int PAUSED = PhraseTrack.PAUSED;
+    private static final int DEFAULT_VOLUME = 100;
+    private static final float AUDIO_PHRASE_GAIN = audioPhraseGain();
 
     private final PhraseTrack delegate;
+    private int volume = DEFAULT_VOLUME;
     private int lastLoop = 1;
 
     AudioPhraseTrack(int id) {
         this.delegate = new PhraseTrack(id);
+        this.delegate.setVolume(effectiveVolume(volume));
     }
 
     public void setPhrase(AudioPhrase phrase) {
@@ -87,11 +91,12 @@ public final class AudioPhraseTrack {
     }
 
     public void setVolume(int value) {
-        delegate.setVolume(value);
+        volume = Math.max(0, Math.min(127, value));
+        delegate.setVolume(effectiveVolume(volume));
     }
 
     public int getVolume() {
-        return delegate.getVolume();
+        return volume;
     }
 
     public void setPanpot(int value) {
@@ -120,5 +125,18 @@ public final class AudioPhraseTrack {
 
     PhraseTrack delegate() {
         return delegate;
+    }
+
+    private static int effectiveVolume(int value) {
+        return Math.max(0, Math.min(127, Math.round(value * AUDIO_PHRASE_GAIN)));
+    }
+
+    private static float audioPhraseGain() {
+        try {
+            return Math.max(0.0f,
+                    Float.parseFloat(System.getProperty("remexa.smaf.audioPhraseGain", "0.35")));
+        } catch (NumberFormatException exception) {
+            return 0.55f;
+        }
     }
 }
