@@ -3,13 +3,18 @@ package remexa.audio.smaf.ma5;
 import java.util.Arrays;
 
 /**
- * Raw MA-5 user-wave payload decoded from an MMMG {@code EXWV} subchunk.
+ * Raw MA-5 user-wave payload decoded from an MMMG {@code EXWV} subchunk or
+ * legacy SoftBank ATS-MA5 {@code 43 02 02 0A ...} sequencer metadata.
  */
 public record MA5WaveDataPacket(int waveId,
                                 int encodedBytes,
                                 byte[] encodedData) {
     private static final int MANUFACTURER_YAMAHA = 0x43;
+    private static final int FAMILY_LEGACY_SOFTBANK = 0x02;
     private static final int FAMILY_VM5 = 0x05;
+    private static final int LEGACY_SOFTBANK_SUBFAMILY = 0x02;
+    private static final int LEGACY_SOFTBANK_WAVE_DATA = 0x0a;
+    private static final int LEGACY_WAVE_HEADER_BYTES = 6;
     private static final int VM5_WAVE_DATA = 0x00;
     private static final int HEADER_BYTES = 4;
 
@@ -19,6 +24,16 @@ public record MA5WaveDataPacket(int waveId,
 
     public static MA5WaveDataPacket decode(byte[] packet) {
         byte[] body = normalize(packet);
+        if (body.length > LEGACY_WAVE_HEADER_BYTES
+                && (body[0] & 0xff) == MANUFACTURER_YAMAHA
+                && (body[1] & 0xff) == FAMILY_LEGACY_SOFTBANK
+                && (body[2] & 0xff) == LEGACY_SOFTBANK_SUBFAMILY
+                && (body[3] & 0xff) == LEGACY_SOFTBANK_WAVE_DATA) {
+            int waveId = body[4] & 0xff;
+            byte[] encodedData = Arrays.copyOfRange(body, LEGACY_WAVE_HEADER_BYTES, body.length);
+            return new MA5WaveDataPacket(waveId, encodedData.length, encodedData);
+        }
+
         if (body.length <= HEADER_BYTES
                 || (body[0] & 0xff) != MANUFACTURER_YAMAHA
                 || (body[1] & 0xff) != FAMILY_VM5

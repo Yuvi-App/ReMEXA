@@ -11,8 +11,14 @@ import java.util.Set;
  */
 public final class MA5SoftbankBridge {
     private static final int MANUFACTURER_YAMAHA = 0x43;
+    private static final int FAMILY_LEGACY_SOFTBANK = 0x02;
     private static final int FAMILY_VM5 = 0x05;
     private static final int FAMILY_VM5_COMPACT_4OP = 0x04;
+    private static final int LEGACY_SOFTBANK_SUBFAMILY = 0x02;
+    private static final int LEGACY_SOFTBANK_VOICE = 0x08;
+    private static final int LEGACY_SOFTBANK_WAVE_DATA = 0x0a;
+    private static final int LEGACY_MELODIC_BANK_MSB = 0x7c;
+    private static final int LEGACY_DRUM_BANK_MSB = 0x7d;
     private static final int VM5_WAVE_DATA = 0x00;
     private static final int VM5_FM_PROGRAM = 0x01;
     private static final int VM5_PCM_PROGRAM = 0x02;
@@ -57,6 +63,9 @@ public final class MA5SoftbankBridge {
             }
             return true;
         }
+        if (family == FAMILY_LEGACY_SOFTBANK && type == LEGACY_SOFTBANK_SUBFAMILY) {
+            return legacySoftbankSysEx(message, body);
+        }
         if (family != FAMILY_VM5) {
             return false;
         }
@@ -93,6 +102,39 @@ public final class MA5SoftbankBridge {
             return true;
         }
         debugOnce("vm5-unsupported", message);
+        return true;
+    }
+
+    private boolean legacySoftbankSysEx(byte[] message, byte[] body) {
+        if (body.length < 4) {
+            debugOnce("legacy-invalid", message);
+            return true;
+        }
+        int packetType = body[3] & 0xff;
+        if (packetType == LEGACY_SOFTBANK_WAVE_DATA) {
+            MA5WaveDataPacket waveData = MA5WaveDataPacket.decode(message);
+            if (waveData == null) {
+                debugOnce("legacy-wave-invalid", message);
+                return true;
+            }
+            pcmVoiceSink.onWaveData(waveData);
+            debugOnce("legacy-wave " + waveData.summary(), message);
+            return true;
+        }
+        if (packetType == LEGACY_SOFTBANK_VOICE && body.length >= 5) {
+            int bankMsb = body[4] & 0xff;
+            if (bankMsb == LEGACY_MELODIC_BANK_MSB || bankMsb == LEGACY_DRUM_BANK_MSB) {
+                MA5PcmVoiceProgram pcmVoice = MA5PcmVoiceProgram.decode(message);
+                if (pcmVoice != null) {
+                    pcmVoiceSink.onPcmVoice(pcmVoice);
+                    debugOnce("legacy-pcm " + pcmVoice.summary(), message);
+                    return true;
+                }
+                debugOnce("legacy-fm-or-unsupported", message);
+                return true;
+            }
+        }
+        debugOnce("legacy-unsupported", message);
         return true;
     }
 

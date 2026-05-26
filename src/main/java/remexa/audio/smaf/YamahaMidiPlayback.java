@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import javax.microedition.media.decoders.SMAFDecoder;
 import javax.sound.midi.InvalidMidiDataException;
 import javax.sound.midi.MetaMessage;
 import javax.sound.midi.MidiEvent;
@@ -12,9 +13,11 @@ import javax.sound.midi.MidiMessage;
 import javax.sound.midi.MidiSystem;
 import javax.sound.midi.Sequence;
 import javax.sound.midi.ShortMessage;
+import javax.sound.midi.SysexMessage;
 import javax.sound.midi.Track;
 
 public final class YamahaMidiPlayback implements AutoCloseable {
+    public static final String SYNTH_AUTO = "auto";
     public static final String SYNTH_MA3 = "ma3";
     public static final String SYNTH_MA5 = "ma5";
     public static final int READY = SmafPlayback.READY;
@@ -24,6 +27,14 @@ public final class YamahaMidiPlayback implements AutoCloseable {
     private static final int MIDI_TICKS_PER_QUARTER = 1_000;
     private static final int DEFAULT_TEMPO_MICROS_PER_QUARTER = 500_000;
     private static final int TEMPO_META_TYPE = 0x51;
+    private static final int SEQUENCER_SPECIFIC_META_TYPE = 0x7f;
+    private static final int MANUFACTURER_YAMAHA = 0x43;
+    private static final int FAMILY_LEGACY_SOFTBANK = 0x02;
+    private static final int FAMILY_MA5_COMPACT = 0x04;
+    private static final int FAMILY_MA5 = 0x05;
+    private static final int LEGACY_SOFTBANK_SUBFAMILY = 0x02;
+    private static final int LEGACY_SOFTBANK_VOICE = 0x08;
+    private static final int LEGACY_SOFTBANK_WAVE = 0x0a;
     private static final int MIDI_PERCUSSION_CHANNEL = 9;
     private static final Ma3SmafAudioEngine MA3_ENGINE = new Ma3SmafAudioEngine();
     private static final Ma5SmafAudioEngine MA5_ENGINE = new Ma5SmafAudioEngine();
@@ -41,12 +52,14 @@ public final class YamahaMidiPlayback implements AutoCloseable {
 
     public static YamahaMidiPlayback create(byte[] source, String synthType) throws Exception {
         var sourceSequence = MidiSystem.getSequence(new ByteArrayInputStream(source));
-        var renderSequence = normalizeMidiTiming(sourceSequence);
-        var engine = resolveEngine(synthType);
+        var timedEvents = collectTimedEvents(sourceSequence);
+        var renderSequence = normalizeMidiTiming(timedEvents);
+        var sequenceSysExEvents = extractSequencerSpecificYamahaEvents(timedEvents);
+        var engine = resolveEngine(synthType, timedEvents, sequenceSysExEvents);
         var session = engine.openStream(new SmafRenderContext(
                 source.clone(),
                 renderSequence,
-                Collections.emptyList(),
+                sequenceSysExEvents,
                 drumStartupPackets(),
                 Collections.emptyList(),
                 Collections.emptyList(),
@@ -129,21 +142,116 @@ public final class YamahaMidiPlayback implements AutoCloseable {
         player.close();
     }
 
-    private static YamahaAudioEngine resolveEngine(String synthType) {
+    private static YamahaAudioEngine resolveEngine(String synthType,
+                                                  List<TimedMidiEvent> timedEvents,
+                                                  List<SMAFDecoder.SequenceSysExEvent> sequenceSysExEvents) {
         if (SYNTH_MA5.equalsIgnoreCase(synthType)) {
+            return MA5_ENGINE;
+        }
+        if (SYNTH_AUTO.equalsIgnoreCase(synthType)
+                && containsMa5MidiData(timedEvents, sequenceSysExEvents)) {
             return MA5_ENGINE;
         }
         return MA3_ENGINE;
     }
 
-    private static Sequence normalizeMidiTiming(Sequence source) throws InvalidMidiDataException {
+    private static Sequence normalizeMidiTiming(List<TimedMidiEvent> events) throws InvalidMidiDataException {
         var target = new Sequence(Sequence.PPQ, MIDI_TICKS_PER_QUARTER);
         var targetTrack = target.createTrack();
-        var events = collectTimedEvents(source);
         for (var event : events) {
             targetTrack.add(new MidiEvent(cloneMessage(event.message()), event.tickMillis()));
         }
         return target;
+    }
+
+    private static List<SMAFDecoder.SequenceSysExEvent> extractSequencerSpecificYamahaEvents(
+            List<TimedMidiEvent> events) {
+        var sysExEvents = new ArrayList<SMAFDecoder.SequenceSysExEvent>();
+        for (var event : events) {
+            if (!(event.message() instanceof MetaMessage metaMessage)
+                    || metaMessage.getType() != SEQUENCER_SPECIFIC_META_TYPE) {
+                continue;
+            }
+            byte[] data = metaMessage.getData();
+            if (data.length >= 2 && (data[0] & 0xff) == MANUFACTURER_YAMAHA) {
+                sysExEvents.add(new SMAFDecoder.SequenceSysExEvent(
+                        clampedTick(event.tickMillis()),
+                        -1,
+                        data.clone()));
+            }
+        }
+        return sysExEvents;
+    }
+
+    private static int clampedTick(long tick) {
+        return tick > Integer.MAX_VALUE ? Integer.MAX_VALUE : Math.max(0, (int) tick);
+    }
+
+    private static boolean containsMa5MidiData(List<TimedMidiEvent> timedEvents,
+                                               List<SMAFDecoder.SequenceSysExEvent> sequenceSysExEvents) {
+        for (SMAFDecoder.SequenceSysExEvent event : sequenceSysExEvents) {
+            if (looksLikeMa5Packet(event.data())) {
+                return true;
+            }
+        }
+        for (TimedMidiEvent event : timedEvents) {
+            if (event.message() instanceof SysexMessage sysexMessage
+                    && looksLikeMa5Packet(sysexMessage.getData())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean looksLikeMa5Packet(byte[] packet) {
+        byte[] body = normalizeVendorBody(packet);
+        if (body.length < 3 || (body[0] & 0xff) != MANUFACTURER_YAMAHA) {
+            return false;
+        }
+        int family = body[1] & 0xff;
+        if (family == FAMILY_MA5 || family == FAMILY_MA5_COMPACT) {
+            return true;
+        }
+        if (family != FAMILY_LEGACY_SOFTBANK || body.length < 4) {
+            return false;
+        }
+        int subfamily = body[2] & 0xff;
+        int packetType = body[3] & 0xff;
+        return subfamily == LEGACY_SOFTBANK_SUBFAMILY
+                && (packetType == LEGACY_SOFTBANK_VOICE || packetType == LEGACY_SOFTBANK_WAVE);
+    }
+
+    private static byte[] normalizeVendorBody(byte[] data) {
+        if (data == null || data.length == 0) {
+            return new byte[0];
+        }
+        int start = 0;
+        int end = trimF7(data, data.length);
+        if (data.length >= 4 && (data[0] & 0xff) == 0xff && (data[1] & 0xff) == 0xf0) {
+            start = 3;
+            end = trimF7(data, Math.min(data.length, start + (data[2] & 0xff)));
+        } else if (data.length >= 4 && (data[0] & 0xff) == 0xff && (data[1] & 0xff) == 0xf1) {
+            start = 4;
+            int bodyLength = (data[2] & 0xff) | ((data[3] & 0xff) << 8);
+            end = trimF7(data, Math.min(data.length, start + bodyLength));
+        } else if ((data[0] & 0xff) == 0xf0) {
+            start = 1;
+            end = trimF7(data, data.length);
+        }
+        if (end < start) {
+            end = start;
+        }
+        byte[] body = new byte[end - start];
+        System.arraycopy(data, start, body, 0, body.length);
+        return body;
+    }
+
+    private static int trimF7(byte[] data, int end) {
+        int clampedEnd = Math.max(0, Math.min(data.length, end));
+        if (clampedEnd > 0 && (data[clampedEnd - 1] & 0xff) == 0xf7) {
+            return clampedEnd - 1;
+        }
+        return clampedEnd;
     }
 
     private static long sequenceDurationMillis(Sequence sequence) {

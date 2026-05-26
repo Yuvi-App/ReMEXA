@@ -21,7 +21,10 @@ final class SmafAudioDetector {
                 || containsYamahaFamily(startupPackets, 0x04)
                 || containsYamahaFamily(exclusiveVoices, 0x04)
                 || containsYamahaFamilyEvents(sequenceSysExEvents, 0x04)
-                || containsYamahaFamilyEvents(sequenceSysExEvents, 0x05)) {
+                || containsYamahaFamilyEvents(sequenceSysExEvents, 0x05)
+                || containsLegacySoftbankMa5Packet(startupPackets)
+                || containsLegacySoftbankMa5Packet(exclusiveVoices)
+                || containsLegacySoftbankMa5Events(sequenceSysExEvents)) {
             return SmafAudioFamily.MA5;
         }
         if (containsYamahaFamily(startupPackets, 0x03)
@@ -83,6 +86,30 @@ final class SmafAudioDetector {
         return false;
     }
 
+    private static boolean containsLegacySoftbankMa5Packet(List<byte[]> packets) {
+        if (packets == null) {
+            return false;
+        }
+        for (byte[] packet : packets) {
+            if (looksLikeLegacySoftbankMa5Packet(packet)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean containsLegacySoftbankMa5Events(List<SMAFDecoder.SequenceSysExEvent> events) {
+        if (events == null) {
+            return false;
+        }
+        for (SMAFDecoder.SequenceSysExEvent event : events) {
+            if (looksLikeLegacySoftbankMa5Packet(event.data())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static boolean containsYamahaFamily(byte[] data, int family) {
         if (data == null || data.length < 2) {
             return false;
@@ -101,6 +128,21 @@ final class SmafAudioDetector {
                     || (family == 0x03 && version == 0x06);
         }
         return false;
+    }
+
+    private static boolean looksLikeLegacySoftbankMa5Packet(byte[] data) {
+        if (data == null || data.length < 4) {
+            return false;
+        }
+        byte[] body = normalizeVendorBody(data);
+        if (body.length < 4
+                || (body[0] & 0xff) != 0x43
+                || (body[1] & 0xff) != 0x02
+                || (body[2] & 0xff) != 0x02) {
+            return false;
+        }
+        int type = body[3] & 0xff;
+        return type == 0x08 || type == 0x0a;
     }
 
     private static byte[] normalizeVendorBody(byte[] data) {

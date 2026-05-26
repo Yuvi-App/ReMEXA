@@ -89,6 +89,8 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
         private static final float DEFAULT_PITCH_BEND_RANGE_SEMITONES = 2.0f;
         private static final float SEMITONES_PER_OCTAVE = 12.0f;
         private static final int MA5_DRUM_KEY_MIDI_BASE = 36;
+        private static final int LEGACY_MELODIC_BANK_MSB = 0x7c;
+        private static final int LEGACY_DRUM_BANK_MSB = 0x7d;
         private static final int[] AICA_STEPS = {230, 230, 230, 230, 307, 409, 512, 614};
         private static final int[] YM2608_STEPS = {57, 57, 57, 57, 77, 102, 128, 153};
         private static final boolean PCM_OVERLAY_ENABLED =
@@ -227,7 +229,7 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
         private final float[] internalChannelVolumes = new float[CHANNEL_COUNT];
         private final float[] internalChannelExpressions = new float[CHANNEL_COUNT];
         private final float[] channelPans = new float[CHANNEL_COUNT];
-        private final Map<Integer, MA5PcmVoiceProgram> pcmPrograms = new HashMap<>();
+        private final Map<Integer, List<MA5PcmVoiceProgram>> pcmPrograms = new HashMap<>();
         private final Map<Integer, MA5PcmVoiceProgram> pcmDrumPrograms = new HashMap<>();
         private final Map<Integer, int[]> pcmWaves = new HashMap<>();
         private final List<PcmNote> pcmNotes = new ArrayList<>();
@@ -489,7 +491,8 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
             if (voice.drumVoice()) {
                 pcmDrumPrograms.put(programKey(voice.bankLsb(), voice.program()), voice);
             } else {
-                pcmPrograms.put(programKey(voice.bankLsb(), voice.program()), voice);
+                pcmPrograms.computeIfAbsent(programKey(voice.bankLsb(), voice.program()), ignored -> new ArrayList<>())
+                        .add(voice);
             }
         }
 
@@ -497,15 +500,44 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
             if (!PCM_OVERLAY_ENABLED || channel < 0 || channel >= CHANNEL_COUNT) {
                 return null;
             }
+            int midiNote = key + 69;
             if (channelDrumBanks[channel] || channel == MIDI_PERCUSSION_CHANNEL) {
-                int midiNote = key + 69;
                 int drumKey = midiNote - MA5_DRUM_KEY_MIDI_BASE;
                 MA5PcmVoiceProgram drumVoice = pcmDrumPrograms.get(programKey(channelBanks[channel], drumKey));
                 if (drumVoice != null) {
                     return drumVoice;
                 }
+                drumVoice = pcmDrumPrograms.get(programKey(LEGACY_DRUM_BANK_MSB, drumKey));
+                if (drumVoice != null) {
+                    return drumVoice;
+                }
+                drumVoice = pcmDrumPrograms.get(programKey(0, drumKey));
+                if (drumVoice != null) {
+                    return drumVoice;
+                }
             }
-            return pcmPrograms.get(programKey(channelBanks[channel], channelPrograms[channel]));
+            MA5PcmVoiceProgram voice = pcmProgramForKey(channelBanks[channel], channelPrograms[channel], midiNote);
+            if (voice != null) {
+                return voice;
+            }
+            voice = pcmProgramForKey(LEGACY_MELODIC_BANK_MSB, channelPrograms[channel], midiNote);
+            if (voice != null) {
+                return voice;
+            }
+            return pcmProgramForKey(0, channelPrograms[channel], midiNote);
+        }
+
+        private MA5PcmVoiceProgram pcmProgramForKey(int bank, int program, int midiNote) {
+            List<MA5PcmVoiceProgram> voices = pcmPrograms.get(programKey(bank, program));
+            if (voices == null || voices.isEmpty()) {
+                return null;
+            }
+            for (MA5PcmVoiceProgram voice : voices) {
+                if (midiNote >= voice.keyLow() && midiNote <= voice.keyHigh()) {
+                    return voice;
+                }
+            }
+            return voices.get(voices.size() - 1);
         }
 
         private int[] pcmWave(MA5PcmVoiceProgram voice) {

@@ -664,10 +664,12 @@ public final class Manager {
 
         @Override
         protected synchronized void doRealize() throws MediaException {
-            var midiSynth = System.getProperty("remexa.midiSynth", YamahaMidiPlayback.SYNTH_MA3)
+            var midiSynth = System.getProperty("remexa.midiSynth", YamahaMidiPlayback.SYNTH_AUTO)
                     .trim()
                     .toLowerCase(Locale.ROOT);
-            if (YamahaMidiPlayback.SYNTH_MA3.equals(midiSynth) || YamahaMidiPlayback.SYNTH_MA5.equals(midiSynth)) {
+            if (YamahaMidiPlayback.SYNTH_AUTO.equals(midiSynth)
+                    || YamahaMidiPlayback.SYNTH_MA3.equals(midiSynth)
+                    || YamahaMidiPlayback.SYNTH_MA5.equals(midiSynth)) {
                 try {
                     yamahaPlayback = YamahaMidiPlayback.create(source, midiSynth);
                     yamahaPlayback.setCompletionListener(this::notifyEndOfMedia);
