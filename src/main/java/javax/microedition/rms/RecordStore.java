@@ -688,6 +688,8 @@ public final class RecordStore {
         String baseName = extensionIndex >= 0 ? rawName.substring(0, extensionIndex) : rawName;
         candidates.add(parent.resolve(baseName + ".rms"));
         candidates.add(parent.resolve(baseName + ".RMS"));
+        candidates.add(parent.resolve(rawName + ".rms"));
+        candidates.add(parent.resolve(rawName + ".RMS"));
     }
 
     private static List<String> readLegacyStoreNames(Path legacyContainer) throws IOException {
