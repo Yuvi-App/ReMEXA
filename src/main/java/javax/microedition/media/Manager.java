@@ -1014,9 +1014,11 @@ public final class Manager {
     }
 
     private static final class WavPlayer extends AbstractPlayer {
+        private static final float YAMAHA_ADPCM_GAIN = wavYamahaAdpcmGain();
         private final byte[] source;
         private RenderedPcmAudio audio;
         private RenderedPcmPlayer playback;
+        private float outputGain = 1.0f;
         private volatile long playbackStartedAtNanos;
         private volatile long cachedMediaTimeMillis;
 
@@ -1028,7 +1030,9 @@ public final class Manager {
         @Override
         protected synchronized void doRealize() throws MediaException {
             try {
-                audio = openRenderedAudio(source);
+                DecodedWavAudio decoded = openDecodedAudio(source);
+                audio = decoded.audio();
+                outputGain = decoded.outputGain();
                 playback = new RenderedPcmPlayer(audio);
                 playback.setCompletionListener(() -> {
                     long duration = durationMillis(audio);
@@ -1093,7 +1097,7 @@ public final class Manager {
                 return;
             }
             int level = muted() ? 0 : Math.round(Math.max(0, Math.min(100, volumeLevel())) * 127.0f / 100.0f);
-            playback.setVolume(level);
+            playback.setVolume(scaleVolume(level, outputGain));
         }
 
         @Override
@@ -1147,6 +1151,7 @@ public final class Manager {
             RenderedPcmPlayer currentPlayback = playback;
             playback = null;
             audio = null;
+            outputGain = 1.0f;
             playbackStartedAtNanos = 0L;
             cachedMediaTimeMillis = 0L;
             if (currentPlayback != null) {
@@ -1158,18 +1163,27 @@ public final class Manager {
             }
         }
 
-        private static RenderedPcmAudio openRenderedAudio(byte[] source) throws Exception {
+        private static DecodedWavAudio openDecodedAudio(byte[] source) throws Exception {
+            if (isYamahaAdpcmWav(source)) {
+                return decodedLegacyAudio(source);
+            }
             try {
-                return openRenderedAudioWithAudioSystem(source);
+                return new DecodedWavAudio(openRenderedAudioWithAudioSystem(source), 1.0f);
             } catch (UnsupportedAudioFileException | IllegalArgumentException exception) {
-                byte[] decoded = decodeLegacyWav(source);
                 try {
-                    return openRenderedAudioWithAudioSystem(decoded);
-                } catch (UnsupportedAudioFileException | IllegalArgumentException fallbackException) {
+                    return decodedLegacyAudio(source);
+                } catch (Exception fallbackException) {
                     fallbackException.addSuppressed(exception);
                     throw fallbackException;
                 }
             }
+        }
+
+        private static DecodedWavAudio decodedLegacyAudio(byte[] source) throws Exception {
+            LegacyWavDecode decoded = decodeLegacyWav(source);
+            return new DecodedWavAudio(
+                    openRenderedAudioWithAudioSystem(decoded.wavData()),
+                    decoded.outputGain());
         }
 
         private static RenderedPcmAudio openRenderedAudioWithAudioSystem(byte[] source)
@@ -1233,7 +1247,7 @@ public final class Manager {
             return Math.max(0L, Math.round(audio.frameCount() * 1000.0 / audio.sampleRate()));
         }
 
-        private static byte[] decodeLegacyWav(byte[] source) throws MediaException {
+        private static LegacyWavDecode decodeLegacyWav(byte[] source) throws MediaException {
             try (ByteArrayInputStream input = new ByteArrayInputStream(source)) {
                 int[] header = WAVTools.readHeader(input);
                 int audioFormat = header[0];
@@ -1247,21 +1261,55 @@ public final class Manager {
                 byte[] payload = Arrays.copyOfRange(source, payloadStart, payloadEnd);
 
                 if (audioFormat == 1) {
-                    return switch (bitsPerSample) {
+                    byte[] decoded = switch (bitsPerSample) {
                         case 4 -> WAVTools.convert4BitWav(payload, channels, sampleRate, false);
                         case 8 -> WAVTools.convert8BitWav(payload, channels, sampleRate, false);
                         case 12 -> WAVTools.convert12BitWav(payload, channels, sampleRate, true);
                         case 16 -> WAVTools.convert16BitWav(payload, channels, sampleRate, true);
                         default -> throw new MediaException("Unsupported PCM WAV bit depth: " + bitsPerSample);
                     };
+                    return new LegacyWavDecode(decoded, 1.0f);
                 }
                 if (audioFormat == 0x11 || audioFormat == 0x20) {
-                    return WAVYamahaADPCMDecoder.ADPCMBDecode(payload, sampleRate, channels);
+                    float outputGain = audioFormat == 0x20 ? YAMAHA_ADPCM_GAIN : 1.0f;
+                    return new LegacyWavDecode(
+                            WAVYamahaADPCMDecoder.ADPCMBDecode(payload, sampleRate, channels),
+                            outputGain);
                 }
                 throw new MediaException("Unsupported WAV encoding: " + audioFormat);
             } catch (IOException exception) {
                 throw new MediaException("Failed to decode legacy WAV audio.", exception);
             }
+        }
+
+        private static boolean isYamahaAdpcmWav(byte[] source) {
+            try (ByteArrayInputStream input = new ByteArrayInputStream(source)) {
+                return WAVTools.readHeader(input)[0] == 0x20;
+            } catch (IOException | RuntimeException exception) {
+                return false;
+            }
+        }
+
+        private static int scaleVolume(int level, float gain) {
+            return Math.max(0, Math.min(127, Math.round(level * gain)));
+        }
+
+        private static float wavYamahaAdpcmGain() {
+            try {
+                return clampGain(Float.parseFloat(System.getProperty("remexa.wavYamahaAdpcmGain", "0.35")));
+            } catch (NumberFormatException exception) {
+                return 0.35f;
+            }
+        }
+
+        private static float clampGain(float value) {
+            return Math.max(0.0f, Math.min(1.0f, value));
+        }
+
+        private record DecodedWavAudio(RenderedPcmAudio audio, float outputGain) {
+        }
+
+        private record LegacyWavDecode(byte[] wavData, float outputGain) {
         }
     }
 }
