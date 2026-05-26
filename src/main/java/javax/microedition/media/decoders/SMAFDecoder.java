@@ -972,10 +972,10 @@ public final class SMAFDecoder
         byte noteNumber = 0;
         MidiEvent midiEvent = null;
 
-        // Handy Phone uses the loud 0x7f default in vavi-sound. MMMG/SoftBank
-        // SEQU notes do not carry velocity, and forcing them to 0x7f makes the
-        // synthesized path sound harsh compared with authored volume/expression.
-        if(formatType == (byte) 0x00)
+        // Handy Phone and SoftBank MMMG no-inline-velocity notes use the same
+        // loud default as the reference Yamaha path; authored volume and
+        // expression events still shape the channel level afterward.
+        if(formatType == (byte) 0x00 || formatType == (byte) 0x04)
         {
             for(int i = 0; i < channelData.length; i++) { channelData[i].velocity = 127; }
         }

@@ -752,7 +752,10 @@ public class MA3Sampler
     {
         MA3Algorithm[] algDrums = this.ma3.algDrums;
 
-        // Transform wave drum keys into FM drum keys
+        // Transform wave drum keys into FM drum keys. Keep the legacy offset:
+        // MA3/MA5 ROM drum presets are ordered for the existing renderer's
+        // key convention, and shifting this table makes SoftBank MIDI kits
+        // sound like pitched buzzes instead of percussion.
         if (key < 0)
             key += 35;
 
@@ -769,20 +772,32 @@ public class MA3Sampler
      */
     MA3Algorithm getDrumWave(int key)
     {
-        // Error checking
-        if (key < -24)
-            return null;
+        int midiNote = key + 69;
 
-        // Select the registered wave algorithm, if available
+        // Select the preset wave drum by Yamaha drum key. The preset table is
+        // indexed as drumKey - 24, while renderer keys are relative to MIDI A4.
         MA3Algorithm[] algs = this.ma3.algWaveDrums;
         MA3Algorithm ret = null;
-        if (key < 0)
+        int presetKey = midiNote - 24;
+        if (algs != null && presetKey >= 0 && presetKey < algs.length)
+            ret = algs[presetKey];
+
+        // Select a registered user wave drum, if present. Keep the legacy
+        // relative lookup as a fallback for authored wave-drum SysEx that uses
+        // the compact 0..23 key space.
+        if (ret == null)
         {
             algs = this.wavDrums;
-            key += 24;
+            int registeredKey = midiNote;
+            if (registeredKey >= 0 && registeredKey < algs.length)
+                ret = algs[registeredKey];
+            if (ret == null && key < 0)
+            {
+                registeredKey = key + 24;
+                if (registeredKey >= 0 && registeredKey < algs.length)
+                    ret = algs[registeredKey];
+            }
         }
-        if (key >= 0 && key < algs.length)
-            ret = algs[key];
 
         // Error checking
         int[] wavRam = this.wavRam;

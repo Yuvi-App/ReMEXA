@@ -16,16 +16,23 @@ import javax.sound.sampled.AudioSystem;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.Deque;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 final class SmafSequencedRenderer {
     private static final int DEFAULT_OUTPUT_SAMPLE_RATE = 32_000;
     private static final int OUTPUT_CHANNELS = 2;
+    private static final int MIDI_PERCUSSION_CHANNEL = 9;
+    private static final int INTERNAL_LEGACY_YAMAHA_MESSAGE = 0x72;
+    private static final int INTERNAL_LEGACY_YAMAHA_BANK = 0x0c;
     private static final float TRAILING_SILENCE_EPSILON = 0.0001f;
     private static final int TRAILING_SILENCE_GRACE_MILLIS = 120;
     private static final int MAX_STREAM_TAIL_MILLIS =
@@ -156,10 +163,93 @@ final class SmafSequencedRenderer {
                 .comparingLong(RenderEvent::tick)
                 .thenComparingInt(RenderEvent::priority)
                 .thenComparingInt(RenderEvent::order));
-        return suppressPcmCarrierNotes(
+        events = suppressPcmCarrierNotes(
                 suppressLegacyYamahaCarrierNotes(events),
                 pcmTriggers,
                 pcmClips);
+        return restoreInternalSoftbankDrumChannels(events, sysExEvents, pcmTriggers);
+    }
+
+    private static List<RenderEvent> restoreInternalSoftbankDrumChannels(List<RenderEvent> events,
+                                                                         List<SMAFDecoder.SequenceSysExEvent> sysExEvents,
+                                                                         List<SMAFDecoder.PcmSequenceTrigger> pcmTriggers) {
+        Set<Integer> logicalDrumChannels = internalSoftbankDrumChannels(sysExEvents);
+        if (logicalDrumChannels.isEmpty() || pcmTriggers.isEmpty()) {
+            return events;
+        }
+
+        Map<Long, Deque<Integer>> noteOnChannels = new HashMap<>();
+        Map<Long, Deque<Integer>> noteOffChannels = new HashMap<>();
+        for (SMAFDecoder.PcmSequenceTrigger trigger : pcmTriggers) {
+            if (trigger.midiChannel() != MIDI_PERCUSSION_CHANNEL
+                    || trigger.smafChannel() == MIDI_PERCUSSION_CHANNEL
+                    || !logicalDrumChannels.contains(trigger.smafChannel())) {
+                continue;
+            }
+            noteOnChannels
+                    .computeIfAbsent(tickChannelNoteKey(trigger.startTick(), trigger.midiChannel(), trigger.midiNote()),
+                            ignored -> new ArrayDeque<>())
+                    .add(trigger.smafChannel());
+            noteOffChannels
+                    .computeIfAbsent(tickChannelNoteKey(trigger.triggerTick(), trigger.midiChannel(), trigger.midiNote()),
+                            ignored -> new ArrayDeque<>())
+                    .add(trigger.smafChannel());
+        }
+        if (noteOnChannels.isEmpty()) {
+            return events;
+        }
+
+        List<RenderEvent> remapped = new ArrayList<>(events.size());
+        int remappedCount = 0;
+        for (RenderEvent event : events) {
+            if (event.sysEx != null
+                    || event.channel != MIDI_PERCUSSION_CHANNEL
+                    || (event.command != ShortMessage.NOTE_ON && event.command != ShortMessage.NOTE_OFF)) {
+                remapped.add(event);
+                continue;
+            }
+
+            boolean noteOn = event.command == ShortMessage.NOTE_ON && event.data2 > 0;
+            Map<Long, Deque<Integer>> channelsByKey = noteOn ? noteOnChannels : noteOffChannels;
+            Deque<Integer> channels = channelsByKey.get(tickChannelNoteKey(event.tick, event.channel, event.data1));
+            if (channels == null || channels.isEmpty()) {
+                remapped.add(event);
+                continue;
+            }
+
+            int logicalChannel = channels.removeFirst();
+            remapped.add(event.withChannel(logicalChannel));
+            remappedCount++;
+        }
+
+        if (remappedCount > 0 && SmafDebug.isEnabled("render", SmafDebug.Level.INFO)) {
+            SmafDebug.info("render",
+                    "Restored " + remappedCount + " SoftBank SPF drum event(s) to logical channels "
+                            + logicalDrumChannels);
+        }
+        return remapped;
+    }
+
+    private static Set<Integer> internalSoftbankDrumChannels(List<SMAFDecoder.SequenceSysExEvent> sysExEvents) {
+        Set<Integer> channels = new HashSet<>();
+        for (SMAFDecoder.SequenceSysExEvent event : sysExEvents) {
+            byte[] data = event.data();
+            if (data == null || data.length < 4
+                    || (data[0] & 0xff) != INTERNAL_LEGACY_YAMAHA_MESSAGE
+                    || (data[1] & 0xff) != INTERNAL_LEGACY_YAMAHA_BANK
+                    || (data[3] & 0x80) == 0) {
+                continue;
+            }
+            channels.add(logicalSoftbankChannel(event.sourceBank(), data[2] & 0xff));
+        }
+        return channels;
+    }
+
+    private static int logicalSoftbankChannel(int sourceBank, int channelByte) {
+        if (sourceBank >= 0) {
+            return ((sourceBank & 0x03) << 2) | (channelByte & 0x03);
+        }
+        return channelByte & 0x0f;
     }
 
     private static List<RenderEvent> suppressLegacyYamahaCarrierNotes(List<RenderEvent> events) {
@@ -760,6 +850,19 @@ final class SmafSequencedRenderer {
                     0,
                     sourceBank,
                     sysEx == null ? new byte[0] : sysEx.clone());
+        }
+
+        private RenderEvent withChannel(int newChannel) {
+            return new RenderEvent(
+                    tick,
+                    order,
+                    priority,
+                    command,
+                    newChannel,
+                    data1,
+                    data2,
+                    sysExSourceBank,
+                    sysEx == null ? null : sysEx.clone());
         }
 
         private static int priorityFor(int command, int velocity) {

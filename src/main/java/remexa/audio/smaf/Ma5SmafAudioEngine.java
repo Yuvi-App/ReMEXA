@@ -24,7 +24,10 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
     private final SmafSequencedRenderer renderer;
 
     Ma5SmafAudioEngine() {
-        MA3SamplerProvider provider = new MA3SamplerProvider();
+        MA3SamplerProvider provider = new MA3SamplerProvider(
+                MA3SamplerProvider.FM_MA3_4OP,
+                MA3SamplerProvider.FM_MA3_4OP,
+                MA3SamplerProvider.WAVE_DRUM_NONE);
         renderer = new SmafSequencedRenderer("MA5", sampleRate -> {
             Sampler sampler = provider.instance(sampleRate);
             return new Ma5Adapter(sampler, sampleRate);
