@@ -546,7 +546,14 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
             if (!PCM_OVERLAY_ENABLED || voice == null) {
                 return null;
             }
-            return pcmWaves.get(voice.waveId());
+            int[] userWave = pcmWaves.get(voice.waveId());
+            if (userWave != null) {
+                return userWave;
+            }
+            if (voice.drumVoice()) {
+                return MA3SamplerProvider.decodedWaveRom(voice.waveId());
+            }
+            return null;
         }
 
         private void renderPcmOverlay(float[] samples,
@@ -565,6 +572,7 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
                 int end = Math.min(note.voice.endPoint() + 1, wave.length);
                 int loop = Math.max(0, Math.min(note.voice.loopPoint(), end));
                 boolean repeat = note.voice.repeatMode()
+                        && !note.oneShotDrum()
                         && note.voice.loopPoint() < note.voice.endPoint()
                         && loop < end;
                 if (end <= 0 || note.position >= end) {
@@ -848,6 +856,10 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
                 // key; above it plays faster, below it slower.
                 return baseAdvance
                         * hardwarePitchRatio(midiKey - PCM_REFERENCE_KEY + bendSemitones + vibrato);
+            }
+
+            private boolean oneShotDrum() {
+                return voice.drumVoice() && voice.ignoreKeyOff();
             }
 
             /**

@@ -228,6 +228,23 @@ public class MA3SamplerProvider
     static final int[][] MA3_WAVEROM = MA3SamplerProvider.waveRom(
         MA3Rom.MA3_WAVEROM);
 
+    /**
+     * Decoded built-in wave ROM sample data.
+     *
+     * <p>The MA-5 default VM5 drum voices reference the same small ROM sample
+     * bank by wave ID. Exposing the decoded samples lets the MA-5 PCM overlay
+     * render those default drum voices when an SPF carries only VM35 voice
+     * metadata and relies on the chip ROM for the actual waveform. The
+     * returned array is shared and must be treated as read-only.</p>
+     */
+    public static int[] decodedWaveRom(int waveId)
+    {
+        if (waveId < 0 || waveId >= MA3SamplerProvider.MA3_WAVEROM.length)
+            return null;
+
+        return MA3SamplerProvider.MA3_WAVEROM[waveId];
+    }
+
     static final double MAGIC_B = 12 / Math.log(2);
 
     static final double MAGIC_F = 684 / 33868800.0;
