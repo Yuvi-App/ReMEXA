@@ -209,7 +209,7 @@ public final class Display {
         }
         if (displayable instanceof Canvas canvas) {
             canvas.fireShowNotify();
-            paintInitialCanvasFrame(canvas);
+            requestInitialCanvasFrame(canvas);
             return;
         }
         if (displayable instanceof Screen screen && !(displayable instanceof TextBox)) {
@@ -221,12 +221,13 @@ public final class Display {
         }
     }
 
-    private static void paintInitialCanvasFrame(Canvas canvas) {
+    private static void requestInitialCanvasFrame(Canvas canvas) {
         if (!canvas.isShown()) {
             return;
         }
+        // Do not force serviceRepaints() here; some MIDlets finish canvas setup
+        // after setCurrent() returns and rely on paint being asynchronous.
         canvas.repaint();
-        canvas.serviceRepaints();
     }
 
     private static void deactivateDisplayable(Displayable previous, Displayable next) {
