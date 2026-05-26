@@ -46,6 +46,8 @@ public record MA5PcmVoiceProgram(int bankLsb,
     private static final int LEGACY_FIXED_FIELD_OFFSET = 10;
     private static final int LEGACY_MIN_PCM_BYTES = 27;
     private static final int LEGACY_MIDI_DRUM_BASE = 36;
+    private static final int LEGACY_PCM_TYPE_COMPACT = 0x01;
+    private static final int LEGACY_PCM_TYPE_EXTENDED = 0x03;
     private static final int VM5_PCM_PROGRAM = 0x02;
     private static final int VM5_PCM_HEADER_BYTES = 5;
     private static final int VM5_PCM_PAYLOAD_BYTES = 16;
@@ -168,11 +170,11 @@ public record MA5PcmVoiceProgram(int bankLsb,
         }
 
         int bankMsb = body[4] & 0xff;
+        int pcmType = body[9] & 0xff;
+        if (pcmType != LEGACY_PCM_TYPE_COMPACT && pcmType != LEGACY_PCM_TYPE_EXTENDED) {
+            return null;
+        }
         if (bankMsb == LEGACY_MELODIC_BANK_MSB) {
-            int splitCount = body[9] & 0xff;
-            if (splitCount == 0) {
-                return null;
-            }
             int program = body[6] & 0x7f;
             int keyLow = body[7] & 0x7f;
             int keyHigh = body[8] & 0x7f;

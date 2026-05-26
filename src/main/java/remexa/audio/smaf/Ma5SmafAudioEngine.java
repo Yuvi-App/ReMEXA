@@ -537,7 +537,7 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
                     return voice;
                 }
             }
-            return voices.get(voices.size() - 1);
+            return null;
         }
 
         private int[] pcmWave(MA5PcmVoiceProgram voice) {
