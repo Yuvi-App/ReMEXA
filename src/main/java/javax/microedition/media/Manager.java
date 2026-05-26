@@ -32,6 +32,7 @@ import remexa.audio.pcm.RenderedPcmAudio;
 import remexa.audio.pcm.RenderedPcmPlayer;
 import remexa.audio.smaf.SmafPlayback;
 import remexa.audio.smaf.YamahaMidiPlayback;
+import remexa.host.LaunchConfig;
 import remexa.host.runtime.MidletRuntime;
 import remexa.probes.DebugLog;
 import remexa.probes.LogCategory;
@@ -1014,7 +1015,6 @@ public final class Manager {
     }
 
     private static final class WavPlayer extends AbstractPlayer {
-        private static final float YAMAHA_ADPCM_GAIN = wavYamahaAdpcmGain();
         private final byte[] source;
         private RenderedPcmAudio audio;
         private RenderedPcmPlayer playback;
@@ -1271,7 +1271,9 @@ public final class Manager {
                     return new LegacyWavDecode(decoded, 1.0f);
                 }
                 if (audioFormat == 0x11 || audioFormat == 0x20) {
-                    float outputGain = audioFormat == 0x20 ? YAMAHA_ADPCM_GAIN : 1.0f;
+                    float outputGain = audioFormat == 0x20
+                            ? LaunchConfig.resolveConfiguredPcmMixGain(LaunchConfig.WAV_YAMAHA_ADPCM_GAIN_PROPERTY)
+                            : 1.0f;
                     return new LegacyWavDecode(
                             WAVYamahaADPCMDecoder.ADPCMBDecode(payload, sampleRate, channels),
                             outputGain);
@@ -1292,18 +1294,6 @@ public final class Manager {
 
         private static int scaleVolume(int level, float gain) {
             return Math.max(0, Math.min(127, Math.round(level * gain)));
-        }
-
-        private static float wavYamahaAdpcmGain() {
-            try {
-                return clampGain(Float.parseFloat(System.getProperty("remexa.wavYamahaAdpcmGain", "0.35")));
-            } catch (NumberFormatException exception) {
-                return 0.35f;
-            }
-        }
-
-        private static float clampGain(float value) {
-            return Math.max(0.0f, Math.min(1.0f, value));
         }
 
         private record DecodedWavAudio(RenderedPcmAudio audio, float outputGain) {

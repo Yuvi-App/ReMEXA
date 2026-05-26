@@ -9,6 +9,10 @@ public final class LaunchConfig {
     public static final String MEXA_PHONE_TYPE_PROPERTY = "remexa.mexaPhoneType";
     public static final String SMAF_SYNTH_PROPERTY = "remexa.smafSynth";
     public static final String MIDI_SYNTH_PROPERTY = "remexa.midiSynth";
+    public static final String PCM_MIX_GAIN_PROPERTY = "remexa.pcmMixGain";
+    public static final String MA5_PCM_GAIN_PROPERTY = "remexa.ma5PcmGain";
+    public static final String WAV_YAMAHA_ADPCM_GAIN_PROPERTY = "remexa.wavYamahaAdpcmGain";
+    public static final String SMAF_AUDIO_PHRASE_GAIN_PROPERTY = "remexa.smaf.audioPhraseGain";
     public static final String HOST_SCALE_PROPERTY = "remexa.hostScale";
     public static final String DISABLE_DPI_SCALING_PROPERTY = "remexa.disableDpiScaling";
     public static final String FRAME_INTERVAL_PROPERTY = "remexa.frameIntervalMs";
@@ -34,6 +38,9 @@ public final class LaunchConfig {
     public static final int DEFAULT_MOTION_SENSITIVITY_PERCENT = 100;
     public static final int MIN_MOTION_SENSITIVITY_PERCENT = 25;
     public static final int MAX_MOTION_SENSITIVITY_PERCENT = 300;
+    public static final int DEFAULT_PCM_MIX_PERCENT = 35;
+    public static final int MIN_PCM_MIX_PERCENT = 0;
+    public static final int MAX_PCM_MIX_PERCENT = 100;
     public static final int DEFAULT_BLUETOOTH_PORT = 23024;
     public static final int MIN_BLUETOOTH_PORT = 1;
     public static final int MAX_BLUETOOTH_PORT = 65535;
@@ -361,6 +368,81 @@ public final class LaunchConfig {
     public static void applyMidiSynthType(MidiSynthType synthType) {
         var resolved = synthType == null ? MidiSynthType.MA3 : synthType;
         System.setProperty(MIDI_SYNTH_PROPERTY, resolved.id());
+    }
+
+    public static Float parsePcmMixGain(String candidate) {
+        if (candidate == null) {
+            return null;
+        }
+        var normalized = candidate.trim().toLowerCase(Locale.ROOT);
+        if (normalized.isEmpty()) {
+            return null;
+        }
+        boolean percent = normalized.endsWith("%");
+        if (percent) {
+            normalized = normalized.substring(0, normalized.length() - 1).trim();
+        }
+        try {
+            float parsed = Float.parseFloat(normalized);
+            if (percent || parsed > 1.0f) {
+                parsed /= 100.0f;
+            }
+            return clampPcmMixGain(parsed);
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
+    public static float normalizePcmMixGain(String candidate) {
+        var parsed = parsePcmMixGain(candidate);
+        return parsed == null ? pcmMixGainFromPercent(DEFAULT_PCM_MIX_PERCENT) : parsed;
+    }
+
+    public static float resolveConfiguredPcmMixGain() {
+        return normalizePcmMixGain(
+                System.getProperty(
+                        PCM_MIX_GAIN_PROPERTY,
+                        Float.toString(pcmMixGainFromPercent(DEFAULT_PCM_MIX_PERCENT))
+                )
+        );
+    }
+
+    public static float resolveConfiguredPcmMixGain(String legacyProperty) {
+        var legacyValue = legacyProperty == null ? null : System.getProperty(legacyProperty);
+        if (legacyValue != null && !legacyValue.isBlank()) {
+            return normalizePcmMixGain(legacyValue);
+        }
+        return resolveConfiguredPcmMixGain();
+    }
+
+    public static int normalizePcmMixPercent(String candidate) {
+        var parsed = parsePcmMixGain(candidate);
+        return parsed == null ? DEFAULT_PCM_MIX_PERCENT : pcmMixPercentFromGain(parsed);
+    }
+
+    public static float pcmMixGainFromPercent(int percent) {
+        return clampPcmMixPercent(percent) / 100.0f;
+    }
+
+    public static int pcmMixPercentFromGain(float gain) {
+        return clampPcmMixPercent(Math.round(clampPcmMixGain(gain) * 100.0f));
+    }
+
+    public static int clampPcmMixPercent(int percent) {
+        return Math.max(MIN_PCM_MIX_PERCENT, Math.min(MAX_PCM_MIX_PERCENT, percent));
+    }
+
+    public static float clampPcmMixGain(float gain) {
+        return Math.max(0.0f, Math.min(1.0f, gain));
+    }
+
+    public static void applyPcmMixPercent(Integer percent) {
+        var resolved = percent == null ? DEFAULT_PCM_MIX_PERCENT : clampPcmMixPercent(percent);
+        var value = Float.toString(pcmMixGainFromPercent(resolved));
+        System.setProperty(PCM_MIX_GAIN_PROPERTY, value);
+        System.setProperty(MA5_PCM_GAIN_PROPERTY, value);
+        System.setProperty(WAV_YAMAHA_ADPCM_GAIN_PROPERTY, value);
+        System.setProperty(SMAF_AUDIO_PHRASE_GAIN_PROPERTY, value);
     }
 
     public static Integer parseHostScale(String candidate) {

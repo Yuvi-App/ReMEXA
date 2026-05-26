@@ -6,6 +6,7 @@ import remexa.audio.smaf.ma5.MA5PacketInventory;
 import remexa.audio.smaf.ma5.MA5PcmVoiceProgram;
 import remexa.audio.smaf.ma5.MA5SoftbankBridge;
 import remexa.audio.smaf.ma5.MA5WaveDataPacket;
+import remexa.host.LaunchConfig;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -104,8 +105,6 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
                 Boolean.parseBoolean(System.getProperty("remexa.ma5PcmHighNibbleFirst", "false"));
         private static final boolean PCM_ENVELOPE_ENABLED =
                 Boolean.parseBoolean(System.getProperty("remexa.ma5PcmEnvelope", "true"));
-        private static final float PCM_GAIN =
-                Float.parseFloat(System.getProperty("remexa.ma5PcmGain", "0.35"));
         /**
          * Multiplier on the authored PCM sample rate.
          *
@@ -580,7 +579,7 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
                 double panAngle = (Math.max(-1.0f, Math.min(1.0f, pan)) + 1.0) * Math.PI * 0.25;
                 float noteLeft = left * (float) Math.cos(panAngle);
                 float noteRight = right * (float) Math.sin(panAngle);
-                float gain = channelVolumes[note.channel] * note.velocity * PCM_GAIN;
+                float gain = channelVolumes[note.channel] * note.velocity * pcmGain();
 
                 for (int frame = 0; frame < frames; frame++) {
                     if (note.position >= end) {
@@ -632,6 +631,10 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
             float clamped = Math.max(-1.0f, Math.min(1.0f, pan));
             double angle = (clamped + 1.0) * Math.PI * 0.25;
             return new float[] {(float) Math.cos(angle), (float) Math.sin(angle)};
+        }
+
+        private static float pcmGain() {
+            return LaunchConfig.resolveConfiguredPcmMixGain(LaunchConfig.MA5_PCM_GAIN_PROPERTY);
         }
 
         private static int[] decodePcmWave(byte[] adpcm, int offset, int length) {

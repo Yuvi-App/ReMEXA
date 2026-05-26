@@ -1,6 +1,7 @@
 package remexa.audio.smaf;
 
 import org.recompile.mobile.Mobile;
+import remexa.host.LaunchConfig;
 
 import javax.microedition.media.decoders.SMAFDecoder;
 import javax.sound.midi.MetaMessage;
@@ -609,7 +610,8 @@ final class SmafSequencedRenderer {
                 continue;
             }
             int startFrame = tickToFrames(trigger.startTick());
-            float gain = Math.max(0.0f, Math.min(1.0f, trigger.velocity() / 127.0f));
+            float gain = Math.max(0.0f, Math.min(1.0f, trigger.velocity() / 127.0f))
+                    * LaunchConfig.resolveConfiguredPcmMixGain();
             scheduled.add(new ScheduledPcmClip(startFrame, clip, gain));
         }
         scheduled.sort(Comparator.comparingInt(ScheduledPcmClip::startFrame));

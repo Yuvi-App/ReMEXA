@@ -42,6 +42,7 @@ public final class ReMEXA {
         LaunchConfig.applyMexaPhoneType(launchRequest.mexaPhoneType() == null ? HostUiSettings.mexaPhoneType() : launchRequest.mexaPhoneType());
         LaunchConfig.applySmafSynthType(HostUiSettings.smafSynthType());
         LaunchConfig.applyMidiSynthType(midiSynthOverride == null ? HostUiSettings.midiSynthType() : midiSynthOverride);
+        LaunchConfig.applyPcmMixPercent(HostUiSettings.pcmMixPercent());
         LaunchConfig.applyHostScale(launchRequest.hostScale() == null ? HostUiSettings.hostScale() : launchRequest.hostScale());
         LaunchConfig.applyDisableDpiScaling(disableDpiScalingOverride == null ? HostUiSettings.disableDpiScaling() : disableDpiScalingOverride);
         LaunchConfig.applyFrameRateOption(launchRequest.frameRateOption() == null ? HostUiSettings.frameRateOption() : launchRequest.frameRateOption());

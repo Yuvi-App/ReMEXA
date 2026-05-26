@@ -16,8 +16,11 @@ import java.awt.GridLayout;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
+import java.awt.Point;
 import java.awt.RenderingHints;
 import java.awt.datatransfer.DataFlavor;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -30,6 +33,8 @@ import javax.swing.Box;
 import javax.swing.ButtonGroup;
 import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
+import javax.swing.JComponent;
+import javax.swing.JDialog;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JMenu;
@@ -40,13 +45,16 @@ import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JRadioButtonMenuItem;
 import javax.swing.JButton;
+import javax.swing.JSlider;
 import javax.swing.SwingConstants;
 import javax.swing.JPasswordField;
 import javax.swing.JTextField;
+import javax.swing.KeyStroke;
 import javax.swing.TransferHandler;
 import javax.swing.UIManager;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.MatteBorder;
+import javax.swing.plaf.basic.BasicSliderUI;
 import remexa.host.JadLauncher;
 import remexa.host.HostUiSettings;
 import remexa.host.LaunchConfig;
@@ -485,6 +493,10 @@ public final class LauncherFrame extends JFrame {
             midiTypeMenu.add(midiItem);
         }
         audioMenu.add(midiTypeMenu);
+        var pcmMixItem = new JMenuItem("PCM Mix...");
+        styleMenuItem(pcmMixItem);
+        pcmMixItem.addActionListener(event -> showPcmMixDialog());
+        audioMenu.add(pcmMixItem);
         settingsMenu.add(audioMenu);
 
         var connectivityMenu = new JMenu("Connectivity");
@@ -667,6 +679,127 @@ public final class LauncherFrame extends JFrame {
 
     private void updateToggleAllLogsItem(JMenuItem item) {
         item.setText(LogSettings.areAllEnabled() ? "Disable All Debug Logs" : "Enable All Debug Logs");
+    }
+
+    private void showPcmMixDialog() {
+        var dialog = new JDialog(this, "Audio", true);
+        dialog.setUndecorated(true);
+        dialog.setResizable(false);
+        dialog.setBackground(CARD_BACKGROUND);
+
+        var slider = new JSlider(
+                JSlider.HORIZONTAL,
+                LaunchConfig.MIN_PCM_MIX_PERCENT,
+                LaunchConfig.MAX_PCM_MIX_PERCENT,
+                HostUiSettings.pcmMixPercent()
+        );
+        slider.setUI(new PcmMixSliderUi(slider));
+        slider.setOpaque(false);
+        slider.setPreferredSize(new Dimension(260, 42));
+        slider.setMajorTickSpacing(25);
+        slider.setMinorTickSpacing(5);
+        slider.setPaintTicks(true);
+        var valueLabel = new JLabel(slider.getValue() + "%");
+        valueLabel.setForeground(TEXT_PRIMARY);
+        valueLabel.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        valueLabel.setPreferredSize(new Dimension(44, valueLabel.getPreferredSize().height));
+        slider.addChangeListener(event -> valueLabel.setText(slider.getValue() + "%"));
+
+        var titleBar = new JPanel(new BorderLayout());
+        titleBar.setBackground(MENU_BACKGROUND);
+        titleBar.setBorder(BorderFactory.createCompoundBorder(
+                new MatteBorder(0, 0, 1, 0, MENU_BORDER),
+                new EmptyBorder(12, 16, 11, 16)
+        ));
+        var title = new JLabel("Audio");
+        title.setForeground(TEXT_PRIMARY);
+        title.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        titleBar.add(title, BorderLayout.WEST);
+        installDialogDrag(dialog, titleBar, title);
+
+        var content = new JPanel(new BorderLayout());
+        content.setBackground(CARD_BACKGROUND);
+        content.setBorder(BorderFactory.createLineBorder(POPUP_BORDER, 1));
+        content.add(titleBar, BorderLayout.NORTH);
+
+        var panel = new JPanel(new GridBagLayout());
+        panel.setBackground(CARD_BACKGROUND);
+        panel.setBorder(new EmptyBorder(18, 18, 10, 18));
+        var constraints = new GridBagConstraints();
+        constraints.insets = new Insets(6, 6, 6, 6);
+        constraints.anchor = GridBagConstraints.WEST;
+        constraints.fill = GridBagConstraints.HORIZONTAL;
+        constraints.gridx = 0;
+        constraints.gridy = 0;
+        constraints.weightx = 0;
+        var label = new JLabel("PCM Mix");
+        label.setForeground(TEXT_PRIMARY);
+        label.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        panel.add(label, constraints);
+        constraints.gridx = 1;
+        constraints.weightx = 1;
+        panel.add(slider, constraints);
+        constraints.gridx = 2;
+        constraints.weightx = 0;
+        panel.add(valueLabel, constraints);
+
+        var buttons = new JPanel(new BorderLayout(8, 0));
+        buttons.setBackground(CARD_BACKGROUND);
+        buttons.setBorder(new EmptyBorder(4, 24, 18, 24));
+        var cancelButton = new JButton("Cancel");
+        var applyButton = new JButton("Apply");
+        styleLauncherButton(cancelButton, false);
+        styleLauncherButton(applyButton, true);
+        cancelButton.addActionListener(event -> dialog.dispose());
+        applyButton.addActionListener(event -> {
+            int percent = slider.getValue();
+            HostUiSettings.setPcmMixPercent(percent);
+            LaunchConfig.applyPcmMixPercent(percent);
+            DebugLog.log(
+                    LogCategory.FRONTEND,
+                    LauncherFrame.class.getName(),
+                    "PCM mix set to " + percent + "%"
+            );
+            dialog.dispose();
+        });
+        buttons.add(cancelButton, BorderLayout.WEST);
+        buttons.add(applyButton, BorderLayout.EAST);
+
+        content.add(panel, BorderLayout.CENTER);
+        content.add(buttons, BorderLayout.SOUTH);
+        dialog.setContentPane(content);
+        dialog.getRootPane().setDefaultButton(applyButton);
+        dialog.getRootPane().registerKeyboardAction(
+                event -> dialog.dispose(),
+                KeyStroke.getKeyStroke("ESCAPE"),
+                JComponent.WHEN_IN_FOCUSED_WINDOW
+        );
+        dialog.pack();
+        dialog.setLocationRelativeTo(this);
+        dialog.setVisible(true);
+    }
+
+    private static void installDialogDrag(JDialog dialog, JComponent... dragTargets) {
+        var dragOffset = new Point[1];
+        var adapter = new MouseAdapter() {
+            @Override
+            public void mousePressed(MouseEvent event) {
+                dragOffset[0] = event.getPoint();
+            }
+
+            @Override
+            public void mouseDragged(MouseEvent event) {
+                if (dragOffset[0] == null) {
+                    return;
+                }
+                Point screenPoint = event.getLocationOnScreen();
+                dialog.setLocation(screenPoint.x - dragOffset[0].x, screenPoint.y - dragOffset[0].y);
+            }
+        };
+        for (var target : dragTargets) {
+            target.addMouseListener(adapter);
+            target.addMouseMotionListener(adapter);
+        }
     }
 
     private void showBluetoothSettingsDialog() {
@@ -943,6 +1076,78 @@ public final class LauncherFrame extends JFrame {
             return;
         }
         new ProcessBuilder("xdg-open", folder.toString()).start();
+    }
+
+    private static final class PcmMixSliderUi extends BasicSliderUI {
+        private static final int TRACK_HEIGHT = 6;
+
+        private PcmMixSliderUi(JSlider slider) {
+            super(slider);
+        }
+
+        @Override
+        protected Dimension getThumbSize() {
+            return new Dimension(16, 16);
+        }
+
+        @Override
+        public void paintTrack(Graphics graphics) {
+            var g2 = (Graphics2D) graphics.create();
+            try {
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                int centerY = trackRect.y + trackRect.height / 2;
+                int left = trackRect.x;
+                int right = trackRect.x + trackRect.width;
+                int filledRight = thumbRect.x + thumbRect.width / 2;
+                g2.setStroke(new BasicStroke(TRACK_HEIGHT, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+                g2.setColor(MENU_BORDER);
+                g2.drawLine(left, centerY, right, centerY);
+                g2.setColor(CARD_BORDER_ACTIVE);
+                g2.drawLine(left, centerY, filledRight, centerY);
+            } finally {
+                g2.dispose();
+            }
+        }
+
+        @Override
+        public void paintTicks(Graphics graphics) {
+            if (!slider.getPaintTicks() || slider.getMinorTickSpacing() <= 0) {
+                return;
+            }
+            var g2 = (Graphics2D) graphics.create();
+            try {
+                g2.setColor(CARD_BORDER);
+                int y = tickRect.y + 3;
+                int major = Math.max(slider.getMajorTickSpacing(), slider.getMinorTickSpacing());
+                for (int value = slider.getMinimum(); value <= slider.getMaximum(); value += slider.getMinorTickSpacing()) {
+                    int x = xPositionForValue(value);
+                    int height = value % major == 0 ? 7 : 4;
+                    g2.drawLine(x, y, x, y + height);
+                }
+            } finally {
+                g2.dispose();
+            }
+        }
+
+        @Override
+        public void paintThumb(Graphics graphics) {
+            var g2 = (Graphics2D) graphics.create();
+            try {
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                int size = Math.min(thumbRect.width, thumbRect.height);
+                g2.setColor(MENU_HOVER_BACKGROUND);
+                g2.fillOval(thumbRect.x, thumbRect.y, size, size);
+                g2.setStroke(new BasicStroke(2.0f));
+                g2.setColor(CARD_BORDER_ACTIVE);
+                g2.drawOval(thumbRect.x + 1, thumbRect.y + 1, size - 3, size - 3);
+            } finally {
+                g2.dispose();
+            }
+        }
+
+        @Override
+        public void paintFocus(Graphics graphics) {
+        }
     }
 
     private final class JadTransferHandler extends TransferHandler {

@@ -16,6 +16,7 @@
 */
 package com.jblend.media.smaf.phrase;
 
+import remexa.host.LaunchConfig;
 import remexa.host.runtime.MidletRuntime;
 import remexa.probes.DebugLog;
 import remexa.probes.LogCategory;
@@ -26,7 +27,6 @@ public final class AudioPhraseTrack {
     public static final int PLAYING = PhraseTrack.PLAYING;
     public static final int PAUSED = PhraseTrack.PAUSED;
     private static final int DEFAULT_VOLUME = 100;
-    private static final float AUDIO_PHRASE_GAIN = audioPhraseGain();
 
     private final PhraseTrack delegate;
     private int volume = DEFAULT_VOLUME;
@@ -128,15 +128,7 @@ public final class AudioPhraseTrack {
     }
 
     private static int effectiveVolume(int value) {
-        return Math.max(0, Math.min(127, Math.round(value * AUDIO_PHRASE_GAIN)));
-    }
-
-    private static float audioPhraseGain() {
-        try {
-            return Math.max(0.0f,
-                    Float.parseFloat(System.getProperty("remexa.smaf.audioPhraseGain", "0.35")));
-        } catch (NumberFormatException exception) {
-            return 0.55f;
-        }
+        return Math.max(0, Math.min(127, Math.round(value * LaunchConfig.resolveConfiguredPcmMixGain(
+                LaunchConfig.SMAF_AUDIO_PHRASE_GAIN_PROPERTY))));
     }
 }

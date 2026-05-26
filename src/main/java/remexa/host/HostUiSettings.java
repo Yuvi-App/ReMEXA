@@ -95,6 +95,22 @@ public final class HostUiSettings {
         RemexaPreferences.ui().put(RemexaPreferences.MIDI_SYNTH_TYPE_KEY, resolved.id());
     }
 
+    public static int pcmMixPercent() {
+        return LaunchConfig.normalizePcmMixPercent(
+                RemexaPreferences.ui().get(
+                        RemexaPreferences.PCM_MIX_PERCENT_KEY,
+                        Integer.toString(LaunchConfig.DEFAULT_PCM_MIX_PERCENT)
+                )
+        );
+    }
+
+    public static void setPcmMixPercent(int percent) {
+        RemexaPreferences.ui().putInt(
+                RemexaPreferences.PCM_MIX_PERCENT_KEY,
+                LaunchConfig.clampPcmMixPercent(percent)
+        );
+    }
+
     public static int hostScale() {
         return LaunchConfig.normalizeHostScale(
                 RemexaPreferences.ui().get(RemexaPreferences.HOST_SCALE_KEY, "3")
