@@ -140,6 +140,10 @@ public final class PhraseTrack {
         MidletRuntime.ensureThreadActive();
         rememberCurrentOwner();
         DebugLog.log(LogCategory.MEDIA, PhraseTrack.class.getName(), "Track " + id + " play(loop=" + loop + ")");
+        ensurePlayback();
+        if (playback.getState() != READY) {
+            return;
+        }
         if (subjectTo != null) {
             return;
         }
