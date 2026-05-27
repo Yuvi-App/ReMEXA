@@ -111,6 +111,47 @@ public final class HostUiSettings {
         );
     }
 
+    public static int ma5PcmMixPercent() {
+        return pcmMixPercent(
+                RemexaPreferences.MA5_PCM_MIX_PERCENT_KEY,
+                Integer.toString(pcmMixPercent())
+        );
+    }
+
+    public static void setMa5PcmMixPercent(int percent) {
+        setPcmMixPercent(RemexaPreferences.MA5_PCM_MIX_PERCENT_KEY, percent);
+    }
+
+    public static int wavYamahaAdpcmMixPercent() {
+        return pcmMixPercent(
+                RemexaPreferences.WAV_YAMAHA_ADPCM_MIX_PERCENT_KEY,
+                Integer.toString(pcmMixPercent())
+        );
+    }
+
+    public static void setWavYamahaAdpcmMixPercent(int percent) {
+        setPcmMixPercent(RemexaPreferences.WAV_YAMAHA_ADPCM_MIX_PERCENT_KEY, percent);
+    }
+
+    public static int smafAudioPhraseMixPercent() {
+        return pcmMixPercent(
+                RemexaPreferences.SMAF_AUDIO_PHRASE_MIX_PERCENT_KEY,
+                Integer.toString(pcmMixPercent())
+        );
+    }
+
+    public static void setSmafAudioPhraseMixPercent(int percent) {
+        setPcmMixPercent(RemexaPreferences.SMAF_AUDIO_PHRASE_MIX_PERCENT_KEY, percent);
+    }
+
+    private static int pcmMixPercent(String key, String fallback) {
+        return LaunchConfig.normalizePcmMixPercent(RemexaPreferences.ui().get(key, fallback));
+    }
+
+    private static void setPcmMixPercent(String key, int percent) {
+        RemexaPreferences.ui().putInt(key, LaunchConfig.clampPcmMixPercent(percent));
+    }
+
     public static int hostScale() {
         return LaunchConfig.normalizeHostScale(
                 RemexaPreferences.ui().get(RemexaPreferences.HOST_SCALE_KEY, "3")

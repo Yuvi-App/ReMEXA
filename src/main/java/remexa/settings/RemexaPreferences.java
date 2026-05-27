@@ -18,6 +18,9 @@ public final class RemexaPreferences {
     public static final String SMAF_SYNTH_TYPE_KEY = "smafSynthType";
     public static final String MIDI_SYNTH_TYPE_KEY = "midiSynthType";
     public static final String PCM_MIX_PERCENT_KEY = "pcmMixPercent";
+    public static final String MA5_PCM_MIX_PERCENT_KEY = "ma5PcmMixPercent";
+    public static final String WAV_YAMAHA_ADPCM_MIX_PERCENT_KEY = "wavYamahaAdpcmMixPercent";
+    public static final String SMAF_AUDIO_PHRASE_MIX_PERCENT_KEY = "smafAudioPhraseMixPercent";
     public static final String HOST_SCALE_KEY = "hostScale";
     public static final String DISABLE_DPI_SCALING_KEY = "disableDpiScaling";
     public static final String FRAME_RATE_KEY = "frameRate";

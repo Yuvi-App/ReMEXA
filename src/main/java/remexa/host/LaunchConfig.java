@@ -437,12 +437,22 @@ public final class LaunchConfig {
     }
 
     public static void applyPcmMixPercent(Integer percent) {
+        applyPcmMixPercents(percent, percent, percent, percent);
+    }
+
+    public static void applyPcmMixPercents(Integer pcmPercent,
+                                           Integer ma5PcmPercent,
+                                           Integer wavYamahaAdpcmPercent,
+                                           Integer smafAudioPhrasePercent) {
+        applyPcmMixPercent(PCM_MIX_GAIN_PROPERTY, pcmPercent);
+        applyPcmMixPercent(MA5_PCM_GAIN_PROPERTY, ma5PcmPercent);
+        applyPcmMixPercent(WAV_YAMAHA_ADPCM_GAIN_PROPERTY, wavYamahaAdpcmPercent);
+        applyPcmMixPercent(SMAF_AUDIO_PHRASE_GAIN_PROPERTY, smafAudioPhrasePercent);
+    }
+
+    private static void applyPcmMixPercent(String property, Integer percent) {
         var resolved = percent == null ? DEFAULT_PCM_MIX_PERCENT : clampPcmMixPercent(percent);
-        var value = Float.toString(pcmMixGainFromPercent(resolved));
-        System.setProperty(PCM_MIX_GAIN_PROPERTY, value);
-        System.setProperty(MA5_PCM_GAIN_PROPERTY, value);
-        System.setProperty(WAV_YAMAHA_ADPCM_GAIN_PROPERTY, value);
-        System.setProperty(SMAF_AUDIO_PHRASE_GAIN_PROPERTY, value);
+        System.setProperty(property, Float.toString(pcmMixGainFromPercent(resolved)));
     }
 
     public static Integer parseHostScale(String candidate) {

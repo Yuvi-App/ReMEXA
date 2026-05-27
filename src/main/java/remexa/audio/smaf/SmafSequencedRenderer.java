@@ -484,7 +484,8 @@ final class SmafSequencedRenderer {
             if (clipFrames <= 0) {
                 continue;
             }
-            float gain = Math.max(0.0f, Math.min(1.0f, trigger.velocity() / 127.0f));
+            float gain = Math.max(0.0f, Math.min(1.0f, trigger.velocity() / 127.0f))
+                    * LaunchConfig.resolveConfiguredPcmMixGain();
             if (loggedTriggers < 4 && SmafDebug.isEnabled("render", SmafDebug.Level.INFO)) {
                 SmafDebug.info("render",
                         "Mixing PCM trigger note=" + trigger.noteValue()

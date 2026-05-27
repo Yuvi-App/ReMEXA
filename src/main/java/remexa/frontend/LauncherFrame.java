@@ -687,23 +687,10 @@ public final class LauncherFrame extends JFrame {
         dialog.setResizable(false);
         dialog.setBackground(CARD_BACKGROUND);
 
-        var slider = new JSlider(
-                JSlider.HORIZONTAL,
-                LaunchConfig.MIN_PCM_MIX_PERCENT,
-                LaunchConfig.MAX_PCM_MIX_PERCENT,
-                HostUiSettings.pcmMixPercent()
-        );
-        slider.setUI(new PcmMixSliderUi(slider));
-        slider.setOpaque(false);
-        slider.setPreferredSize(new Dimension(260, 42));
-        slider.setMajorTickSpacing(25);
-        slider.setMinorTickSpacing(5);
-        slider.setPaintTicks(true);
-        var valueLabel = new JLabel(slider.getValue() + "%");
-        valueLabel.setForeground(TEXT_PRIMARY);
-        valueLabel.setFont(new Font("Segoe UI", Font.BOLD, 14));
-        valueLabel.setPreferredSize(new Dimension(44, valueLabel.getPreferredSize().height));
-        slider.addChangeListener(event -> valueLabel.setText(slider.getValue() + "%"));
+        var smafAdpcm = createPcmMixSlider("SMAF/MMF ADPCM", HostUiSettings.pcmMixPercent());
+        var ma5Pcm = createPcmMixSlider("MA5 PCM Drums", HostUiSettings.ma5PcmMixPercent());
+        var wavAdpcm = createPcmMixSlider("WAV ADPCM", HostUiSettings.wavYamahaAdpcmMixPercent());
+        var audioPhrase = createPcmMixSlider("Audio Phrase PCM", HostUiSettings.smafAudioPhraseMixPercent());
 
         var titleBar = new JPanel(new BorderLayout());
         titleBar.setBackground(MENU_BACKGROUND);
@@ -724,24 +711,15 @@ public final class LauncherFrame extends JFrame {
 
         var panel = new JPanel(new GridBagLayout());
         panel.setBackground(CARD_BACKGROUND);
-        panel.setBorder(new EmptyBorder(18, 18, 10, 18));
+        panel.setBorder(new EmptyBorder(16, 18, 10, 18));
         var constraints = new GridBagConstraints();
-        constraints.insets = new Insets(6, 6, 6, 6);
+        constraints.insets = new Insets(4, 6, 4, 6);
         constraints.anchor = GridBagConstraints.WEST;
         constraints.fill = GridBagConstraints.HORIZONTAL;
-        constraints.gridx = 0;
-        constraints.gridy = 0;
-        constraints.weightx = 0;
-        var label = new JLabel("PCM Mix");
-        label.setForeground(TEXT_PRIMARY);
-        label.setFont(new Font("Segoe UI", Font.PLAIN, 13));
-        panel.add(label, constraints);
-        constraints.gridx = 1;
-        constraints.weightx = 1;
-        panel.add(slider, constraints);
-        constraints.gridx = 2;
-        constraints.weightx = 0;
-        panel.add(valueLabel, constraints);
+        addPcmMixSliderRow(panel, constraints, 0, smafAdpcm);
+        addPcmMixSliderRow(panel, constraints, 1, ma5Pcm);
+        addPcmMixSliderRow(panel, constraints, 2, wavAdpcm);
+        addPcmMixSliderRow(panel, constraints, 3, audioPhrase);
 
         var buttons = new JPanel(new BorderLayout(8, 0));
         buttons.setBackground(CARD_BACKGROUND);
@@ -752,13 +730,27 @@ public final class LauncherFrame extends JFrame {
         styleLauncherButton(applyButton, true);
         cancelButton.addActionListener(event -> dialog.dispose());
         applyButton.addActionListener(event -> {
-            int percent = slider.getValue();
-            HostUiSettings.setPcmMixPercent(percent);
-            LaunchConfig.applyPcmMixPercent(percent);
+            int smafAdpcmPercent = smafAdpcm.slider().getValue();
+            int ma5PcmPercent = ma5Pcm.slider().getValue();
+            int wavAdpcmPercent = wavAdpcm.slider().getValue();
+            int audioPhrasePercent = audioPhrase.slider().getValue();
+            HostUiSettings.setPcmMixPercent(smafAdpcmPercent);
+            HostUiSettings.setMa5PcmMixPercent(ma5PcmPercent);
+            HostUiSettings.setWavYamahaAdpcmMixPercent(wavAdpcmPercent);
+            HostUiSettings.setSmafAudioPhraseMixPercent(audioPhrasePercent);
+            LaunchConfig.applyPcmMixPercents(
+                    smafAdpcmPercent,
+                    ma5PcmPercent,
+                    wavAdpcmPercent,
+                    audioPhrasePercent
+            );
             DebugLog.log(
                     LogCategory.FRONTEND,
                     LauncherFrame.class.getName(),
-                    "PCM mix set to " + percent + "%"
+                    "PCM mix set to SMAF/MMF=" + smafAdpcmPercent
+                            + "% MA5=" + ma5PcmPercent
+                            + "% WAV=" + wavAdpcmPercent
+                            + "% phrase=" + audioPhrasePercent + "%"
             );
             dialog.dispose();
         });
@@ -777,6 +769,54 @@ public final class LauncherFrame extends JFrame {
         dialog.pack();
         dialog.setLocationRelativeTo(this);
         dialog.setVisible(true);
+    }
+
+    private PcmMixSliderControl createPcmMixSlider(String labelText, int value) {
+        var slider = new JSlider(
+                JSlider.HORIZONTAL,
+                LaunchConfig.MIN_PCM_MIX_PERCENT,
+                LaunchConfig.MAX_PCM_MIX_PERCENT,
+                LaunchConfig.clampPcmMixPercent(value)
+        );
+        slider.setUI(new PcmMixSliderUi(slider));
+        slider.setOpaque(false);
+        slider.setPreferredSize(new Dimension(250, 38));
+        slider.setMajorTickSpacing(25);
+        slider.setMinorTickSpacing(5);
+        slider.setPaintTicks(true);
+
+        var label = new JLabel(labelText);
+        label.setForeground(TEXT_PRIMARY);
+        label.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        label.setPreferredSize(new Dimension(124, label.getPreferredSize().height));
+
+        var valueLabel = new JLabel(slider.getValue() + "%");
+        valueLabel.setForeground(TEXT_PRIMARY);
+        valueLabel.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        valueLabel.setHorizontalAlignment(SwingConstants.RIGHT);
+        valueLabel.setPreferredSize(new Dimension(44, valueLabel.getPreferredSize().height));
+        slider.addChangeListener(event -> valueLabel.setText(slider.getValue() + "%"));
+
+        return new PcmMixSliderControl(label, slider, valueLabel);
+    }
+
+    private static void addPcmMixSliderRow(JPanel panel,
+                                           GridBagConstraints constraints,
+                                           int row,
+                                           PcmMixSliderControl control) {
+        constraints.gridy = row;
+        constraints.gridx = 0;
+        constraints.weightx = 0;
+        panel.add(control.label(), constraints);
+        constraints.gridx = 1;
+        constraints.weightx = 1;
+        panel.add(control.slider(), constraints);
+        constraints.gridx = 2;
+        constraints.weightx = 0;
+        panel.add(control.valueLabel(), constraints);
+    }
+
+    private record PcmMixSliderControl(JLabel label, JSlider slider, JLabel valueLabel) {
     }
 
     private static void installDialogDrag(JDialog dialog, JComponent... dragTargets) {
