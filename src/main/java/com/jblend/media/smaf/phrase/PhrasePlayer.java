@@ -19,7 +19,7 @@ public final class PhrasePlayer {
             Collections.newSetFromMap(new IdentityHashMap<>());
 
     private PhrasePlayer() {
-        for (int i = 0; i < 16; i++) {
+        for (int i = 0; i < 4; i++) {
             tracks.add(new PhraseTrack(i));
         }
         for (int i = 0; i < 4; i++) {
