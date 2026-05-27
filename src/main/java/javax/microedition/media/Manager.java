@@ -1253,6 +1253,7 @@ public final class Manager {
                 int audioFormat = header[0];
                 int sampleRate = header[1];
                 int channels = Math.max(1, header[2]);
+                int blockAlign = header[3];
                 int bitsPerSample = header[4];
                 int dataLength = Math.max(0, header[5]);
                 int headerLength = Math.max(0, header[6]);
@@ -1275,7 +1276,7 @@ public final class Manager {
                             ? LaunchConfig.resolveConfiguredPcmMixGain(LaunchConfig.WAV_YAMAHA_ADPCM_GAIN_PROPERTY)
                             : 1.0f;
                     return new LegacyWavDecode(
-                            WAVYamahaADPCMDecoder.ADPCMBDecode(payload, sampleRate, channels),
+                            WAVYamahaADPCMDecoder.ADPCMBDecode(payload, sampleRate, channels, blockAlign),
                             outputGain);
                 }
                 throw new MediaException("Unsupported WAV encoding: " + audioFormat);

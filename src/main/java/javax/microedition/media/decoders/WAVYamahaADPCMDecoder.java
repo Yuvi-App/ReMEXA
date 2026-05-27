@@ -16,6 +16,8 @@
 */
 package javax.microedition.media.decoders;
 
+import java.io.ByteArrayOutputStream;
+
 public final class WAVYamahaADPCMDecoder 
 {
 
@@ -44,6 +46,9 @@ public final class WAVYamahaADPCMDecoder
     {
         230, 230, 230, 230, 307, 409, 512, 614
     };
+
+    private static final int YAMAHA_MIN_STEP = 127;
+    private static final int YAMAHA_MAX_STEP = (32768 * 3) / 4;
 
     private static final int clamp(int x, int low, int high) { return (x > high) ? high : (x < low) ? low : x; }
 
@@ -87,12 +92,17 @@ public final class WAVYamahaADPCMDecoder
                 break;
         }
 
-        return clamp(stepSize, 127, (32768 * 3) / 4);
+        return clamp(stepSize, YAMAHA_MIN_STEP, YAMAHA_MAX_STEP);
     }
 
-    private static final int ADPCMBStep(int step, int[] history, int[] stepSize) 
+    private static final int ADPCMBStep(int step, int[] history, int[] stepSize)
     {
-        int currentStep = stepSize[0];
+        return ADPCMBStep(step, history, stepSize, 0);
+    }
+
+    private static final int ADPCMBStep(int step, int[] history, int[] stepSize, int channel)
+    {
+        int currentStep = stepSize[channel];
         int decodedDiff = currentStep >> 3;
 
         if ((step & 0x01) != 0) { decodedDiff += currentStep >> 2; }
@@ -100,11 +110,82 @@ public final class WAVYamahaADPCMDecoder
         if ((step & 0x04) != 0) { decodedDiff += currentStep; }
         if ((step & 0x08) != 0) { decodedDiff = -decodedDiff; }
 
-        int sample = clamp(history[0] + decodedDiff, -32768, 32767);
-        history[0] = sample;
-        stepSize[0] = adjustYamahaStep(step, currentStep);
+        int sample = clamp(history[channel] + decodedDiff, -32768, 32767);
+        history[channel] = sample;
+        stepSize[channel] = adjustYamahaStep(step, currentStep);
 
         return sample;
+    }
+
+    private static boolean hasYamahaBlockHeader(int sampleRate, int numChannels, int blockAlign)
+    {
+        // Yamaha ADPCM WAV blocks carry an initial sample and predictor per channel.
+        return blockAlign > 0 && numChannels > 0 && blockAlign == ((sampleRate / 60) + 4) * numChannels;
+    }
+
+    private static int readSigned16LE(byte[] buffer, int offset)
+    {
+        return (short) ((buffer[offset] & 0xFF) | ((buffer[offset + 1] & 0xFF) << 8));
+    }
+
+    private static int readUnsigned16LE(byte[] buffer, int offset)
+    {
+        return (buffer[offset] & 0xFF) | ((buffer[offset + 1] & 0xFF) << 8);
+    }
+
+    private static void writePcm16LE(ByteArrayOutputStream output, int sample)
+    {
+        output.write(sample & 0xFF);
+        output.write((sample >> 8) & 0xFF);
+    }
+
+    private static byte[] decodeRawADPCMB(byte[] buffer, int numChannels)
+    {
+        int channels = Math.max(1, Math.min(2, numChannels));
+        int[] history = new int[channels];
+        int[] stepSize = new int[channels];
+        for (int channel = 0; channel < channels; channel++) { stepSize[channel] = YAMAHA_MIN_STEP; }
+
+        ByteArrayOutputStream output = new ByteArrayOutputStream(buffer.length * 4);
+
+        for (int i = 0; i < buffer.length; i++)
+        {
+            int value = buffer[i] & 0xFF;
+            writePcm16LE(output, ADPCMBStep(value & 0x0F, history, stepSize, 0));
+            writePcm16LE(output, ADPCMBStep((value >> 4) & 0x0F, history, stepSize, channels - 1));
+        }
+
+        return output.toByteArray();
+    }
+
+    private static byte[] decodeBlockADPCMB(byte[] buffer, int numChannels, int blockAlign)
+    {
+        int channels = Math.max(1, Math.min(2, numChannels));
+        int blockHeaderSize = channels * 4;
+        ByteArrayOutputStream output = new ByteArrayOutputStream(buffer.length * 4);
+
+        for (int blockOffset = 0; blockOffset + blockHeaderSize <= buffer.length; blockOffset += blockAlign)
+        {
+            int blockEnd = Math.min(buffer.length, blockOffset + blockAlign);
+            int[] history = new int[channels];
+            int[] stepSize = new int[channels];
+
+            for (int channel = 0; channel < channels; channel++)
+            {
+                int headerOffset = blockOffset + (channel * 4);
+                history[channel] = readSigned16LE(buffer, headerOffset);
+                stepSize[channel] = readUnsigned16LE(buffer, headerOffset + 2);
+            }
+
+            for (int i = blockOffset + blockHeaderSize; i < blockEnd; i++)
+            {
+                int value = buffer[i] & 0xFF;
+                writePcm16LE(output, ADPCMBStep(value & 0x0F, history, stepSize, 0));
+                writePcm16LE(output, ADPCMBStep((value >> 4) & 0x0F, history, stepSize, channels - 1));
+            }
+        }
+
+        return output.toByteArray();
     }
 
     private static final int ADPCMZStep(int step, int[] history, int[] stepSize)
@@ -148,26 +229,14 @@ public final class WAVYamahaADPCMDecoder
 
     public static final byte[] ADPCMBDecode(byte[] buffer, int originalSampleRate, int numChannels) 
     {
-        int[] history    = {0};
-        int[] stepSize   = {127};
-        byte[] outBuffer = new byte[buffer.length * 4]; // 4 bytes per input byte
+        return ADPCMBDecode(buffer, originalSampleRate, numChannels, 0);
+    }
 
-        int outputIndex = 0, step = 0, decodedSample = 0;
-
-        for (int i = 0; i < buffer.length; i++) 
-        {
-            // lower nibble
-            step = (buffer[i] & 0x0F);
-            decodedSample = ADPCMBStep(step, history, stepSize);
-            outBuffer[outputIndex++] = (byte) (decodedSample & 0xFF);        // LSB
-            outBuffer[outputIndex++] = (byte) ((decodedSample >> 8) & 0xFF); // MSB
-
-            // upper nibble
-            step = (buffer[i] >> 4) & 0x0F;
-            decodedSample = ADPCMBStep(step, history, stepSize);
-            outBuffer[outputIndex++] = (byte) (decodedSample & 0xFF);        // LSB
-            outBuffer[outputIndex++] = (byte) ((decodedSample >> 8) & 0xFF); // MSB
-        }
+    public static final byte[] ADPCMBDecode(byte[] buffer, int originalSampleRate, int numChannels, int blockAlign)
+    {
+        byte[] outBuffer = hasYamahaBlockHeader(originalSampleRate, numChannels, blockAlign)
+                ? decodeBlockADPCMB(buffer, numChannels, blockAlign)
+                : decodeRawADPCMB(buffer, numChannels);
 
         return WAVTools.upsample(outBuffer, originalSampleRate, WAVTools.hostSampleRate, (short) numChannels, (short) 16, outBuffer.length);
     }
