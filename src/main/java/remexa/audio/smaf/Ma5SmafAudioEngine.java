@@ -141,37 +141,37 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
          * ({@code sub_100129a0}) multiplies the Q30 envelope value by this
          * factor every 7 output samples in decay/sustain/release stages.
          *
-         * <p>Indices 0-3 hold {@code 2.0f} which the chip treats as a no-op
-         * because the envelope is clamped at unity; the deepest (index 60+)
-         * entries reach ~3.8e-5 for near-instant decay. Rate fields (0..15)
-         * map to {@code idx = rate << 2}.</p>
+         * <p>The SDK stores these as Q30 coefficients; {@code 0x40000000}
+         * means unity. A previous transcription used the decompiler's IEEE
+         * float view of those same bit patterns, which made low and mid PCM
+         * rates behave like no-ops. Rate fields (0..15) map to
+         * {@code idx = rate << 2}.</p>
          */
         private static final float[] HW_RATE_TABLE_32K = {
-                2.0000000f, 2.0000000f, 2.0000000f, 2.0000000f,
-                1.9989512f, 1.9979054f, 1.9968596f, 1.9958138f,
-                1.9947681f, 1.9926765f, 1.9905849f, 1.9884934f,
-                1.9864018f, 1.9843102f, 1.9801271f, 1.9759438f,
-                1.9717607f, 1.9675775f, 1.9591942f, 1.9508115f,
-                1.9424285f, 1.9340450f, 1.9172785f, 1.9005120f,
-                1.8837459f, 1.8669792f, 1.8334467f, 1.7999142f,
-                1.7663815f, 1.7328490f, 1.6657841f, 1.5987189f,
-                1.5316539f, 1.4645889f, 1.3304592f, 1.1963297f,
-                1.0623415f, 0.9329090f, 0.7975446f, 0.6622045f,
-                0.5854902f, 0.4774414f, 0.3496094f, 0.2218018f,
-                0.1387939f, 0.0840149f, 0.0524750f, 0.0335999f,
-                0.0207825f, 0.0125732f, 0.0080414f, 0.0049019f,
-                0.0028534f, 0.0019073f, 0.0009537f, 0.0006104f,
-                0.0003815f, 0.0002441f, 0.0001144f, 0.0000610f,
-                0.0000381f, 0.0000381f, 0.0000381f, 0.0000381f,
+                1.000000000f, 1.000000000f, 1.000000000f, 1.000000000f,
+                0.999991969f, 0.999989961f, 0.999987954f, 0.999985946f,
+                0.999983938f, 0.999979923f, 0.999975908f, 0.999971893f,
+                0.999967878f, 0.999959847f, 0.999951816f, 0.999943786f,
+                0.999935756f, 0.999919696f, 0.999903635f, 0.999887575f,
+                0.999871516f, 0.999839398f, 0.999807280f, 0.999775163f,
+                0.999743048f, 0.999678819f, 0.999614596f, 0.999550377f,
+                0.999486159f, 0.999357742f, 0.999229349f, 0.999100969f,
+                0.998972598f, 0.998715922f, 0.998459293f, 0.998202697f,
+                0.997946188f, 0.997433394f, 0.996920959f, 0.996408818f,
+                0.995896846f, 0.994873376f, 0.993851964f, 0.992830533f,
+                0.991809523f, 0.989773034f, 0.987739475f, 0.985712468f,
+                0.983686130f, 0.979656864f, 0.975629270f, 0.971629068f,
+                0.967638401f, 0.959703248f, 0.951852473f, 0.944109894f,
+                0.936324075f, 0.921123638f, 0.906023131f, 0.891343493f,
+                0.876929895f, 0.876929895f, 0.876929895f, 0.876929895f,
         };
 
         /**
-         * The chip's envelope state machine ticks every 7 output samples at
-         * 32 kHz (struct {@code +0x1930}, set by {@code sub_10006a90}). At
-         * other output rates we preserve wall-clock tick rate by raising the
-         * coefficient to a fractional power.
+         * The 32 kHz table is applied once per PCM generator sample by
+         * {@code sub_100129a0}. At other output rates we preserve wall-clock
+         * decay by raising the coefficient to a fractional power.
          */
-        private static final int ENV_TICK_INTERVAL_32K = 7;
+        private static final int HW_RATE_TABLE_SAMPLE_RATE = 32_000;
 
         /**
          * LFO frequency in Hz for the 2-bit {@code lfo} index, decoded
@@ -572,12 +572,19 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
                 int end = Math.min(note.voice.endPoint() + 1, wave.length);
                 int loop = Math.max(0, Math.min(note.voice.loopPoint(), end));
                 boolean repeat = note.voice.repeatMode()
-                        && !note.oneShotDrum()
                         && note.voice.loopPoint() < note.voice.endPoint()
                         && loop < end;
-                if (end <= 0 || note.position >= end) {
+                if (end <= 0) {
                     iterator.remove();
                     continue;
+                }
+                if (note.position >= end) {
+                    if (repeat) {
+                        note.position = loop + (note.position - loop) % (end - loop);
+                    } else {
+                        iterator.remove();
+                        continue;
+                    }
                 }
 
                 float pan = note.pan(channelPans[note.channel]);
@@ -1017,15 +1024,14 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
              * Resolves a 4-bit rate field (0..15) into a per-output-sample
              * envelope multiplier using the chip's 64-entry per-tick table.
              *
-             * <p>The chip applies its rate at one tick every 7 samples at
+             * <p>The SDK applies its rate once per generated PCM sample at
              * 32 kHz. We convert that to a per-sample coefficient so the
              * existing per-sample envelope loop reaches the same wall-clock
-             * decay shape: {@code perSample = perTick ^ (32000 / (7 * SR))}.</p>
+             * decay shape: {@code perSample = perTick ^ (32000 / SR)}.</p>
              *
-             * <p>Table indices 0..3 hold {@code 2.0} which on the chip means
-             * "no envelope movement" (envelope is clamped at unity); we
-             * surface that as a coefficient of {@code 1.0} so {@code env *=
-             * coef} is a no-op.</p>
+             * <p>Table indices 0..3 hold unity, so rate 0 remains a no-op.
+             * Higher rates are just below unity and decay over the same
+             * wall-clock time as the SDK.</p>
              */
             private static float decayCoef(int rate, float outputSampleRate) {
                 if (rate <= 0) {
@@ -1039,7 +1045,7 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
                 if (perTick >= 1.0f) {
                     return 1.0f;
                 }
-                double exponent = 32_000.0 / (ENV_TICK_INTERVAL_32K * outputSampleRate);
+                double exponent = HW_RATE_TABLE_SAMPLE_RATE / outputSampleRate;
                 return (float) Math.pow(perTick, exponent);
             }
 
