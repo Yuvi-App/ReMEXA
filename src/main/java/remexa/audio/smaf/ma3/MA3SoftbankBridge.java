@@ -15,9 +15,23 @@ public final class MA3SoftbankBridge {
     private static final int YAMAHA_MA_LEGACY_FAMILY = 0x03;
     private static final int SOFTBANK_EXVO_FAMILY = 0x05;
 
+    private static final int REALTIME_CHANNELS = 16;
+    private static final double LOG2 = Math.log(2.0);
+
     private final Sampler sampler;
     private final Set<String> loggedUnsupportedPackets = new HashSet<>();
     private int implicitLegacyProgramSlot;
+
+    // Per-channel latches for in-sequence FM exclusives (43 03 90 reg val).
+    // B0 writes the low pitch byte, C0 the high byte; both must be latched
+    // (flags == 3) before a key-on or key-off is issued. Flags persist across
+    // events so each subsequent B0/C0 write re-issues, matching the chip
+    // (MA3SMWEMU.DLL sub_1000ea70).
+    private final int[] realtimeLatchLow = new int[REALTIME_CHANNELS];
+    private final int[] realtimeLatchHigh = new int[REALTIME_CHANNELS];
+    private final int[] realtimeLatchFlags = new int[REALTIME_CHANNELS];
+    private final int[] realtimeActiveKey = new int[REALTIME_CHANNELS];
+    private final boolean[] realtimeNoteActive = new boolean[REALTIME_CHANNELS];
 
     public MA3SoftbankBridge(Sampler sampler) {
         this.sampler = sampler;
@@ -26,6 +40,11 @@ public final class MA3SoftbankBridge {
     public void reset() {
         implicitLegacyProgramSlot = 0;
         loggedUnsupportedPackets.clear();
+        Arrays.fill(realtimeLatchLow, 0);
+        Arrays.fill(realtimeLatchHigh, 0);
+        Arrays.fill(realtimeLatchFlags, 0);
+        Arrays.fill(realtimeActiveKey, 0);
+        Arrays.fill(realtimeNoteActive, false);
     }
 
     public boolean sysEx(int sourceBank, byte[] message) {
@@ -45,10 +64,7 @@ public final class MA3SoftbankBridge {
         if (family == YAMAHA_MA_LEGACY_FAMILY) {
             return switch (type) {
                 case 0x00 -> applyLegacyVoiceProgram(message);
-                case 0x90 -> {
-                    debugRawPacket("legacy-note-control", message);
-                    yield true;
-                }
+                case 0x90 -> applyRealtimeFm(sourceBank, message);
                 default -> unsupported(message);
             };
         }
@@ -82,6 +98,122 @@ public final class MA3SoftbankBridge {
                     voice.operatorCount()));
         }
         return true;
+    }
+
+    /**
+     * Handles in-sequence FM exclusives of the form {@code 43 03 90 reg val},
+     * which SoftBank/J-Phone SFX use for real-time key-on and pitch sweeps
+     * directly on chip pitch registers. Without this, such SFX collapse to a
+     * single dull SEQU note (e.g. the Argus/Rygar "dying" sound).
+     *
+     * <p>{@code reg & 0xF0 == 0xB0} latches the low pitch byte, {@code 0xC0}
+     * the high byte. Once both are latched the 13-bit pitch word
+     * {@code P = ((high & 0x1F) << 8) | low} is decoded. {@code high & 0x20}
+     * is the key-on bit: set re-pitches/keys-on the channel's single voice,
+     * clear sets the final pitch and then keys it OFF (release). This mirrors
+     * the chip's per-channel mono voice: cmd2 (sub_10015d70) attacks a fresh
+     * voice only when its slot is idle and otherwise just re-pitches without
+     * retriggering, while cmd5 (sub_10015ce0 -> sub_100235d0) sets gate=0.
+     * The exact {@code P -> Hz} curve is reverse-engineered from MA3SMWEMU.DLL
+     * (sub_10015ce0 / sub_10015d70):</p>
+     * <pre>
+     * block  = (P >> 10) & 7
+     * fnum10 = ((P & 0x3FF) * 0x10911) >> 16   // x 1.0354
+     * if (fnum10 > 0x3FF) { fnum10 -= 0x400; if (block < 7) block++; }
+     * freqHz = (fnum10 << block) * 48000 / 2^20
+     * </pre>
+     */
+    private boolean applyRealtimeFm(int sourceBank, byte[] message) {
+        int end = trimF7(message);
+        if (end < 5) {
+            debugRawPacket("legacy-note-control-short", message);
+            return true;
+        }
+        int reg = message[3] & 0xff;
+        int val = message[4] & 0xff;
+        int channel = realtimeChannel(sourceBank, reg);
+
+        int regHigh = reg & 0xf0;
+        if (regHigh == 0xB0) {
+            realtimeLatchLow[channel] = val;
+            realtimeLatchFlags[channel] |= 0x1;
+        } else if (regHigh == 0xC0) {
+            realtimeLatchHigh[channel] = val;
+            realtimeLatchFlags[channel] |= 0x2;
+        } else {
+            debugRawPacket("legacy-note-control-reg", message);
+            return true;
+        }
+
+        if ((realtimeLatchFlags[channel] & 0x3) != 0x3) {
+            return true; // wait for both B0 and C0 before acting
+        }
+
+        int high = realtimeLatchHigh[channel];
+        int pitchWord = ((high & 0x1f) << 8) | realtimeLatchLow[channel];
+        boolean keyOn = (high & 0x20) != 0;
+
+        int block = (pitchWord >> 10) & 0x7;
+        int fnum10 = ((pitchWord & 0x3ff) * 0x10911) >> 16;
+        if (fnum10 > 0x3ff) {
+            fnum10 -= 0x400;
+            if (block < 7) {
+                block++;
+            }
+        }
+
+        double freqHz = ((double) (fnum10 << block)) * 48000.0 / 1048576.0;
+        if (freqHz <= 0.0) {
+            return true;
+        }
+        double semisFromA4 = 12.0 * (Math.log(freqHz / 440.0) / LOG2);
+
+        // bendRange = 1/12 makes pitchBend(channel, s) shift exactly s semitones,
+        // applying any pitch offset on top of the held note's integer key.
+        sampler.pitchBendRange(channel, 1.0f / 12.0f);
+
+        if (keyOn) {
+            if (realtimeNoteActive[channel]) {
+                // Voice already sounding: glide its pitch, no envelope retrigger
+                // (chip sub_10015d70 marker-active path re-pitches only).
+                sampler.pitchBend(channel, (float) (semisFromA4 - realtimeActiveKey[channel]));
+            } else {
+                // Fresh key-on: cut any prior releasing note on this mono channel,
+                // then attack a new voice (chip allocates the channel's one voice).
+                sampler.keyOff(channel, realtimeActiveKey[channel]);
+                int key = clampRealtimeKey((int) Math.round(semisFromA4));
+                sampler.pitchBend(channel, (float) (semisFromA4 - key));
+                sampler.keyOn(channel, key, 1.0f);
+                realtimeActiveKey[channel] = key;
+                realtimeNoteActive[channel] = true;
+            }
+        } else {
+            // Key-on bit clear = key-off: set the final pitch first so the release
+            // tail decays at the swept pitch, then release the voice
+            // (chip sub_10015ce0 -> sub_100235d0 sets gate=0). Further bit-clear
+            // writes keep re-pitching the still-releasing note.
+            sampler.pitchBend(channel, (float) (semisFromA4 - realtimeActiveKey[channel]));
+            sampler.keyOff(channel, realtimeActiveKey[channel]);
+            realtimeNoteActive[channel] = false;
+        }
+        return true;
+    }
+
+    private static int realtimeChannel(int sourceBank, int reg) {
+        int lane = reg & 0x3;
+        if (sourceBank >= 0) {
+            return ((sourceBank & 0x3) << 2) | lane;
+        }
+        return lane;
+    }
+
+    private static int clampRealtimeKey(int key) {
+        int min = -MA3SamplerProvider.A4;
+        int max = 127 - MA3SamplerProvider.A4;
+        if (key < min) {
+            return min;
+        }
+        return Math.min(key, max);
     }
 
     private void registerFmAlgorithm(LegacyVoiceProgram voice, int bank, int program) {
