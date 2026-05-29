@@ -1739,14 +1739,25 @@ public final class SMAFDecoder
                     }
                     else if(SysEx == (byte) 0xF0)
                     {
-                        byte size = (byte) (data[offset++] & 0xFF);
-                        List<Byte> exclusiveMessage = new ArrayList<Byte>(); // Seems to relate to SysEx messages, maybe we don't need these?
-                        while(data[offset] != (byte) 0xF7 && size > 1) // 0xF7 as the value marks the end of the SysEx message
+                        int payloadSize = data[offset++] & 0xFF;
+                        List<Byte> exclusiveMessage = new ArrayList<Byte>();
+                        // SoftBank SEQU SysEx is length-prefixed: payloadSize counts the
+                        // body bytes INCLUDING the trailing 0xF7 terminator. Read by the
+                        // count rather than scanning for 0xF7 — an in-sequence FM pitch
+                        // exclusive (43 03 90 reg val) can carry val == 0xF7, which a
+                        // scan-for-F7 loop mistook for the terminator: it dropped the val
+                        // byte AND left the real terminator to be reparsed as the next
+                        // event's duration, injecting a huge phantom rest that stranded
+                        // held FM voices.
+                        for (int i = 0; i < payloadSize && offset < data.length; i++)
                         {
                             exclusiveMessage.add(data[offset++]);
-                            size--;
                         }
-                        offset++; // Move out of offset containing 0xF7 or the last byte according to size (in case there's no 0xF7), as the next one is the next status byte
+                        int lastIndex = exclusiveMessage.size() - 1;
+                        if (lastIndex >= 0 && exclusiveMessage.get(lastIndex) == (byte) 0xF7)
+                        {
+                            exclusiveMessage.remove(lastIndex); // strip terminator from the body
+                        }
 
                         sequenceSysExEvents.add(new SequenceSysExEvent(
                                 totalDuration,
