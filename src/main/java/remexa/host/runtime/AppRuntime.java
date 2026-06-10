@@ -13,6 +13,7 @@ import java.util.jar.JarFile;
 import java.util.concurrent.locks.LockSupport;
 import java.util.function.Consumer;
 import javax.microedition.media.Manager;
+import remexa.audio.smaf.SmafPlayback;
 import remexa.host.JadFrame;
 import remexa.host.input.HostTextInputRequest;
 import remexa.host.jad.JadDescriptor;
@@ -154,6 +155,7 @@ public final class AppRuntime {
         shutdownJblendMediaPlayers(classLoader);
         shutdownJphoneMediaPlayers(classLoader);
         shutdownMediaPlayers(classLoader);
+        SmafPlayback.closeIdleStreamingEnginesNow();
     }
 
     private void shutdownAppThreads(ClassLoader classLoader) {

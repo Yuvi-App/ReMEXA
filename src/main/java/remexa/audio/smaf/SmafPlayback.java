@@ -158,6 +158,10 @@ public final class SmafPlayback implements AutoCloseable {
         scheduleDecode(cacheKey, sourceCopy, true);
     }
 
+    public static void closeIdleStreamingEnginesNow() {
+        SmafStreamingPlayer.closeIdleEnginesNow();
+    }
+
     public void prefetch() throws Exception {
         ensureOpen();
     }
