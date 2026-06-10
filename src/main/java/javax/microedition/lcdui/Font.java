@@ -133,7 +133,7 @@ public final class Font {
         if (value == null || value.isEmpty()) {
             return "";
         }
-        return value
+        var normalized = value
                 .replace("\u0000", "")
                 .replace("\r", "")
                 .replace('\t', ' ')
@@ -142,5 +142,10 @@ public final class Font {
                 .replace('\ue233', '\u25bc')
                 .replace('\ue23a', '\u2192')
                 .replace('\ue23b', '\u2190');
+        var firstVisible = 0;
+        while (firstVisible < normalized.length() && normalized.charAt(firstVisible) == '\n') {
+            firstVisible++;
+        }
+        return firstVisible == 0 ? normalized : normalized.substring(firstVisible);
     }
 }
