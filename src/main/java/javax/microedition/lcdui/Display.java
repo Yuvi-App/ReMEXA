@@ -93,14 +93,6 @@ public final class Display {
         if (runnable == null) {
             throw new NullPointerException("Runnable must be non-null.");
         }
-        if (runnable instanceof Canvas canvas && canvas == current) {
-            SwingUtilities.invokeLater(() -> {
-                if (canvas.isShown() && current == canvas) {
-                    canvas.serviceRepaints();
-                }
-            });
-            return;
-        }
         synchronized (pendingSerialCallbacks) {
             pendingSerialCallbacks.add(runnable);
             if (serialCallbackDrainScheduled) {
@@ -177,6 +169,7 @@ public final class Display {
             SdkStubSupport.log(Display.class.getName(), "callSerially", message, throwable);
             throw throwable;
         }
+        serviceCurrentCanvasCallbackRepaints(callback);
 
         synchronized (pendingSerialCallbacks) {
             if (pendingSerialCallbacks.isEmpty()) {
@@ -190,6 +183,13 @@ public final class Display {
         // and input instead of letting one self-rescheduling runnable monopolize
         // the event thread.
         SwingUtilities.invokeLater(this::drainSerialCallbacks);
+    }
+
+    private void serviceCurrentCanvasCallbackRepaints(Runnable callback) {
+        if (!(callback instanceof Canvas canvas) || canvas != current || !canvas.isShown()) {
+            return;
+        }
+        canvas.serviceRepaints();
     }
 
     private static void initializeDisplayable(Displayable displayable) {
