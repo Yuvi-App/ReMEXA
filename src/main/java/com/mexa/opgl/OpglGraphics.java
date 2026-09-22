@@ -772,15 +772,7 @@ public class OpglGraphics {
     public void glColor4f (float red, float green, float blue, float alpha) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glColor4f", red, green, blue, alpha);
         ensureBound();
-        currentColorR = clampUnit(red);
-        currentColorG = clampUnit(green);
-        currentColorB = clampUnit(blue);
-        currentColorA = clampUnit(alpha);
-        currentColorArgb = (clampColor(currentColorA) << 24)
-                | (clampColor(currentColorR) << 16)
-                | (clampColor(currentColorG) << 8)
-                | clampColor(currentColorB);
-        applyColorMaterial();
+        setCurrentColor(red, green, blue, alpha);
     }
 
     public void glColorMask (boolean red, boolean green, boolean blue, boolean alpha) {
@@ -1003,7 +995,9 @@ public class OpglGraphics {
     public void glEnable (int cap) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glEnable", cap);
         ensureBound();
-        enabledCaps.add(cap);
+        if (enabledCaps.add(cap) && cap == GL_COLOR_MATERIAL) {
+            applyColorMaterial();
+        }
     }
 
     public void glEnableClientState (int array) {
@@ -1666,15 +1660,8 @@ public class OpglGraphics {
     public void glColor4ub (byte red, byte green, byte blue, byte alpha) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glColor4ub", red, green, blue, alpha);
         ensureBound();
-        currentColorR = (red & 0xFF) / 255.0f;
-        currentColorG = (green & 0xFF) / 255.0f;
-        currentColorB = (blue & 0xFF) / 255.0f;
-        currentColorA = (alpha & 0xFF) / 255.0f;
-        currentColorArgb = ((alpha & 0xFF) << 24)
-                | ((red & 0xFF) << 16)
-                | ((green & 0xFF) << 8)
-                | (blue & 0xFF);
-        applyColorMaterial();
+        setCurrentColor((red & 0xFF) / 255.0f, (green & 0xFF) / 255.0f,
+                (blue & 0xFF) / 255.0f, (alpha & 0xFF) / 255.0f);
     }
 
     public void glDeleteBuffers (int[] buffers) {
@@ -2314,6 +2301,10 @@ public class OpglGraphics {
     }
 
     private void applyMaterial(int face, int pname, float[] params) {
+        if (enabledCaps.contains(GL_COLOR_MATERIAL)
+                && (pname == GL_AMBIENT || pname == GL_DIFFUSE || pname == GL_AMBIENT_AND_DIFFUSE)) {
+            return;
+        }
         if (face == GL_FRONT_AND_BACK) {
             applyMaterial(GL_FRONT, pname, params);
             applyMaterial(GL_BACK, pname, params);
@@ -2363,6 +2354,19 @@ public class OpglGraphics {
         }
     }
 
+    private void setCurrentColor(float red, float green, float blue, float alpha) {
+        // Preserve floating-point values for lighting; only the unlit packed color is clamped here.
+        currentColorR = red;
+        currentColorG = green;
+        currentColorB = blue;
+        currentColorA = alpha;
+        currentColorArgb = (clampColor(alpha) << 24)
+                | (clampColor(red) << 16)
+                | (clampColor(green) << 8)
+                | clampColor(blue);
+        applyColorMaterial();
+    }
+
     private void applyColorMaterial() {
         if (!enabledCaps.contains(GL_COLOR_MATERIAL)) {
             return;
@@ -2370,10 +2374,9 @@ public class OpglGraphics {
         float[] color = new float[] {currentColorR, currentColorG, currentColorB, currentColorA};
         copyFloats(color, frontMaterial.ambient, 4);
         copyFloats(color, frontMaterial.diffuse, 4);
-        if (lightModelTwoSide) {
-            copyFloats(color, backMaterial.ambient, 4);
-            copyFloats(color, backMaterial.diffuse, 4);
-        }
+        // ES 1.1 section 2.12.3 tracks both faces regardless of two-sided lighting.
+        copyFloats(color, backMaterial.ambient, 4);
+        copyFloats(color, backMaterial.diffuse, 4);
     }
 
     private MaterialState materialForFace(int face) {
@@ -2601,35 +2604,30 @@ public class OpglGraphics {
     }
 
     private int resolveVertexColor(int vertexIndex, float[] modelPosition) {
-        int baseColor = currentColorArgb;
         if (colorArrayBinding != null && enabledClientStates.contains(GL_COLOR_ARRAY)) {
-            baseColor = readColor(vertexIndex);
+            float[] color = readColorComponents(vertexIndex);
+            // Array colors drive color material even when lighting is disabled. The
+            // current color after an array draw is unspecified; retain the last fetched value.
+            setCurrentColor(color[0], color[1], color[2], color[3]);
         }
         if (!enabledCaps.contains(GL_LIGHTING)) {
-            return baseColor;
+            return currentColorArgb;
         }
         float[] normal = transformNormal(vertexIndex);
         if (normal == null) {
-            return baseColor;
+            return currentColorArgb;
         }
         return applyLighting(normal, modelPosition);
     }
 
-    private int readColor(int vertexIndex) {
-        if (colorArrayBinding == null) {
-            return currentColorArgb;
-        }
+    private float[] readColorComponents(int vertexIndex) {
         float[] components = readVertexComponents(colorArrayBinding, vertexIndex, 4, 1.0f);
-        if (colorArrayBinding.type == GL_FLOAT) {
-            return (clampColor(components[3]) << 24)
-                    | (clampColor(components[0]) << 16)
-                    | (clampColor(components[1]) << 8)
-                    | clampColor(components[2]);
+        if (colorArrayBinding.type == GL_UNSIGNED_BYTE) {
+            for (int i = 0; i < components.length; i++) {
+                components[i] /= 255.0f;
+            }
         }
-        return ((int) components[3] << 24)
-                | ((int) components[0] << 16)
-                | ((int) components[1] << 8)
-                | (int) components[2];
+        return components;
     }
 
     private int applyLighting(float[] normal, float[] modelPosition) {
