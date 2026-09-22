@@ -1,5 +1,8 @@
 package remexa.audio.smaf;
 
+import remexa.audio.AudioCallbacks;
+import remexa.host.runtime.MidletRuntime;
+
 import com.jblend.media.smaf.phrase.PhraseTrackListener;
 import org.recompile.mobile.Mobile;
 import remexa.probes.DebugLog;
@@ -73,7 +76,7 @@ public final class SmafPlayback implements AutoCloseable {
     private static final Map<SmafCacheKey, Future<DecodedSmaf>> DECODE_TASKS = createLruCache(DECODE_CACHE_LIMIT);
     private static final Map<SmafRenderCacheKey, Future<?>> RENDER_WARMUP_TASKS = createLruCache(RENDER_CACHE_LIMIT);
     private static final ExecutorService WARMUP_EXECUTOR = Executors.newFixedThreadPool(1, runnable -> {
-        Thread thread = new Thread(runnable, "remexa-smaf-warmup");
+        Thread thread = AudioCallbacks.hostThread(runnable, "remexa-smaf-warmup");
         thread.setDaemon(true);
         thread.setPriority(Thread.MIN_PRIORITY);
         return thread;
@@ -83,6 +86,7 @@ public final class SmafPlayback implements AutoCloseable {
     private final byte[] source;
     private final Object decodeLock = new Object();
     private final Object openLock = new Object();
+    private final ClassLoader ownerClassLoader = MidletRuntime.currentAppClassLoader();
     private Sequence sequence;
     private Sequence midiSequence;
     private List<SMAFDecoder.SequenceSysExEvent> sequenceSysExEvents = Collections.emptyList();
@@ -122,18 +126,21 @@ public final class SmafPlayback implements AutoCloseable {
     private static Receiver sharedReceiver;
     private static int sharedSynthUsers;
 
-    private Sequencer sequencer;
+    private volatile Sequencer sequencer;
     private SmafRenderedAudio renderedAudio;
     private YamahaAudioEngine renderedAudioEngine;
-    private SmafAudioPlayer audioPlayer;
+    private volatile SmafAudioPlayer audioPlayer;
     private boolean paused;
-    private boolean closed;
+    private volatile boolean closed;
+    private boolean sharedMidiAcquired;
+    private volatile long playbackEpoch;
+    private javax.sound.midi.MetaEventListener midiEventListener;
     private Future<Void> openTask;
     private Exception renderedAudioFailure;
     private String renderedAudioFailureEngineId;
     private int volume = 127;
     private int panpot = 64;
-    private PhraseTrackListener listener;
+    private volatile PhraseTrackListener listener;
     private Sequence playbackSequence;
     private Map<Integer, Integer> channelRouting = Collections.emptyMap();
     private Set<Integer> outputChannels = Collections.emptySet();
@@ -144,6 +151,7 @@ public final class SmafPlayback implements AutoCloseable {
     }
 
     public static SmafPlayback create(byte[] source) throws Exception {
+        MidletRuntime.ensureThreadActive();
         byte[] sourceCopy = source.clone();
         SmafCacheKey cacheKey = new SmafCacheKey(sourceCopy);
         return new SmafPlayback(cacheKey, sourceCopy);
@@ -171,40 +179,48 @@ public final class SmafPlayback implements AutoCloseable {
     }
 
     public int getState() {
-        if (audioPlayer != null) {
-            return audioPlayer.getState();
+        synchronized (openLock) {
+            if (audioPlayer != null) {
+                return audioPlayer.getState();
+            }
+            if (paused) {
+                return PAUSED;
+            }
+            if (sequencer == null) {
+                return READY;
+            }
+            return sequencer.isRunning() ? PLAYING : READY;
         }
-        if (paused) {
-            return PAUSED;
-        }
-        if (sequencer == null) {
-            return READY;
-        }
-        return sequencer.isRunning() ? PLAYING : READY;
     }
 
     public void setListener(PhraseTrackListener listener) {
-        this.listener = listener;
-        if (audioPlayer != null) {
-            audioPlayer.setListener(listener);
+        synchronized (openLock) {
+            this.listener = closed ? null : listener;
+            if (audioPlayer != null) {
+                audioPlayer.setListener(listener);
+            }
         }
     }
 
     public void setVolume(int value) {
-        volume = clamp(value, 0, 127);
-        if (audioPlayer != null) {
-            audioPlayer.setVolume(volume);
-        } else {
-            applyMixerState();
+        synchronized (openLock) {
+            volume = clamp(value, 0, 127);
+            if (audioPlayer != null) {
+                audioPlayer.setVolume(volume);
+            } else {
+                applyMixerState();
+            }
         }
     }
 
     public void setPanpot(int value) {
-        panpot = clamp(value, 0, 127);
-        if (audioPlayer != null) {
-            audioPlayer.setPanpot(panpot);
-        } else {
-            applyMixerState();
+        synchronized (openLock) {
+            panpot = clamp(value, 0, 127);
+            if (audioPlayer != null) {
+                audioPlayer.setPanpot(panpot);
+            } else {
+                applyMixerState();
+            }
         }
     }
 
@@ -215,68 +231,86 @@ public final class SmafPlayback implements AutoCloseable {
     public void play(int loopCount, boolean completeAtSequenceEnd) {
         try {
             ensureOpen();
-            if (audioPlayer != null) {
-                Mobile.log(Mobile.LOG_INFO,
-                        "Playing SMAF phrase through " + renderedBackendLabel()
-                                + " audio backend (loop=" + loopCount + ").");
-                audioPlayer.play(loopCount, completeAtSequenceEnd);
-                return;
+            synchronized (openLock) {
+                if (closed || !MidletRuntime.isAppActive(ownerClassLoader)) {
+                    throw new IllegalStateException("SMAF playback has been closed");
+                }
+                if (audioPlayer != null) {
+                    Mobile.log(Mobile.LOG_INFO,
+                            "Playing SMAF phrase through " + renderedBackendLabel()
+                                    + " audio backend (loop=" + loopCount + ").");
+                    audioPlayer.play(loopCount, completeAtSequenceEnd);
+                    return;
+                }
+                sequencer.stop();
+                sequencer.setMicrosecondPosition(0L);
+                sequencer.setLoopStartPoint(0L);
+                sequencer.setLoopEndPoint(-1L);
+                sequencer.setLoopCount(loopCount == 0 ? Sequencer.LOOP_CONTINUOUSLY : Math.max(0, loopCount - 1));
+                applyMixerState();
+                installMidiListener();
+                sequencer.start();
+                paused = false;
+                Mobile.log(Mobile.LOG_INFO, "Playing SMAF phrase through MIDI backend (loop=" + loopCount + ").");
             }
-            sequencer.stop();
-            sequencer.setMicrosecondPosition(0L);
-            sequencer.setLoopStartPoint(0L);
-            sequencer.setLoopEndPoint(-1L);
-            sequencer.setLoopCount(loopCount == 0 ? Sequencer.LOOP_CONTINUOUSLY : Math.max(0, loopCount - 1));
-            applyMixerState();
-            sequencer.start();
-            paused = false;
-            Mobile.log(Mobile.LOG_INFO, "Playing SMAF phrase through MIDI backend (loop=" + loopCount + ").");
         } catch (Exception exception) {
             throw new RuntimeException("Failed to play SMAF phrase", exception);
         }
     }
 
     public void stop() {
-        if (audioPlayer != null) {
-            audioPlayer.stop();
-            return;
+        synchronized (openLock) {
+            playbackEpoch++;
+            if (audioPlayer != null) {
+                audioPlayer.stop();
+                return;
+            }
+            if (sequencer == null) {
+                return;
+            }
+            sequencer.stop();
+            silenceOutputChannels();
+            sequencer.setMicrosecondPosition(0L);
+            paused = false;
         }
-        if (sequencer == null) {
-            return;
-        }
-        sequencer.stop();
-        silenceOutputChannels();
-        sequencer.setMicrosecondPosition(0L);
-        paused = false;
     }
 
     public void pause() {
-        if (audioPlayer != null) {
-            audioPlayer.pause();
-            return;
+        synchronized (openLock) {
+            playbackEpoch++;
+            if (audioPlayer != null) {
+                audioPlayer.pause();
+                return;
+            }
+            if (sequencer == null) {
+                return;
+            }
+            sequencer.stop();
+            silenceOutputChannels();
+            paused = true;
         }
-        if (sequencer == null) {
-            return;
-        }
-        sequencer.stop();
-        silenceOutputChannels();
-        paused = true;
     }
 
     public void resume() {
-        if (audioPlayer != null) {
-            audioPlayer.resume();
-            return;
-        }
-        if (sequencer == null) {
-            return;
-        }
-        try {
-            applyMixerState();
-            sequencer.start();
-            paused = false;
-        } catch (Exception exception) {
-            throw new RuntimeException("Failed to resume SMAF phrase", exception);
+        synchronized (openLock) {
+            if (closed || !MidletRuntime.isAppActive(ownerClassLoader)) {
+                throw new IllegalStateException("SMAF playback belongs to a closed player or appli");
+            }
+            if (audioPlayer != null) {
+                audioPlayer.resume();
+                return;
+            }
+            if (sequencer == null) {
+                return;
+            }
+            try {
+                applyMixerState();
+                installMidiListener();
+                sequencer.start();
+                paused = false;
+            } catch (Exception exception) {
+                throw new RuntimeException("Failed to resume SMAF phrase", exception);
+            }
         }
     }
 
@@ -365,28 +399,33 @@ public final class SmafPlayback implements AutoCloseable {
     @Override
     public void close() {
         synchronized (openLock) {
+            if (closed) {
+                return;
+            }
             closed = true;
-            if (audioPlayer != null) {
-                audioPlayer.close();
-                audioPlayer = null;
+            playbackEpoch++;
+            listener = null;
+            SmafAudioPlayer previous = audioPlayer;
+            audioPlayer = null;
+            try {
+                if (previous != null) {
+                    previous.close();
+                }
+            } finally {
+                closeMidiBackend();
             }
-            if (sequencer != null) {
-                sequencer.stop();
-                silenceOutputChannels();
-                sequencer.close();
-                sequencer = null;
-            }
-            releaseSharedMidi();
-            releaseChannelRouting();
             playbackSequence = null;
             paused = false;
+            if (openTask != null) {
+                openTask.cancel(false);
+            }
             openTask = null;
         }
     }
 
     private void ensureOpen() throws Exception {
         synchronized (openLock) {
-            if (closed) {
+            if (closed || !MidletRuntime.isAppActive(ownerClassLoader)) {
                 throw new IllegalStateException("SMAF playback has been closed");
             }
         }
@@ -400,7 +439,7 @@ public final class SmafPlayback implements AutoCloseable {
     private Future<Void> scheduleOpen(boolean async) {
         FutureTask<Void> newTask = null;
         synchronized (openLock) {
-            if (closed || audioPlayer != null || sequencer != null) {
+            if (closed || !MidletRuntime.isAppActive(ownerClassLoader) || audioPlayer != null || sequencer != null) {
                 return completedFuture();
             }
             if (openTask != null) {
@@ -434,7 +473,7 @@ public final class SmafPlayback implements AutoCloseable {
 
     private void openPlayback() throws Exception {
         synchronized (openLock) {
-            if (closed || audioPlayer != null || sequencer != null) {
+            if (closed || !MidletRuntime.isAppActive(ownerClassLoader) || audioPlayer != null || sequencer != null) {
                 return;
             }
             String synthPreference = normalizeSmafSynthPreference(System.getProperty("remexa.smafSynth", "auto"));
@@ -448,7 +487,12 @@ public final class SmafPlayback implements AutoCloseable {
                                     + ". Falling back to host MIDI output.");
                 }
             }
-            openMidiBackend();
+            try {
+                openMidiBackend();
+            } catch (Exception exception) {
+                closeMidiBackend();
+                throw exception;
+            }
         }
     }
 
@@ -459,7 +503,7 @@ public final class SmafPlayback implements AutoCloseable {
         renderedAudioEngine = engine;
         SmafStreamingSession session = engine.openStream(createRenderContext());
         int sampleRate = session.sampleRate();
-        audioPlayer = new SmafStreamingPlayer(session, userEvents);
+        audioPlayer = new SmafStreamingPlayer(session, userEvents, ownerClassLoader);
         audioPlayer.setListener(listener);
         audioPlayer.setVolume(volume);
         audioPlayer.setPanpot(panpot);
@@ -480,18 +524,6 @@ public final class SmafPlayback implements AutoCloseable {
         sequencer.open();
         sequencer.getTransmitter().setReceiver(sharedReceiver);
         sequencer.setSequence(playbackSequence);
-        sequencer.addMetaEventListener(message -> {
-            if (message.getType() == 0x2F && listener != null) {
-                dispatchCompletion(listener);
-                return;
-            }
-            if (listener != null) {
-                int userEventId = decodeUserEventMeta(message);
-                if (userEventId >= 0) {
-                    dispatchUserEvent(listener, userEventId);
-                }
-            }
-        });
         if (hasPcmPayload) {
             Mobile.log(Mobile.LOG_WARNING,
                     "Decoded SMAF contains " + pcmClipCount + " PCM clip(s); host MIDI fallback will not render them.");
@@ -512,8 +544,11 @@ public final class SmafPlayback implements AutoCloseable {
         }
     }
 
-    private static void acquireSharedMidi() throws Exception {
+    private void acquireSharedMidi() throws Exception {
         synchronized (MIDI_LOCK) {
+            if (sharedMidiAcquired) {
+                return;
+            }
             if (sharedReceiver == null) {
                 SharedMidiOutput output = openPreferredOutput();
                 sharedSynthesizer = output.synthesizer();
@@ -524,14 +559,17 @@ public final class SmafPlayback implements AutoCloseable {
                 Mobile.log(Mobile.LOG_INFO, "SMAF MIDI output: " + output.description());
             }
             sharedSynthUsers++;
+            sharedMidiAcquired = true;
         }
     }
 
     private void releaseSharedMidi() {
         synchronized (MIDI_LOCK) {
-            if (sharedSynthUsers > 0) {
-                sharedSynthUsers--;
+            if (!sharedMidiAcquired) {
+                return;
             }
+            sharedMidiAcquired = false;
+            sharedSynthUsers--;
             if (sharedSynthUsers == 0) {
                 if (sharedReceiver != null) {
                     sharedReceiver.close();
@@ -1002,6 +1040,10 @@ public final class SmafPlayback implements AutoCloseable {
 
     private static DecodedSmaf awaitDecode(Future<DecodedSmaf> task) throws Exception {
         try {
+            // Opening may run on the same single worker that has this decode queued.
+            if (task instanceof FutureTask<DecodedSmaf> futureTask) {
+                futureTask.run();
+            }
             return task.get();
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
@@ -1066,6 +1108,26 @@ public final class SmafPlayback implements AutoCloseable {
                             + describeException(exception)
             );
             // Fall back to the synchronous render path below.
+        }
+    }
+
+    private void closeMidiBackend() {
+        Sequencer previous = sequencer;
+        sequencer = null;
+        try {
+            if (previous != null) {
+                try {
+                    previous.stop();
+                    silenceOutputChannels();
+                } finally {
+                    previous.close();
+                }
+            }
+        } finally {
+            midiEventListener = null;
+            playbackSequence = null;
+            releaseChannelRouting();
+            releaseSharedMidi();
         }
     }
 
@@ -1948,14 +2010,31 @@ public final class SmafPlayback implements AutoCloseable {
                                        VoiceRole role) {
     }
 
-    private static void dispatchCompletion(PhraseTrackListener listener) {
-        Thread callbackThread = new Thread(() -> listener.eventOccurred(-1), "remexa-smaf-callback");
-        callbackThread.setDaemon(true);
-        callbackThread.start();
+    private void installMidiListener() {
+        if (midiEventListener != null) {
+            sequencer.removeMetaEventListener(midiEventListener);
+        }
+        long epoch = ++playbackEpoch;
+        midiEventListener = message -> {
+            if (message.getType() == 0x2F) {
+                AudioCallbacks.dispatch(ownerClassLoader, "remexa-smaf-callback", () -> dispatchMidiEvent(-1, epoch));
+            } else {
+                int eventId = decodeUserEventMeta(message);
+                if (eventId >= 0) {
+                    dispatchMidiEvent(eventId, epoch);
+                }
+            }
+        };
+        sequencer.addMetaEventListener(midiEventListener);
     }
 
-    private static void dispatchUserEvent(PhraseTrackListener listener, int eventId) {
-        listener.eventOccurred(eventId);
+    private void dispatchMidiEvent(int eventId, long epoch) {
+        AudioCallbacks.run(ownerClassLoader, () -> {
+            PhraseTrackListener current = listener;
+            if (!closed && playbackEpoch == epoch && current != null) {
+                current.eventOccurred(eventId);
+            }
+        });
     }
 
     private static String describeException(Throwable throwable) {

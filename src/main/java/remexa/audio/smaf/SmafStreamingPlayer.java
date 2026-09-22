@@ -1,5 +1,8 @@
 package remexa.audio.smaf;
 
+import remexa.audio.AudioCallbacks;
+import remexa.host.runtime.MidletRuntime;
+
 import com.jblend.media.smaf.phrase.PhraseTrackListener;
 import org.recompile.mobile.Mobile;
 
@@ -31,8 +34,13 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
     private final PlaybackHandle handle;
 
     SmafStreamingPlayer(SmafStreamingSession session, List<SMAFDecoder.SequenceUserEvent> userEvents) {
+        this(session, userEvents, MidletRuntime.currentAppClassLoader());
+    }
+
+    SmafStreamingPlayer(SmafStreamingSession session, List<SMAFDecoder.SequenceUserEvent> userEvents,
+                        ClassLoader ownerClassLoader) {
         SharedEngine engine = sharedEngine(new OutputFormatKey(session.sampleRate(), session.channelCount()));
-        handle = engine.open(session, userEvents);
+        handle = engine.open(session, userEvents, ownerClassLoader);
         engine.prewarm();
     }
 
@@ -132,8 +140,8 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
             this.pcmBuffer = new byte[chunkFrames * channels * 2];
         }
 
-        PlaybackHandle open(SmafStreamingSession session, List<SMAFDecoder.SequenceUserEvent> userEvents) {
-            PlaybackHandle handle = new PlaybackHandle(this, session, userEvents);
+        PlaybackHandle open(SmafStreamingSession session, List<SMAFDecoder.SequenceUserEvent> userEvents, ClassLoader ownerClassLoader) {
+            PlaybackHandle handle = new PlaybackHandle(this, session, userEvents, ownerClassLoader);
             synchronized (engineLock) {
                 handles.add(handle);
                 idleCloseDeadlineMs = Long.MAX_VALUE;
@@ -163,10 +171,10 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
         }
 
         private void ensureWorkerLocked() {
-            if (worker != null) {
+            if (worker != null && worker.isAlive()) {
                 return;
             }
-            worker = new Thread(this::runLoop,
+            worker = AudioCallbacks.hostThread(this::runLoop,
                     "remexa-smaf-stream-" + formatKey.sampleRate() + "hz-" + formatKey.channelCount() + "ch");
             worker.setDaemon(true);
             worker.setPriority(Math.min(Thread.MAX_PRIORITY, Thread.NORM_PRIORITY + 2));
@@ -174,6 +182,19 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
         }
 
         private void runLoop() {
+            try {
+                mixLoop();
+            } finally {
+                synchronized (engineLock) {
+                    if (worker == Thread.currentThread()) {
+                        worker = null;
+                        closeLineLocked();
+                    }
+                }
+            }
+        }
+
+        private void mixLoop() {
             while (true) {
                 List<PlaybackHandle> snapshot;
                 synchronized (engineLock) {
@@ -230,18 +251,16 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
                 if (mixedFrames > 0) {
                     try {
                         synchronized (engineLock) {
+                            // A close can retire the whole snapshot while rendering is outside this lock.
+                            // Serialize the write with line shutdown so no old chunk reopens the device.
+                            if (snapshot.stream().noneMatch(PlaybackHandle::hasWork)) {
+                                continue;
+                            }
                             ensureLineLocked();
+                            int length = encodePcm(mixedFrames);
+                            int written = line.write(pcmBuffer, 0, length);
+                            writtenFrames += written / (formatKey.channelCount() * 2);
                         }
-                        SourceDataLine targetLine;
-                        synchronized (engineLock) {
-                            targetLine = line;
-                        }
-                        if (targetLine == null) {
-                            continue;
-                        }
-                        int length = encodePcm(mixedFrames);
-                        targetLine.write(pcmBuffer, 0, length);
-                        writtenFrames += mixedFrames;
                     } catch (LineUnavailableException | IllegalArgumentException | IllegalStateException exception) {
                         synchronized (engineLock) {
                             closeLineLocked();
@@ -431,6 +450,7 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
     }
 
     private static final class PlaybackHandle {
+        private final ClassLoader ownerClassLoader;
         private final SharedEngine engine;
         private final SmafStreamingSession session;
         private final List<SMAFDecoder.SequenceUserEvent> userEvents;
@@ -456,7 +476,8 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
 
         private PlaybackHandle(SharedEngine engine,
                                SmafStreamingSession session,
-                               List<SMAFDecoder.SequenceUserEvent> userEvents) {
+                               List<SMAFDecoder.SequenceUserEvent> userEvents, ClassLoader ownerClassLoader) {
+            this.ownerClassLoader = ownerClassLoader;
             this.engine = engine;
             this.session = session;
             this.userEvents = userEvents == null ? List.of() : List.copyOf(userEvents);
@@ -473,7 +494,8 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
 
         void setListener(PhraseTrackListener listener) {
             synchronized (stateLock) {
-                this.listener = listener;
+                playbackEpoch++;
+                this.listener = closed ? null : listener;
             }
         }
 
@@ -491,6 +513,7 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
 
         void play(int loopCount, boolean completeAtSequenceEnd) {
             synchronized (stateLock) {
+                ensureOpenLocked();
                 throwIfFailedLocked();
                 try {
                     session.rewind();
@@ -541,6 +564,7 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
 
         void resume() {
             synchronized (stateLock) {
+                ensureOpenLocked();
                 if (!paused) {
                     return;
                 }
@@ -559,10 +583,12 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
                 int frames;
                 int channelCount;
                 List<Integer> pendingUserEvents;
+                long chunkEpoch;
                 synchronized (stateLock) {
                     if (closed || !playing) {
                         return 0;
                     }
+                    chunkEpoch = playbackEpoch;
                     int startFrame = framePosition;
                     channelCount = session.channelCount();
                     frames = session.render(output, maxFrames);
@@ -583,7 +609,7 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
                     applyChannelGains(output, frames, channelCount, channelGainsLocked(channelCount));
                 }
                 for (int eventId : pendingUserEvents) {
-                    notifications.add(() -> dispatchUserEvent(eventId));
+                    notifications.add(() -> dispatchUserEvent(eventId, chunkEpoch));
                 }
                 return frames;
             }
@@ -600,13 +626,15 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
         }
 
         void dispatchReadyCompletion(long playedFrames, NotificationSink notifications) {
+            long epoch;
             synchronized (stateLock) {
                 if (!completionPending || completionTargetFrame < 0L || playedFrames < completionTargetFrame) {
                     return;
                 }
                 clearCompletionStateLocked();
+                epoch = playbackEpoch;
             }
-            notifications.add(this::dispatchCompletion);
+            notifications.add(() -> dispatchCompletion(epoch));
         }
 
         boolean hasWork() {
@@ -629,6 +657,7 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
                 playbackEpoch++;
                 clearCompletionStateLocked();
                 closed = true;
+                listener = null;
                 paused = false;
                 playing = false;
                 framePosition = 0;
@@ -740,28 +769,29 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
             return gains;
         }
 
-        private void dispatchCompletion() {
-            PhraseTrackListener currentListener;
-            synchronized (stateLock) {
-                currentListener = listener;
+        private void ensureOpenLocked() {
+            if (closed || !MidletRuntime.isAppActive(ownerClassLoader)) {
+                throw new IllegalStateException("Audio playback belongs to a closed player or appli");
             }
-            if (currentListener == null) {
-                return;
-            }
-            Thread callbackThread = new Thread(() -> currentListener.eventOccurred(-1), "remexa-smaf-callback");
-            callbackThread.setDaemon(true);
-            callbackThread.start();
         }
 
-        private void dispatchUserEvent(int eventId) {
-            PhraseTrackListener currentListener;
-            synchronized (stateLock) {
-                currentListener = listener;
-            }
-            if (currentListener == null) {
-                return;
-            }
-            currentListener.eventOccurred(eventId);
+        private void dispatchCompletion(long epoch) {
+            AudioCallbacks.dispatch(ownerClassLoader, "remexa-smaf-callback", () -> dispatchUserEvent(-1, epoch));
+        }
+
+        private void dispatchUserEvent(int eventId, long epoch) {
+            AudioCallbacks.run(ownerClassLoader, () -> {
+                PhraseTrackListener currentListener;
+                synchronized (stateLock) {
+                    if (closed || playbackEpoch != epoch) {
+                        return;
+                    }
+                    currentListener = listener;
+                }
+                if (currentListener != null) {
+                    currentListener.eventOccurred(eventId);
+                }
+            });
         }
 
         private void throwIfFailedLocked() {

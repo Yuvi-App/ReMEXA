@@ -40,7 +40,7 @@ public class SmafPlayer extends com.jblend.media.MediaPlayer implements MediaIma
         }
     }
 
-    public void setData(com.jblend.media.smaf.SmafData data) {
+    public synchronized void setData(com.jblend.media.smaf.SmafData data) {
         remexa.probes.SdkStubSupport.log("com.jblend.media.smaf.SmafPlayer", "setData", data);
         closePlayback();
         super.setData(data);
@@ -222,7 +222,7 @@ public class SmafPlayer extends com.jblend.media.MediaPlayer implements MediaIma
 
     private void handlePlaybackEvent(int eventId) {
         if (eventId == -1) {
-            notifyRepeatCompleted();
+            notifyPlaybackCompleted();
             return;
         }
         for (SmafPlayerListener listener : smafListeners) {

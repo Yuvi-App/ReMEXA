@@ -30,11 +30,9 @@ public final class AudioPhraseTrack {
 
     private final PhraseTrack delegate;
     private int volume = DEFAULT_VOLUME;
-    private int lastLoop = 1;
 
-    AudioPhraseTrack(int id) {
-        this.delegate = new PhraseTrack(id);
-        this.delegate.setVolume(effectiveVolume(volume));
+    AudioPhraseTrack(int id, ClassLoader ownerClassLoader) {
+        this.delegate = new PhraseTrack(id, ownerClassLoader, effectiveVolume(volume));
     }
 
     public void setPhrase(AudioPhrase phrase) {
@@ -56,14 +54,12 @@ public final class AudioPhraseTrack {
     public void play() {
         MidletRuntime.ensureThreadActive();
         DebugLog.log(LogCategory.MEDIA, AudioPhraseTrack.class.getName(), "Track " + getID() + " play(loop=1)");
-        lastLoop = 1;
         delegate.play();
     }
 
     public void play(int loop) {
         MidletRuntime.ensureThreadActive();
         DebugLog.log(LogCategory.MEDIA, AudioPhraseTrack.class.getName(), "Track " + getID() + " play(loop=" + loop + ")");
-        lastLoop = loop;
         delegate.play(loop);
     }
 
@@ -77,12 +73,6 @@ public final class AudioPhraseTrack {
     }
 
     public void resume() {
-        if (delegate.getState() == PhraseTrack.PAUSED) {
-            DebugLog.log(LogCategory.MEDIA, AudioPhraseTrack.class.getName(),
-                    "Track " + getID() + " resume() restarting phrase from beginning");
-            delegate.play(lastLoop);
-            return;
-        }
         delegate.resume();
     }
 

@@ -1,6 +1,7 @@
 package com.jblend.media.smaf.phrase;
 
 import remexa.audio.smaf.SmafPlayback;
+import remexa.audio.AudioCallbacks;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -16,53 +17,65 @@ public final class PhraseTrack {
     public static final int PAUSED = 5;
 
     private final int id;
-    private final List<PhraseTrack> slaveTracks = new ArrayList<>();
+    private final List<PhraseTrack> slaveTracks = new java.util.concurrent.CopyOnWriteArrayList<>();
 
-    private Phrase phrase;
-    private SmafPlayback playback;
-    private PhraseTrack subjectTo;
+    private volatile Phrase phrase;
+    private volatile SmafPlayback playback;
+    private volatile PhraseTrack subjectTo;
     private PhraseTrackListener listener;
-    private GroupLoopCoordinator loopCoordinator;
-    private ClassLoader ownerClassLoader;
-    private int volume = 127;
-    private int panpot = 64;
-    private boolean muted;
-    private boolean terminalEventDispatched;
+    private volatile GroupLoopCoordinator loopCoordinator;
+    private final ClassLoader ownerClassLoader;
+    private volatile boolean disposed;
+    private volatile int volume = 127;
+    private volatile int panpot = 64;
+    private volatile boolean muted;
+    private volatile boolean terminalEventDispatched;
 
-    PhraseTrack(int id) {
+    PhraseTrack(int id, ClassLoader ownerClassLoader) {
+        this(id, ownerClassLoader, 127);
+    }
+
+    PhraseTrack(int id, ClassLoader ownerClassLoader, int volume) {
         this.id = id;
-    }
-
-    void reserveFor(ClassLoader ownerClassLoader) {
         this.ownerClassLoader = ownerClassLoader;
+        this.volume = volume;
     }
 
-    boolean isOwnedBy(ClassLoader candidate) {
-        return candidate == null || ownerClassLoader == candidate;
-    }
-
-    void clearOwner() {
-        ownerClassLoader = null;
+    synchronized void dispose() {
+        if (disposed) {
+            return;
+        }
+        disposed = true;
+        listener = null;
+        cancelLoopCoordinator();
+        clearSyncRelationship();
+        closePlayback();
+        phrase = null;
+        terminalEventDispatched = true;
     }
 
     public void setPhrase(Phrase phrase) {
-        rememberCurrentOwner();
+        ensureActive();
         DebugLog.log(LogCategory.MEDIA, PhraseTrack.class.getName(), "Track " + id + " setPhrase(size="
                 + (phrase == null ? 0 : phrase.getSize()) + ")");
         try {
-            cancelLoopCoordinator();
             dispatchTerminalEventIfNeeded("replace");
-            closePlayback();
-            this.phrase = phrase;
-            terminalEventDispatched = false;
-            if (phrase == null) {
-                return;
+            synchronized (this) {
+                ensureActive();
+                cancelLoopCoordinator();
+                closePlayback();
+                this.phrase = phrase;
+                terminalEventDispatched = false;
+                if (phrase == null) {
+                    return;
+                }
+                SmafPlayback next = SmafPlayback.create(phrase.getData());
+                playback = next;
+                next.setVolume(muted ? 0 : volume);
+                next.setPanpot(panpot);
+                next.setListener(eventId -> handlePlaybackEvent(next, eventId));
+                next.prepareAsync();
             }
-            playback = SmafPlayback.create(phrase.getData());
-            playback.setVolume(muted ? 0 : volume);
-            playback.setPanpot(panpot);
-            playback.setListener(this::handlePlaybackEvent);
-            playback.prepareAsync();
         } catch (Exception exception) {
             DebugLog.log(LogCategory.AUDIO, PhraseTrack.class.getName(),
                     "Track " + id + " setPhrase failed: " + exception.getMessage());
@@ -71,26 +84,31 @@ public final class PhraseTrack {
     }
 
     public void removePhrase() {
-        rememberCurrentOwner();
         DebugLog.log(LogCategory.MEDIA, PhraseTrack.class.getName(), "Track " + id + " removePhrase()");
-        boolean dispatchTerminalEvent = shouldDispatchTerminalEvent();
-        cancelLoopCoordinator();
-        stopInternal(new HashSet<>());
-        clearSyncRelationship();
-        closePlayback();
-        this.phrase = null;
+        boolean dispatchTerminalEvent;
+        synchronized (this) {
+            dispatchTerminalEvent = shouldDispatchTerminalEvent();
+            cancelLoopCoordinator();
+            stopInternal(new HashSet<>());
+            clearSyncRelationship();
+            closePlayback();
+            this.phrase = null;
+        }
         if (dispatchTerminalEvent) {
             dispatchTerminalEvent("removePhrase");
         }
     }
 
-    public void setEventListener(PhraseTrackListener listener) {
-        rememberCurrentOwner();
+    public synchronized void setEventListener(PhraseTrackListener listener) {
+        ensureActive();
         this.listener = listener;
     }
 
-    public void setSubjectTo(PhraseTrack masterTrack) {
-        rememberCurrentOwner();
+    public synchronized void setSubjectTo(PhraseTrack masterTrack) {
+        ensureActive();
+        if (masterTrack != null && (masterTrack.ownerClassLoader != ownerClassLoader || masterTrack.disposed)) {
+            throw new IllegalArgumentException("Sync master belongs to another or closed appli");
+        }
         if (subjectTo != null) {
             subjectTo.slaveTracks.remove(this);
         }
@@ -104,16 +122,16 @@ public final class PhraseTrack {
         }
     }
 
-    public void setVolume(int value) {
-        rememberCurrentOwner();
+    public synchronized void setVolume(int value) {
+        ensureActive();
         this.volume = Math.max(0, Math.min(127, value));
         if (playback != null) {
             playback.setVolume(effectiveVolume());
         }
     }
 
-    public void mute(boolean value) {
-        rememberCurrentOwner();
+    public synchronized void mute(boolean value) {
+        ensureActive();
         muted = value;
         if (playback != null) {
             playback.setVolume(effectiveVolume());
@@ -124,7 +142,7 @@ public final class PhraseTrack {
         return muted;
     }
 
-    public int getState() {
+    public synchronized int getState() {
         if (playback == null) {
             return NO_DATA;
         }
@@ -136,9 +154,9 @@ public final class PhraseTrack {
         play(1);
     }
 
-    public void play(int loop) {
+    public synchronized void play(int loop) {
         MidletRuntime.ensureThreadActive();
-        rememberCurrentOwner();
+        ensureActive();
         DebugLog.log(LogCategory.MEDIA, PhraseTrack.class.getName(), "Track " + id + " play(loop=" + loop + ")");
         ensurePlayback();
         if (playback.getState() != READY) {
@@ -157,21 +175,25 @@ public final class PhraseTrack {
     }
 
     public void stop() {
-        rememberCurrentOwner();
         DebugLog.log(LogCategory.MEDIA, PhraseTrack.class.getName(), "Track " + id + " stop()");
-        if (subjectTo != null) {
-            return;
+        boolean dispatchTerminalEvent;
+        synchronized (this) {
+            if (disposed || subjectTo != null) {
+                return;
+            }
+            dispatchTerminalEvent = shouldDispatchTerminalEvent();
+            cancelLoopCoordinator();
+            stopInternal(new HashSet<>());
         }
-        boolean dispatchTerminalEvent = shouldDispatchTerminalEvent();
-        cancelLoopCoordinator();
-        stopInternal(new HashSet<>());
         if (dispatchTerminalEvent) {
             dispatchTerminalEvent("stop");
         }
     }
 
-    public void pause() {
-        rememberCurrentOwner();
+    public synchronized void pause() {
+        if (disposed) {
+            return;
+        }
         DebugLog.log(LogCategory.MEDIA, PhraseTrack.class.getName(), "Track " + id + " pause()");
         if (subjectTo != null) {
             return;
@@ -179,8 +201,8 @@ public final class PhraseTrack {
         pauseInternal(new HashSet<>());
     }
 
-    public void resume() {
-        rememberCurrentOwner();
+    public synchronized void resume() {
+        ensureActive();
         DebugLog.log(LogCategory.MEDIA, PhraseTrack.class.getName(), "Track " + id + " resume()");
         if (subjectTo != null) {
             return;
@@ -228,8 +250,8 @@ public final class PhraseTrack {
         return id;
     }
 
-    public void setPanpot(int value) {
-        rememberCurrentOwner();
+    public synchronized void setPanpot(int value) {
+        ensureActive();
         panpot = Math.max(0, Math.min(127, value));
         if (playback != null) {
             playback.setPanpot(panpot);
@@ -294,6 +316,7 @@ public final class PhraseTrack {
         List<PhraseTrack> started = new ArrayList<>(group.size());
         try {
             for (PhraseTrack track : group) {
+                track.ensureActive();
                 track.terminalEventDispatched = false;
                 track.playback.play(loop, true);
                 started.add(track);
@@ -309,10 +332,18 @@ public final class PhraseTrack {
         }
     }
 
-    private void handlePlaybackEvent(int eventId) {
+    private void handlePlaybackEvent(SmafPlayback source, int eventId) {
+        GroupLoopCoordinator coordinator;
+        synchronized (this) {
+            if (disposed || playback != source || !MidletRuntime.isAppActive(ownerClassLoader)) {
+                return;
+            }
+            coordinator = loopCoordinator;
+            if (eventId == -1) {
+                terminalEventDispatched = true;
+            }
+        }
         if (eventId == -1) {
-            terminalEventDispatched = true;
-            GroupLoopCoordinator coordinator = loopCoordinator;
             if (coordinator != null) {
                 coordinator.onTrackCompleted(this);
                 return;
@@ -322,9 +353,12 @@ public final class PhraseTrack {
     }
 
     private void dispatchExternalEvent(int eventId) {
-        PhraseTrackListener currentListener = listener;
+        PhraseTrackListener currentListener;
+        synchronized (this) {
+            currentListener = disposed ? null : listener;
+        }
         if (currentListener != null) {
-            currentListener.eventOccurred(eventId);
+            AudioCallbacks.run(ownerClassLoader, () -> currentListener.eventOccurred(eventId));
         }
     }
 
@@ -334,7 +368,7 @@ public final class PhraseTrack {
         }
     }
 
-    private boolean shouldDispatchTerminalEvent() {
+    private synchronized boolean shouldDispatchTerminalEvent() {
         if (terminalEventDispatched || playback == null) {
             return false;
         }
@@ -414,15 +448,16 @@ public final class PhraseTrack {
 
     private void closePlayback() {
         if (playback != null) {
-            playback.close();
+            SmafPlayback previous = playback;
             playback = null;
+            previous.setListener(null);
+            previous.close();
         }
     }
 
-    private void rememberCurrentOwner() {
-        ClassLoader currentOwner = MidletRuntime.currentAppClassLoader();
-        if (currentOwner != null) {
-            ownerClassLoader = currentOwner;
+    private void ensureActive() {
+        if (disposed || !MidletRuntime.isAppActive(ownerClassLoader)) {
+            throw new IllegalStateException("Phrase track belongs to a closed appli");
         }
     }
 
@@ -510,7 +545,12 @@ public final class PhraseTrack {
             }
             if (restart) {
                 try {
-                    startPreparedPlaybackGroup(group, 1);
+                    synchronized (this) {
+                        if (cancelled) {
+                            return;
+                        }
+                        startPreparedPlaybackGroup(group, 1);
+                    }
                 } catch (RuntimeException exception) {
                     DebugLog.log(LogCategory.AUDIO, PhraseTrack.class.getName(),
                             "Grouped loop restart failed: " + exception.getMessage());

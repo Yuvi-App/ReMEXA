@@ -1,7 +1,7 @@
 package com.j_phone.amuse;
 
 public class PhrasePlayer {
-    private static final com.j_phone.amuse.PhrasePlayer INSTANCE = new com.j_phone.amuse.PhrasePlayer();
+    private static final java.util.Map<ClassLoader, PhrasePlayer> PLAYERS = new java.util.IdentityHashMap<>();
     private final com.jblend.media.smaf.phrase.PhrasePlayer delegate;
     private final java.util.IdentityHashMap<com.jblend.media.smaf.phrase.PhraseTrack, com.j_phone.amuse.PhraseTrack> tracks =
             new java.util.IdentityHashMap<>();
@@ -14,7 +14,11 @@ public class PhrasePlayer {
 
     public static com.j_phone.amuse.PhrasePlayer getPlayer () {
         remexa.probes.SdkStubSupport.log("com.j_phone.amuse.PhrasePlayer", "getPlayer");
-        return INSTANCE;
+        synchronized (PLAYERS) {
+            remexa.host.runtime.MidletRuntime.ensureThreadActive();
+            return PLAYERS.computeIfAbsent(remexa.host.runtime.MidletRuntime.currentAppClassLoader(),
+                    ignored -> new PhrasePlayer());
+        }
     }
 
     public com.j_phone.amuse.PhraseTrack getTrack () {
@@ -45,16 +49,27 @@ public class PhrasePlayer {
     public void disposeTrack (com.j_phone.amuse.PhraseTrack t) {
         remexa.probes.SdkStubSupport.log("com.j_phone.amuse.PhrasePlayer", "disposeTrack", t);
         delegate.disposeTrack(t == null ? null : t.delegate());
+        synchronized (tracks) {
+            if (t != null) {
+                tracks.remove(t.delegate());
+            }
+        }
     }
 
     public void kill () {
         remexa.probes.SdkStubSupport.log("com.j_phone.amuse.PhrasePlayer", "kill");
         delegate.kill();
+        synchronized (tracks) {
+            tracks.clear();
+        }
     }
 
     public void killOwnedBy (ClassLoader ownerClassLoader) {
         remexa.probes.SdkStubSupport.log("com.j_phone.amuse.PhrasePlayer", "killOwnedBy", ownerClassLoader);
         delegate.killOwnedBy(ownerClassLoader);
+        synchronized (PLAYERS) {
+            PLAYERS.entrySet().removeIf(entry -> ownerClassLoader == null || entry.getKey() == ownerClassLoader);
+        }
     }
 
     public void pause () {
@@ -71,6 +86,8 @@ public class PhrasePlayer {
         if (track == null) {
             return null;
         }
-        return tracks.computeIfAbsent(track, com.j_phone.amuse.PhraseTrack::new);
+        synchronized (tracks) {
+            return tracks.computeIfAbsent(track, com.j_phone.amuse.PhraseTrack::new);
+        }
     }
 }

@@ -150,6 +150,20 @@ public final class MidletRuntime {
         }
     }
 
+    static void detachOwned(ClassLoader classLoader) {
+        java.util.List<MIDlet> owned;
+        synchronized (CONTEXTS) {
+            owned = CONTEXTS.entrySet().stream()
+                    .filter(entry -> entry.getValue().classLoader() == classLoader)
+                    .map(Map.Entry::getKey).toList();
+        }
+        owned.forEach(MidletRuntime::detach);
+    }
+
+    public static boolean isAppActive(ClassLoader classLoader) {
+        return classLoader == null || !SHUTTING_DOWN_CLASS_LOADERS.contains(classLoader);
+    }
+
     public static void notifyDestroyed(MIDlet midlet) {
         var context = CONTEXTS.get(midlet);
         if (context == null) {

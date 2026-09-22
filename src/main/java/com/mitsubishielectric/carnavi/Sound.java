@@ -20,8 +20,14 @@ public final class Sound {
     private static final Object ACTIVE_LOCK = new Object();
     private static final List<ActiveEffect> ACTIVE_PLAYERS = new ArrayList<>();
 
-    private static volatile int volume = 100;
-    private static volatile boolean muted;
+    private static final java.util.Map<ClassLoader, Settings> SETTINGS = new java.util.IdentityHashMap<>();
+    private record Settings(int volume, boolean muted) { }
+
+    private static Settings settings() {
+        synchronized (ACTIVE_LOCK) {
+            return SETTINGS.getOrDefault(MidletRuntime.currentAppClassLoader(), new Settings(100, false));
+        }
+    }
 
     public Sound() {
         SdkStubSupport.log(LOG_SOURCE, "Sound");
@@ -31,7 +37,8 @@ public final class Sound {
         SdkStubSupport.log(LOG_SOURCE, "play", soundId);
         ClassLoader ownerClassLoader = MidletRuntime.currentAppClassLoader();
         MidletRuntime.ensureThreadActive();
-        if (muted || volume <= 0) {
+        Settings settings = settings();
+        if (settings.muted() || settings.volume() <= 0) {
             return;
         }
 
@@ -70,6 +77,11 @@ public final class Sound {
     public static void shutdownOwnedPlayers(ClassLoader ownerClassLoader) {
         List<RenderedPcmPlayer> players = new ArrayList<>();
         synchronized (ACTIVE_LOCK) {
+            if (ownerClassLoader == null) {
+                SETTINGS.clear();
+            } else {
+                SETTINGS.remove(ownerClassLoader);
+            }
             for (int index = 0; index < ACTIVE_PLAYERS.size(); index++) {
                 ActiveEffect effect = ACTIVE_PLAYERS.get(index);
                 if (!effect.isOwnedBy(ownerClassLoader)) {
@@ -84,7 +96,11 @@ public final class Sound {
 
     public static void setVolume(int level) {
         SdkStubSupport.log(LOG_SOURCE, "setVolume", level);
-        volume = Math.max(0, Math.min(100, level));
+        synchronized (ACTIVE_LOCK) {
+            MidletRuntime.ensureThreadActive();
+            SETTINGS.put(MidletRuntime.currentAppClassLoader(),
+                    new Settings(Math.max(0, Math.min(100, level)), settings().muted()));
+        }
         for (RenderedPcmPlayer player : activePlayerSnapshot()) {
             applyVolumeQuietly(player);
         }
@@ -92,12 +108,15 @@ public final class Sound {
 
     public static int getVolume() {
         SdkStubSupport.log(LOG_SOURCE, "getVolume");
-        return volume;
+        return settings().volume();
     }
 
     public static void setMute(boolean mute) {
         SdkStubSupport.log(LOG_SOURCE, "setMute", mute);
-        muted = mute;
+        synchronized (ACTIVE_LOCK) {
+            MidletRuntime.ensureThreadActive();
+            SETTINGS.put(MidletRuntime.currentAppClassLoader(), new Settings(settings().volume(), mute));
+        }
         if (mute) {
             stop();
         }
@@ -105,12 +124,16 @@ public final class Sound {
 
     public static boolean isMuted() {
         SdkStubSupport.log(LOG_SOURCE, "isMuted");
-        return muted;
+        return settings().muted();
     }
 
     private static void track(int soundId, ClassLoader ownerClassLoader, RenderedPcmPlayer player) {
         List<RenderedPcmPlayer> evicted = new ArrayList<>();
         synchronized (ACTIVE_LOCK) {
+            if (!MidletRuntime.isAppActive(ownerClassLoader)) {
+                player.close();
+                return;
+            }
             ACTIVE_PLAYERS.add(new ActiveEffect(soundId, ownerClassLoader, player));
             while (ACTIVE_PLAYERS.size() > MAX_ACTIVE_PLAYERS) {
                 evicted.add(ACTIVE_PLAYERS.remove(0).player());
@@ -130,6 +153,9 @@ public final class Sound {
         synchronized (ACTIVE_LOCK) {
             for (int index = 0; index < ACTIVE_PLAYERS.size(); index++) {
                 ActiveEffect effect = ACTIVE_PLAYERS.get(index);
+                if (effect.ownerClassLoader() != MidletRuntime.currentAppClassLoader()) {
+                    continue;
+                }
                 if (matchSoundId && effect.soundId() != soundId) {
                     continue;
                 }
@@ -144,7 +170,9 @@ public final class Sound {
         synchronized (ACTIVE_LOCK) {
             List<RenderedPcmPlayer> players = new ArrayList<>(ACTIVE_PLAYERS.size());
             for (ActiveEffect effect : ACTIVE_PLAYERS) {
-                players.add(effect.player());
+                if (effect.ownerClassLoader() == MidletRuntime.currentAppClassLoader()) {
+                    players.add(effect.player());
+                }
             }
             return players;
         }
@@ -167,7 +195,8 @@ public final class Sound {
     }
 
     private static void applyVolume(RenderedPcmPlayer player) {
-        player.setVolume(muted ? 0 : Math.round(volume * 127.0f / 100.0f));
+        Settings settings = settings();
+        player.setVolume(settings.muted() ? 0 : Math.round(settings.volume() * 127.0f / 100.0f));
     }
 
     private static RenderedPcmAudio createEffectAudio(Integer soundId) {

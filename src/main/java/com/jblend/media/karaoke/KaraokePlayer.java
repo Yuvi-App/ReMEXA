@@ -39,7 +39,7 @@ public class KaraokePlayer extends com.jblend.media.MediaPlayer implements com.j
         }
     }
 
-    public void setData (com.jblend.media.karaoke.KaraokeData data) {
+    public synchronized void setData (com.jblend.media.karaoke.KaraokeData data) {
         remexa.probes.SdkStubSupport.log("com.jblend.media.karaoke.KaraokePlayer", "setData", data);
         closePlayback();
         super.setData(data);
@@ -290,7 +290,7 @@ public class KaraokePlayer extends com.jblend.media.MediaPlayer implements com.j
     private void handlePlaybackEvent(int eventId) {
         if (eventId == -1) {
             currentPositionMs = 0L;
-            notifyRepeatCompleted();
+            notifyPlaybackCompleted();
             notifyKaraokeState(System.currentTimeMillis());
             return;
         }

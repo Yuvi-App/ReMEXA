@@ -109,6 +109,11 @@ public final class AppRuntime {
             throw new LaunchException("Failed to launch app.", exception);
         } finally {
             if (!launched && classLoader != null) {
+                MidletRuntime.beginShutdown(classLoader);
+                shutdownAudioPlayers(classLoader);
+                shutdownAppThreads(classLoader);
+                shutdownAudioPlayers(classLoader);
+                MidletRuntime.detachOwned(classLoader);
                 MidletRuntime.unregisterTextInputHandler(classLoader);
                 MidletRuntime.unregisterHostFrame(classLoader);
                 closeClassLoader(classLoader, descriptor.title());
@@ -155,6 +160,7 @@ public final class AppRuntime {
         shutdownJblendMediaPlayers(classLoader);
         shutdownJphoneMediaPlayers(classLoader);
         shutdownMediaPlayers(classLoader);
+        com.mitsubishielectric.carnavi.Sound.shutdownOwnedPlayers(classLoader);
         SmafPlayback.closeIdleStreamingEnginesNow();
     }
 
@@ -227,6 +233,9 @@ public final class AppRuntime {
     }
 
     private boolean isAppThread(Thread thread, ClassLoader classLoader) {
+        if (remexa.audio.AudioCallbacks.isHostWorker(thread)) {
+            return false;
+        }
         if (thread.getContextClassLoader() == classLoader) {
             return true;
         }

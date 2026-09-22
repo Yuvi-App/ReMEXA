@@ -1,5 +1,8 @@
 package remexa.audio.pcm;
 
+import remexa.audio.AudioCallbacks;
+import remexa.host.runtime.MidletRuntime;
+
 import javax.sound.sampled.AudioFormat;
 import javax.sound.sampled.AudioSystem;
 import javax.sound.sampled.LineUnavailableException;
@@ -128,16 +131,29 @@ public final class RenderedPcmPlayer implements AutoCloseable {
         }
 
         private void ensureWorkerLocked() {
-            if (worker != null) {
+            if (worker != null && worker.isAlive()) {
                 return;
             }
-            worker = new Thread(this::runLoop,
+            worker = AudioCallbacks.hostThread(this::runLoop,
                     "remexa-pcm-rendered-" + formatKey.sampleRate() + "hz-" + formatKey.channelCount() + "ch");
             worker.setDaemon(true);
             worker.start();
         }
 
         private void runLoop() {
+            try {
+                mixLoop();
+            } finally {
+                synchronized (engineLock) {
+                    if (worker == Thread.currentThread()) {
+                        worker = null;
+                        closeLineLocked();
+                    }
+                }
+            }
+        }
+
+        private void mixLoop() {
             while (true) {
                 List<PlaybackHandle> snapshot;
                 synchronized (engineLock) {
@@ -163,6 +179,7 @@ public final class RenderedPcmPlayer implements AutoCloseable {
                     }
                 }
 
+                Arrays.fill(mixBuffer, 0.0f);
                 long writtenBefore = writtenFrames;
                 int mixedFrames = 0;
                 List<Runnable> notifications = new ArrayList<>();
@@ -182,18 +199,16 @@ public final class RenderedPcmPlayer implements AutoCloseable {
                 if (mixedFrames > 0) {
                     try {
                         synchronized (engineLock) {
+                            // A close can retire the whole snapshot while rendering is outside this lock.
+                            // Serialize the write with line shutdown so no old chunk reopens the device.
+                            if (snapshot.stream().noneMatch(PlaybackHandle::hasWork)) {
+                                continue;
+                            }
                             ensureLineLocked();
+                            int length = encodePcm(mixedFrames);
+                            int written = line.write(pcmBuffer, 0, length);
+                            writtenFrames += written / (formatKey.channelCount() * 2);
                         }
-                        SourceDataLine targetLine;
-                        synchronized (engineLock) {
-                            targetLine = line;
-                        }
-                        if (targetLine == null) {
-                            continue;
-                        }
-                        int length = encodePcm(mixedFrames);
-                        targetLine.write(pcmBuffer, 0, length);
-                        writtenFrames += mixedFrames;
                     } catch (LineUnavailableException | IllegalArgumentException | IllegalStateException exception) {
                         synchronized (engineLock) {
                             closeLineLocked();
@@ -305,6 +320,7 @@ public final class RenderedPcmPlayer implements AutoCloseable {
     }
 
     private static final class PlaybackHandle {
+        private final ClassLoader ownerClassLoader = MidletRuntime.currentAppClassLoader();
         private final SharedEngine engine;
         private final RenderedPcmAudio audio;
         private final Object stateLock = new Object();
@@ -337,7 +353,8 @@ public final class RenderedPcmPlayer implements AutoCloseable {
 
         void setCompletionListener(Runnable listener) {
             synchronized (stateLock) {
-                this.completionListener = listener;
+                playbackEpoch++;
+                this.completionListener = closed ? null : listener;
             }
         }
 
@@ -349,6 +366,7 @@ public final class RenderedPcmPlayer implements AutoCloseable {
 
         void play(int loopCount) {
             synchronized (stateLock) {
+                ensureOpenLocked();
                 playbackEpoch++;
                 clearCompletionStateLocked();
                 framePosition = 0;
@@ -386,6 +404,7 @@ public final class RenderedPcmPlayer implements AutoCloseable {
 
         void resume() {
             synchronized (stateLock) {
+                ensureOpenLocked();
                 if (!paused) {
                     return;
                 }
@@ -402,6 +421,7 @@ public final class RenderedPcmPlayer implements AutoCloseable {
                 playbackEpoch++;
                 clearCompletionStateLocked();
                 closed = true;
+                completionListener = null;
                 paused = false;
                 playing = false;
                 framePosition = 0;
@@ -484,13 +504,15 @@ public final class RenderedPcmPlayer implements AutoCloseable {
         }
 
         void dispatchReadyCompletion(long playedFrames, List<Runnable> notifications) {
+            long epoch;
             synchronized (stateLock) {
                 if (!completionPending || completionTargetFrame < 0L || playedFrames < completionTargetFrame) {
                     return;
                 }
                 clearCompletionStateLocked();
+                epoch = playbackEpoch;
             }
-            notifications.add(this::dispatchCompletion);
+            notifications.add(() -> dispatchCompletion(epoch));
         }
 
         private boolean advanceLoopLocked() {
@@ -516,17 +538,25 @@ public final class RenderedPcmPlayer implements AutoCloseable {
             completionTargetFrame = -1L;
         }
 
-        private void dispatchCompletion() {
-            Runnable listener;
-            synchronized (stateLock) {
-                listener = completionListener;
+        private void ensureOpenLocked() {
+            if (closed || !MidletRuntime.isAppActive(ownerClassLoader)) {
+                throw new IllegalStateException("Audio playback belongs to a closed player or appli");
             }
-            if (listener == null) {
-                return;
-            }
-            Thread callbackThread = new Thread(listener, "remexa-pcm-callback");
-            callbackThread.setDaemon(true);
-            callbackThread.start();
+        }
+
+        private void dispatchCompletion(long epoch) {
+            AudioCallbacks.dispatch(ownerClassLoader, "remexa-pcm-callback", () -> {
+                Runnable currentListener;
+                synchronized (stateLock) {
+                    if (closed || playbackEpoch != epoch) {
+                        return;
+                    }
+                    currentListener = completionListener;
+                }
+                if (currentListener != null) {
+                    currentListener.run();
+                }
+            });
         }
 
         private static void mixIntoBuffer(byte[] pcm,

@@ -20,10 +20,10 @@ public abstract class MediaPlayer {
     private final java.util.List<com.jblend.media.MediaPlayerListener> listeners = new java.util.concurrent.CopyOnWriteArrayList<>();
     private final ClassLoader ownerClassLoader;
     private com.jblend.media.MediaData data;
-    private int state = NO_DATA;
+    private volatile int state = NO_DATA;
     private int repeatCount;
     private boolean repeatInfinite;
-    private boolean runtimeShutdown;
+    private volatile boolean runtimeShutdown;
 
     public MediaPlayer () {
         ownerClassLoader = MidletRuntime.currentAppClassLoader();
@@ -44,7 +44,7 @@ public abstract class MediaPlayer {
         }
     }
 
-    public void setData (com.jblend.media.MediaData data) {
+    public synchronized void setData (com.jblend.media.MediaData data) {
         remexa.probes.SdkStubSupport.log("com.jblend.media.MediaPlayer", "setData", data);
         if (runtimeShutdown) {
             return;
@@ -70,7 +70,7 @@ public abstract class MediaPlayer {
         startPlayback(Math.max(1, count), false);
     }
 
-    public void stop () {
+    public synchronized void stop () {
         remexa.probes.SdkStubSupport.log("com.jblend.media.MediaPlayer", "stop");
         if (state == NO_DATA || state == READY) {
             return;
@@ -79,7 +79,7 @@ public abstract class MediaPlayer {
         transitionTo(data == null ? NO_DATA : READY);
     }
 
-    public void pause () {
+    public synchronized void pause () {
         remexa.probes.SdkStubSupport.log("com.jblend.media.MediaPlayer", "pause");
         if (state != PLAYING) {
             return;
@@ -88,7 +88,10 @@ public abstract class MediaPlayer {
         transitionTo(PAUSED);
     }
 
-    public void resume () {
+    public synchronized void resume () {
+        if (runtimeShutdown || !MidletRuntime.isAppActive(ownerClassLoader)) {
+            return;
+        }
         remexa.probes.SdkStubSupport.log("com.jblend.media.MediaPlayer", "resume");
         if (state != PAUSED) {
             return;
@@ -159,6 +162,16 @@ public abstract class MediaPlayer {
         return data;
     }
 
+    /** The backend has completed all iterations supplied to onPlay(). */
+    protected final synchronized void notifyPlaybackCompleted() {
+        if (runtimeShutdown || !MidletRuntime.isAppActive(ownerClassLoader)) {
+            return;
+        }
+        repeatCount = 0;
+        repeatInfinite = false;
+        transitionTo(data == null ? NO_DATA : READY);
+    }
+
     protected final byte[] currentRawData() {
         return data == null ? null : data.rawData().clone();
     }
@@ -171,9 +184,9 @@ public abstract class MediaPlayer {
         return repeatInfinite;
     }
 
-    private void startPlayback(int count, boolean infinite) {
+    private synchronized void startPlayback(int count, boolean infinite) {
         MidletRuntime.ensureThreadActive();
-        if (runtimeShutdown) {
+        if (runtimeShutdown || !MidletRuntime.isAppActive(ownerClassLoader)) {
             return;
         }
         if (state == NO_DATA) {
@@ -199,6 +212,8 @@ public abstract class MediaPlayer {
         if (!ACTIVE_PLAYERS.remove(this)) {
             return;
         }
+        runtimeShutdown = true;
+        listeners.clear();
         try {
             if (state == PLAYING || state == PAUSED) {
                 onStop();
