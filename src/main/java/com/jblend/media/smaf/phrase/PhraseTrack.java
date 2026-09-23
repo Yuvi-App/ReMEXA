@@ -47,6 +47,15 @@ public final class PhraseTrack {
         }
         disposed = true;
         listener = null;
+        clearPlayback();
+    }
+
+    synchronized void resetPlayback() {
+        ensureActive();
+        clearPlayback();
+    }
+
+    private void clearPlayback() {
         cancelLoopCoordinator();
         clearSyncRelationship();
         closePlayback();

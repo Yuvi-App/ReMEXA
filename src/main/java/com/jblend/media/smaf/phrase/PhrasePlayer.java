@@ -114,8 +114,16 @@ public final class PhrasePlayer {
         reservedAudioTracks.clear();
     }
 
-    public void kill() {
-        disposePlayer();
+    public synchronized void kill() {
+        if (disposed || !MidletRuntime.isAppActive(ownerClassLoader)) {
+            return;
+        }
+        // Games cache these handles and use kill() when changing screens. Only
+        // disposal or app shutdown retires a handle and removes its listener.
+        tracks.forEach(PhraseTrack::resetPlayback);
+        audioTracks.forEach(track -> track.delegate().resetPlayback());
+        reservedTracks.clear();
+        reservedAudioTracks.clear();
     }
 
     public void disposePlayerOwnedBy(ClassLoader ownerClassLoader) {

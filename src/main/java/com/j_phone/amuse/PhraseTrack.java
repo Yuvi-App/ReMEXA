@@ -54,7 +54,7 @@ public class PhraseTrack {
 
     public com.j_phone.amuse.Phrase getPhrase () {
         remexa.probes.SdkStubSupport.log("com.j_phone.amuse.PhraseTrack", "getPhrase");
-        return currentPhrase;
+        return delegate.getPhrase() == null ? null : currentPhrase;
     }
 
     public void setVolume (int value) {
@@ -85,7 +85,7 @@ public class PhraseTrack {
 
     public com.j_phone.amuse.PhraseTrack getSyncMaster () {
         remexa.probes.SdkStubSupport.log("com.j_phone.amuse.PhraseTrack", "getSyncMaster");
-        return syncMaster;
+        return delegate.getSyncMaster() == null ? null : syncMaster;
     }
 
     public void setEventListener (com.j_phone.amuse.PhraseTrackListener l) {

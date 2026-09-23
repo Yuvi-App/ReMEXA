@@ -112,6 +112,67 @@ public class AudioLifecycleTest {
         assertSame(replacement, pool.getTrack(0));
     }
 
+    @Test public void inGameKillKeepsCachedJphoneTracksAndListenersUsable() throws Exception {
+        installEngine(SmafStreamingPlayer.class, RATE);
+        enter(owner("screen-transitions"));
+        var pool = com.j_phone.amuse.PhrasePlayer.getPlayer();
+        var cached = new com.j_phone.amuse.PhraseTrack[pool.getTrackCount()];
+        AtomicInteger completions = new AtomicInteger();
+        for (int i = 0; i < cached.length; i++) {
+            cached[i] = pool.getTrack(i);
+            cached[i].setEventListener(id -> { if (id == -1) completions.incrementAndGet(); });
+        }
+        // Initial D stores these handles once, then kill()/removePhrase() between screens.
+        for (int screen = 0; screen < 3; screen++) {
+            PhraseTrack master = (PhraseTrack) get(cached[0], "delegate");
+            SmafPlayback previous = attachPlayback(master, new Session());
+            cached[1].setSubjectTo(cached[0]);
+            cached[0].setVolume(81);
+            pool.kill();
+            assertTrue((Boolean) get(previous, "closed"));
+            assertEquals(0, completions.get());
+            for (int i = 0; i < cached.length; i++) {
+                assertSame("kill() replaced the game's cached track", cached[i], pool.getTrack(i));
+                assertNull(cached[i].getPhrase());
+                assertNull(cached[i].getSyncMaster());
+                cached[i].removePhrase();
+            }
+            assertEquals(81, master.getVolume());
+            cached[0].setPhrase(null); // The same handle must accept the next screen's phrase.
+            Session gameplay = new Session();
+            attachPlayback(master, gameplay);
+            cached[0].play(2);
+            assertTrue("Gameplay completion listener was lost", await(() -> completions.get() == 1, 2000));
+            assertEquals(2, gameplay.rewinds.get());
+            completions.set(0);
+        }
+    }
+
+    @Test public void inGameKillPreservesAudioTracksButAppShutdownStillRetiresThem() throws Exception {
+        installEngine(SmafStreamingPlayer.class, RATE);
+        ClassLoader app = owner("audio-tracks"); enter(app);
+        PhrasePlayer pool = PhrasePlayer.getPlayer();
+        var cached = pool.getAudioTrack(0);
+        PhraseTrack track = (PhraseTrack) get(cached, "delegate");
+        SmafPlayback old = attachPlayback(track, new Session());
+        CountDownLatch completed = new CountDownLatch(1);
+        cached.setEventListener(id -> completed.countDown());
+        pool.kill();
+        assertTrue((Boolean) get(old, "closed"));
+        assertSame(cached, pool.getAudioTrack(0));
+        cached.setVolume(70);
+        attachPlayback(track, new Session());
+        cached.play(1);
+        assertTrue(completed.await(2, TimeUnit.SECONDS));
+
+        MidletRuntime.beginShutdown(app); enter(HOST);
+        PhrasePlayer.getPlayer().killOwnedBy(app);
+        pool.kill(); // A game's destroyApp() may repeat its normal audio cleanup.
+        assertThrows(IllegalStateException.class, () -> cached.setVolume(70));
+        enter(owner("next-app"));
+        assertNotSame(cached, PhrasePlayer.getPlayer().getAudioTrack(0));
+    }
+
     @Test public void queuedCompletionIsDiscardedAfterClose() throws Exception {
         installEngine(SmafStreamingPlayer.class, RATE);
         SmafStreamingPlayer player = stream(new Session(), List.of());

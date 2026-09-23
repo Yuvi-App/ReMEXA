@@ -59,9 +59,6 @@ public class PhrasePlayer {
     public void kill () {
         remexa.probes.SdkStubSupport.log("com.j_phone.amuse.PhrasePlayer", "kill");
         delegate.kill();
-        synchronized (tracks) {
-            tracks.clear();
-        }
     }
 
     public void killOwnedBy (ClassLoader ownerClassLoader) {
