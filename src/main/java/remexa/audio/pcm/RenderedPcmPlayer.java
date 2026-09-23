@@ -90,6 +90,7 @@ public final class RenderedPcmPlayer implements AutoCloseable {
         private Thread worker;
         private SourceDataLine line;
         private long writtenFrames;
+        private long outputEpoch;
         private long idleCloseDeadlineMs = Long.MAX_VALUE;
 
         private SharedEngine(OutputFormatKey formatKey) {
@@ -180,7 +181,6 @@ public final class RenderedPcmPlayer implements AutoCloseable {
                 }
 
                 Arrays.fill(mixBuffer, 0.0f);
-                long writtenBefore = writtenFrames;
                 int mixedFrames = 0;
                 List<Runnable> notifications = new ArrayList<>();
                 for (PlaybackHandle handle : snapshot) {
@@ -196,38 +196,65 @@ public final class RenderedPcmPlayer implements AutoCloseable {
                     }
                 }
 
-                if (mixedFrames > 0) {
-                    try {
-                        synchronized (engineLock) {
-                            // A close can retire the whole snapshot while rendering is outside this lock.
-                            // Serialize the write with line shutdown so no old chunk reopens the device.
+                SourceDataLine targetLine = null;
+                long writeEpoch = -1L;
+                long writtenBefore;
+                long writtenAfter;
+                long playedFrames;
+                try {
+                    synchronized (engineLock) {
+                        // A retired snapshot must not reopen the device after app shutdown.
+                        if (mixedFrames > 0) {
                             if (snapshot.stream().noneMatch(PlaybackHandle::hasWork)) {
                                 continue;
                             }
                             ensureLineLocked();
-                            int length = encodePcm(mixedFrames);
-                            int written = line.write(pcmBuffer, 0, length);
-                            writtenFrames += written / (formatKey.channelCount() * 2);
                         }
-                    } catch (LineUnavailableException | IllegalArgumentException | IllegalStateException exception) {
-                        synchronized (engineLock) {
-                            closeLineLocked();
-                        }
-                        for (PlaybackHandle handle : snapshot) {
-                            handle.failPlayback();
-                        }
+                        targetLine = line;
+                        writeEpoch = outputEpoch;
+                        writtenBefore = writtenFrames;
                     }
+                    // Device writes may wait for buffer space. Player control and close
+                    // must remain able to acquire engineLock while that happens.
+                    int written = mixedFrames > 0 ? targetLine.write(pcmBuffer, 0, encodePcm(mixedFrames)) : 0;
+                    synchronized (engineLock) {
+                        if (line != targetLine || outputEpoch != writeEpoch) {
+                            continue;
+                        }
+                        writtenFrames += written / (formatKey.channelCount() * 2);
+                        writtenAfter = writtenFrames;
+                        playedFrames = targetLine == null ? writtenAfter : targetLine.getLongFramePosition();
+                    }
+                } catch (LineUnavailableException | IllegalArgumentException | IllegalStateException exception) {
+                    synchronized (engineLock) {
+                        if (targetLine != null && (line != targetLine || outputEpoch != writeEpoch)) {
+                            continue;
+                        }
+                        closeLineLocked();
+                    }
+                    for (PlaybackHandle handle : snapshot) {
+                        handle.failPlayback();
+                    }
+                    continue;
                 }
 
-                long playedFrames;
-                synchronized (engineLock) {
-                    playedFrames = line == null ? writtenFrames : line.getLongFramePosition();
-                }
                 for (PlaybackHandle handle : snapshot) {
-                    handle.bindCompletionTarget(writtenBefore, writtenFrames);
+                    handle.bindCompletionTarget(writtenBefore, writtenAfter);
                     handle.dispatchReadyCompletion(playedFrames, notifications);
                 }
                 notifications.forEach(Runnable::run);
+                if (mixedFrames == 0) {
+                    // Only completion remains: let the device drain without spinning
+                    // on its frame position and contending with the game's controls.
+                    synchronized (engineLock) {
+                        try {
+                            engineLock.wait(5L);
+                        } catch (InterruptedException interrupted) {
+                            Thread.currentThread().interrupt();
+                            return;
+                        }
+                    }
+                }
             }
         }
 
@@ -287,6 +314,7 @@ public final class RenderedPcmPlayer implements AutoCloseable {
                     formatKey.channelCount(),
                     true,
                     false);
+            outputEpoch++;
             line = AudioSystem.getSourceDataLine(format);
             line.open(format, LINE_BUFFER_FRAMES * format.getFrameSize());
             line.start();
@@ -297,6 +325,7 @@ public final class RenderedPcmPlayer implements AutoCloseable {
             if (line == null) {
                 return;
             }
+            outputEpoch++;
             line.stop();
             line.flush();
             line.close();

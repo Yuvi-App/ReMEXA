@@ -463,6 +463,124 @@ public class AudioLifecycleTest {
         assertEquals(0, writes.get());
     }
 
+    @Test public void streamingControlsDoNotWaitForTheAudioDevice() throws Exception {
+        verifyResponsiveControls(SmafStreamingPlayer.class);
+    }
+
+    @Test public void pcmControlsDoNotWaitForTheAudioDevice() throws Exception {
+        verifyResponsiveControls(RenderedPcmPlayer.class);
+    }
+
+    @Test public void renderedSmafControlsDoNotWaitForTheAudioDevice() throws Exception {
+        verifyResponsiveControls(SmafRenderedPlayer.class);
+    }
+
+    @Test public void closingDuringADeviceWriteDiscardsTheRetiredOutput() throws Exception {
+        for (Class<?> type : List.of(SmafStreamingPlayer.class, RenderedPcmPlayer.class, SmafRenderedPlayer.class)) {
+            CountDownLatch writing = new CountDownLatch(1), releaseWrite = new CountDownLatch(1);
+            AtomicInteger lineCloses = new AtomicInteger();
+            Object engine = installEngine(type, RATE, (proxy, method, args) -> {
+                if (method.getName().equals("write")) {
+                    writing.countDown();
+                    if (!releaseWrite.await(3, TimeUnit.SECONDS)) throw new AssertionError("Write never released");
+                }
+                if (method.getName().equals("close")) lineCloses.incrementAndGet();
+                return fakeLineResult(method.getName(), args);
+            });
+            Object output = newOutput(type);
+            call(output, "play", 0);
+            assertTrue(writing.await(2, TimeUnit.SECONDS));
+            Thread mixer;
+            synchronized (get(engine, "engineLock")) { mixer = (Thread) get(engine, "worker"); }
+            FutureTask<Void> closing = new FutureTask<>(() -> {
+                ((AutoCloseable) output).close();
+                if (type == SmafStreamingPlayer.class) call(engine, "closeIdleNow");
+                return null;
+            });
+            Thread closer = AudioCallbacks.hostThread(closing, "test-close-during-device-write");
+            closer.start();
+            try {
+                closing.get(500, TimeUnit.MILLISECONDS);
+                assertEquals(1, lineCloses.get());
+            } finally {
+                releaseWrite.countDown();
+                closer.join(2000);
+                mixer.join(2000);
+            }
+            assertFalse("Closed mixer kept running: " + type.getSimpleName(), mixer.isAlive());
+            synchronized (get(engine, "engineLock")) {
+                assertNull(get(engine, "line"));
+                assertEquals(0L, get(engine, "writtenFrames"));
+            }
+            assertEquals(1, lineCloses.get());
+        }
+    }
+
+    private void verifyResponsiveControls(Class<?> type) throws Exception {
+        CountDownLatch writing = new CountDownLatch(1), releaseWrite = new CountDownLatch(1);
+        installEngine(type, RATE, (proxy, method, args) -> {
+            if (method.getName().equals("write")) {
+                writing.countDown();
+                if (!releaseWrite.await(3, TimeUnit.SECONDS)) throw new AssertionError("Write never released");
+            }
+            return fakeLineResult(method.getName(), args);
+        });
+        Object music = newOutput(type);
+        call(music, "play", 0);
+        assertTrue(writing.await(2, TimeUnit.SECONDS));
+        FutureTask<Void> effect = new FutureTask<>(() -> {
+            Object output = newOutput(type);
+            try {
+                call(output, "play", 1);
+                call(output, "pause");
+                call(output, "resume");
+                call(output, "stop");
+            } finally {
+                ((AutoCloseable) output).close();
+            }
+            return null;
+        });
+        Thread game = AudioCallbacks.hostThread(effect, "test-game-audio-control");
+        game.start();
+        try {
+            effect.get(500, TimeUnit.MILLISECONDS);
+        } finally {
+            releaseWrite.countDown();
+            game.join(2000);
+        }
+    }
+
+    @Test public void drainedPcmAndRenderedSmafWaitInsteadOfBusySpinning() throws Exception {
+        for (Class<?> type : List.of(RenderedPcmPlayer.class, SmafRenderedPlayer.class)) {
+            AtomicLong playedFrames = new AtomicLong();
+            AtomicInteger positionPolls = new AtomicInteger();
+            CountDownLatch polling = new CountDownLatch(1), completed = new CountDownLatch(1);
+            installEngine(type, RATE, (proxy, method, args) -> {
+                if (method.getName().equals("getLongFramePosition")) {
+                    positionPolls.incrementAndGet(); polling.countDown();
+                    return playedFrames.get();
+                }
+                return fakeLineResult(method.getName(), args);
+            });
+            Object output = newOutput(type);
+            if (output instanceof RenderedPcmPlayer pcm) pcm.setCompletionListener(completed::countDown);
+            else ((SmafRenderedPlayer) output).setListener(id -> completed.countDown());
+            call(output, "play", 1);
+            assertTrue(polling.await(2, TimeUnit.SECONDS));
+            assertFalse("Completion polling spins while the device drains: " + type.getSimpleName(),
+                    await(() -> positionPolls.get() > 100, 100));
+            playedFrames.set(Long.MAX_VALUE);
+            assertTrue(completed.await(2, TimeUnit.SECONDS));
+        }
+    }
+
+    private Object newOutput(Class<?> type) {
+        if (type == SmafStreamingPlayer.class) return stream(new Session(), List.of());
+        if (type == RenderedPcmPlayer.class)
+            return keep(new RenderedPcmPlayer(new RenderedPcmAudio(RATE, 2, 8, new byte[32])));
+        return keep(new SmafRenderedPlayer(new SmafRenderedAudio(RATE, 2, 8, new byte[32])));
+    }
+
     @Test public void asynchronouslyOpenedSmafKeepsTheCreatingAppsIdentity() throws Exception {
         installEngine(SmafStreamingPlayer.class, 32000);
         String synth = System.getProperty("remexa.smafSynth");
@@ -553,25 +671,31 @@ public class AudioLifecycleTest {
         set(handle, "completionPending", true); set(handle, "completionTargetFrame", 0L);
         call(handle, "dispatchReadyCompletion", 0L, sink); return sink;
     }
-    @SuppressWarnings("unchecked")
     private Object installEngine(Class<?> type, int rate) throws Exception {
+        return installEngine(type, rate, (proxy, method, args) -> fakeLineResult(method.getName(), args));
+    }
+    @SuppressWarnings("unchecked")
+    private Object installEngine(Class<?> type, int rate, InvocationHandler output) throws Exception {
         Object key = construct(type.getName() + "$OutputFormatKey", rate, 2);
         Object engine = construct(type.getName() + "$SharedEngine", key);
         SourceDataLine line = (SourceDataLine) Proxy.newProxyInstance(HOST, new Class<?>[]{SourceDataLine.class},
-                (proxy, method, args) -> switch (method.getName()) {
-                    case "isRunning", "isActive", "isOpen" -> true;
-                    case "write" -> { writes.incrementAndGet(); yield (Integer) args[2]; }
-                    case "getLongFramePosition", "getMicrosecondPosition" -> Long.MAX_VALUE;
-                    case "getLevel" -> 0f;
-                    case "getControls" -> new javax.sound.sampled.Control[0];
-                    case "isControlSupported" -> false;
-                    case "getFramePosition", "available", "getBufferSize" -> 0;
-                    case "toString" -> "FakeAudioLine";
-                    default -> null;
-                });
+                output);
         set(engine, "line", line);
         ((Map<Object, Object>) field(type, "ENGINES").get(null)).put(key, engine);
         engines.add(engine); return engine;
+    }
+    private Object fakeLineResult(String method, Object[] args) {
+        return switch (method) {
+            case "isRunning", "isActive", "isOpen" -> true;
+            case "write" -> { writes.incrementAndGet(); yield (Integer) args[2]; }
+            case "getLongFramePosition", "getMicrosecondPosition" -> Long.MAX_VALUE;
+            case "getLevel" -> 0f;
+            case "getControls" -> new javax.sound.sampled.Control[0];
+            case "isControlSupported" -> false;
+            case "getFramePosition", "available", "getBufferSize" -> 0;
+            case "toString" -> "FakeAudioLine";
+            default -> null;
+        };
     }
     private static final class Session implements SmafStreamingSession {
         private int position;

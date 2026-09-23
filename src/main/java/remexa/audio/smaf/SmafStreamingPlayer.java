@@ -126,6 +126,7 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
         private Thread worker;
         private SourceDataLine line;
         private long writtenFrames;
+        private long outputEpoch;
         private long idleCloseDeadlineMs = Long.MAX_VALUE;
 
         private SharedEngine(OutputFormatKey formatKey) {
@@ -224,7 +225,6 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
 
                 Arrays.fill(mixBuffer, 0.0f);
                 notifications.clear();
-                long writtenBefore = writtenFrames;
                 int mixedFrames = 0;
                 for (PlaybackHandle handle : snapshot) {
                     Arrays.fill(sessionBuffer, 0.0f);
@@ -248,40 +248,52 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
                     }
                 }
 
-                if (mixedFrames > 0) {
-                    try {
-                        synchronized (engineLock) {
-                            // A close can retire the whole snapshot while rendering is outside this lock.
-                            // Serialize the write with line shutdown so no old chunk reopens the device.
+                SourceDataLine targetLine = null;
+                long writeEpoch = -1L;
+                long writtenBefore;
+                long writtenAfter;
+                long playedFrames;
+                try {
+                    synchronized (engineLock) {
+                        // A retired snapshot must not reopen the device after app shutdown.
+                        if (mixedFrames > 0) {
                             if (snapshot.stream().noneMatch(PlaybackHandle::hasWork)) {
                                 continue;
                             }
                             ensureLineLocked();
-                            int length = encodePcm(mixedFrames);
-                            int written = line.write(pcmBuffer, 0, length);
-                            writtenFrames += written / (formatKey.channelCount() * 2);
                         }
-                    } catch (LineUnavailableException | IllegalArgumentException | IllegalStateException exception) {
-                        synchronized (engineLock) {
-                            closeLineLocked();
-                        }
-                        RuntimeException failure =
-                                new RuntimeException("Failed to write streamed SMAF output", exception);
-                        for (PlaybackHandle handle : snapshot) {
-                            handle.failPlayback(failure);
-                        }
+                        targetLine = line;
+                        writeEpoch = outputEpoch;
+                        writtenBefore = writtenFrames;
                     }
+                    // Device writes may wait for buffer space. Player control and close
+                    // must remain able to acquire engineLock while that happens.
+                    int written = mixedFrames > 0 ? targetLine.write(pcmBuffer, 0, encodePcm(mixedFrames)) : 0;
+                    synchronized (engineLock) {
+                        if (line != targetLine || outputEpoch != writeEpoch) {
+                            continue;
+                        }
+                        writtenFrames += written / (formatKey.channelCount() * 2);
+                        writtenAfter = writtenFrames;
+                        // Phrase completion signals sequencing, without waiting for the
+                        // inconsistent device frame-position reports of some Windows mixers.
+                        playedFrames = writtenAfter;
+                    }
+                } catch (LineUnavailableException | IllegalArgumentException | IllegalStateException exception) {
+                    synchronized (engineLock) {
+                        if (targetLine != null && (line != targetLine || outputEpoch != writeEpoch)) {
+                            continue;
+                        }
+                        closeLineLocked();
+                    }
+                    for (PlaybackHandle handle : snapshot) {
+                        handle.failPlayback(new RuntimeException("Failed to write streamed SMAF output", exception));
+                    }
+                    continue;
                 }
 
-                // PhraseTrack completion is a sequencing/lifecycle signal, not a
-                // guarantee that the OS mixer has physically drained every sample.
-                // Some Windows Java mixers advance getLongFramePosition slowly or
-                // inconsistently for tiny writes, which can leave games with small
-                // JBlend phrase pools thinking a track is still busy long after the
-                // short SFX has already been queued.
-                long playedFrames = writtenFrames;
                 for (PlaybackHandle handle : snapshot) {
-                    handle.bindCompletionTarget(writtenBefore, writtenFrames);
+                    handle.bindCompletionTarget(writtenBefore, writtenAfter);
                     handle.dispatchReadyCompletion(playedFrames, notifications);
                 }
                 notifications.runAll();
@@ -372,6 +384,7 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
                     formatKey.channelCount(),
                     true,
                     false);
+            outputEpoch++;
             line = AudioSystem.getSourceDataLine(format);
             line.open(format, lineBufferFrames * format.getFrameSize());
             line.start();
@@ -382,6 +395,7 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
             if (line == null) {
                 return;
             }
+            outputEpoch++;
             line.stop();
             line.flush();
             line.close();
@@ -394,6 +408,7 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
             if (line == null) {
                 return;
             }
+            outputEpoch++;
             line.stop();
             line.flush();
             line.start();
