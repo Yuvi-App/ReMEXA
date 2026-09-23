@@ -36,6 +36,7 @@ public final class SoftwareJ3dRenderer {
     private static final int ENV_ATTR_SPHERE_MAP = 0x02;
     private static final int ENV_ATTR_TOON_SHADING = 0x04;
     private static final int ENV_ATTR_SEMI_TRANSPARENT = 0x08;
+    private static final int PATTR_LIGHTING = 0x01;
     private static final int PATTR_COLORKEY = 0x10;
     private static final int PDATA_NORMAL_MASK = 0x0300;
     private static final int PDATA_NORMAL_PER_FACE = 0x0200;
@@ -1563,52 +1564,77 @@ public final class SoftwareJ3dRenderer {
         return Math.max(0.0f, Math.min(1.0f, value));
     }
 
-    private static float transformNormalX(AffineTrans affineTrans, float x, float y, float z) {
-        return mulRaw(x, affineTrans.m00) + mulRaw(y, affineTrans.m01) + mulRaw(z, affineTrans.m02);
+    private static CommandLighting commandLighting(CommandState state, int command) {
+        if (!state.lightingEnabled || (command & PATTR_LIGHTING) == 0) {
+            return null;
+        }
+        // The API supplies the direction light travels, so negate it to obtain the
+        // direction toward the source. Only the light and transform are normalized;
+        // primitive normals retain their authored magnitude.
+        int[] direction = normalizeLightingVector((int) state.lightDirectionX,
+                (int) state.lightDirectionY, (int) state.lightDirectionZ);
+        int intensity = Math.max(0, Math.min(16384, state.directionalIntensity));
+        int lx = -direction[0] * intensity >> 12;
+        int ly = -direction[1] * intensity >> 12;
+        int lz = -direction[2] * intensity >> 12;
+        AffineTrans transform = state.affineTrans;
+        if (transform != null) {
+            // Orthonormalize the columns, as Atrans3i_normalize does, then rotate
+            // the light into object space, ignoring translation and scale.
+            int[] x = normalizeLightingVector(transform.m00, transform.m10, transform.m20);
+            int[] z = normalizeLightingVector(
+                    (long) x[1] * transform.m21 - (long) x[2] * transform.m11,
+                    (long) x[2] * transform.m01 - (long) x[0] * transform.m21,
+                    (long) x[0] * transform.m11 - (long) x[1] * transform.m01);
+            int[] y = {(z[1] * x[2] - z[2] * x[1]) >> 12,
+                    (z[2] * x[0] - z[0] * x[2]) >> 12,
+                    (z[0] * x[1] - z[1] * x[0]) >> 12};
+            int localX = (x[0] * lx + x[1] * ly + x[2] * lz + 2048) >> 12;
+            int localY = (y[0] * lx + y[1] * ly + y[2] * lz + 2048) >> 12;
+            int localZ = (z[0] * lx + z[1] * ly + z[2] * lz + 2048) >> 12;
+            lx = localX;
+            ly = localY;
+            lz = localZ;
+        }
+        return new CommandLighting(lx * 255 >> 2, ly * 255 >> 2, lz * 255 >> 2,
+                Math.max(0, Math.min(4096, state.ambientIntensity)) * 4080);
     }
 
-    private static float transformNormalY(AffineTrans affineTrans, float x, float y, float z) {
-        return mulRaw(x, affineTrans.m10) + mulRaw(y, affineTrans.m11) + mulRaw(z, affineTrans.m12);
+    private static int[] normalizeLightingVector(long x, long y, long z) {
+        long largest = Math.max(Math.abs(x), Math.max(Math.abs(y), Math.abs(z)));
+        if (largest == 0) {
+            return new int[]{0, 0, 4096};
+        }
+        // Match the native 12-bit normalization's input precision before taking
+        // the rounded integer square root; small vectors must not lose precision.
+        int shift = Long.numberOfLeadingZeros(largest) - 49;
+        if (shift > 0) {
+            x <<= shift;
+            y <<= shift;
+            z <<= shift;
+        } else {
+            x >>= -shift;
+            y >>= -shift;
+            z >>= -shift;
+        }
+        long length = Math.round(Math.sqrt(x * x + y * y + z * z));
+        return new int[]{(int) (x * 4096 / length), (int) (y * 4096 / length), (int) (z * 4096 / length)};
     }
 
-    private static float transformNormalZ(AffineTrans affineTrans, float x, float y, float z) {
-        return mulRaw(x, affineTrans.m20) + mulRaw(y, affineTrans.m21) + mulRaw(z, affineTrans.m22);
-    }
-
-    private static float computeCommandShade(CommandState state, float nx, float ny, float nz) {
-        if (state == null || !state.lightingEnabled) {
+    private static float computeCommandShade(CommandState state, CommandLighting lighting, float nx, float ny, float nz) {
+        if (lighting == null) {
             return 1.0f;
         }
-        float tx = nx;
-        float ty = ny;
-        float tz = nz;
-        if (state.affineTrans != null) {
-            tx = transformNormalX(state.affineTrans, nx, ny, nz);
-            ty = transformNormalY(state.affineTrans, nx, ny, nz);
-            tz = transformNormalZ(state.affineTrans, nx, ny, nz);
-        }
-        float normalLength = (float) Math.sqrt((tx * tx) + (ty * ty) + (tz * tz));
-        if (normalLength <= DEPTH_EPSILON) {
-            return 1.0f;
-        }
-        tx /= normalLength;
-        ty /= normalLength;
-        tz /= normalLength;
+        // MEXA consumes signed 6-fractional-bit normal components and produces an
+        // 8-bit vertex intensity. A zero normal therefore receives ambient only.
+        int diffuse = (byte) ((int) nx >> 6) * lighting.x()
+                + (byte) ((int) ny >> 6) * lighting.y()
+                + (byte) ((int) nz >> 6) * lighting.z();
+        int level = Math.min(255, (lighting.ambient() + Math.max(0, diffuse)) >> 16);
+        return applyCommandShading(state, level / 255.0f);
+    }
 
-        float lightX = state.lightDirectionX;
-        float lightY = state.lightDirectionY;
-        float lightZ = state.lightDirectionZ;
-        float lightLength = (float) Math.sqrt((lightX * lightX) + (lightY * lightY) + (lightZ * lightZ));
-        float directional = 0.0f;
-        if (lightLength > DEPTH_EPSILON && state.directionalIntensity > 0) {
-            lightX /= lightLength;
-            lightY /= lightLength;
-            lightZ /= lightLength;
-            directional = Math.max(0.0f, (tx * lightX) + (ty * lightY) + (tz * lightZ));
-        }
-        float ambient = state.ambientIntensity / 4096.0f;
-        float diffuse = directional * (state.directionalIntensity / 4096.0f);
-        return applyCommandShading(state, ambient + diffuse);
+    private record CommandLighting(int x, int y, int z, int ambient) {
     }
 
     private static float applyCommandShading(CommandState state, float shade) {
@@ -1894,6 +1920,7 @@ public final class SoftwareJ3dRenderer {
         if (!rendersInPass(blendMode, pass)) {
             return cursor;
         }
+        CommandLighting lighting = normals == null ? null : commandLighting(state, command);
         for (int i = 0; i < primitiveCount; i++) {
             int vertexBase = i * verticesPerPrimitive * 3;
             int texBase = texCoords == null ? 0 : i * verticesPerPrimitive * 2;
@@ -1904,6 +1931,7 @@ public final class SoftwareJ3dRenderer {
                     normalBase = i * 3;
                     faceShade = computeCommandShade(
                             state,
+                            lighting,
                             normals[normalBase],
                             normals[normalBase + 1],
                             normals[normalBase + 2]
@@ -1924,6 +1952,7 @@ public final class SoftwareJ3dRenderer {
                         int vertexNormalBase = normalBase + vertex * 3;
                         shade = computeCommandShade(
                                 state,
+                                lighting,
                                 normals[vertexNormalBase],
                                 normals[vertexNormalBase + 1],
                                 normals[vertexNormalBase + 2]
@@ -1969,6 +1998,7 @@ public final class SoftwareJ3dRenderer {
                     int vertexNormalBase = normalBase + vertex * 3;
                     shade = computeCommandShade(
                             state,
+                            lighting,
                             normals[vertexNormalBase],
                             normals[vertexNormalBase + 1],
                             normals[vertexNormalBase + 2]
