@@ -1,6 +1,5 @@
 package remexa.host.media;
 
-import com.sun.jna.NativeLibrary;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Font;
@@ -27,9 +26,6 @@ import uk.co.caprica.vlcj.player.base.MediaPlayer;
 import uk.co.caprica.vlcj.player.component.EmbeddedMediaPlayerComponent;
 
 public final class VlcVideoWindow {
-    private static final String VLC_LIBRARY_NAME = "libvlc";
-    private static final AtomicBoolean VLC_CONFIGURATION_APPLIED = new AtomicBoolean();
-
     private final JFrame owner;
     private final JDialog dialog;
     private final EmbeddedMediaPlayerComponent mediaPlayerComponent;
@@ -40,7 +36,7 @@ public final class VlcVideoWindow {
 
     public VlcVideoWindow(JFrame owner, String title) throws IOException {
         this.owner = Objects.requireNonNull(owner, "owner");
-        configureVlcIfAvailable();
+        VlcRuntime.configure();
         this.mediaPlayerComponent = new EmbeddedMediaPlayerComponent() {
             @Override
             public void finished(MediaPlayer mediaPlayer) {
@@ -174,45 +170,4 @@ public final class VlcVideoWindow {
         }
     }
 
-    private static void configureVlcIfAvailable() throws IOException {
-        if (!VLC_CONFIGURATION_APPLIED.compareAndSet(false, true)) {
-            return;
-        }
-        var vlcDirectory = locateVlcDirectory();
-        if (vlcDirectory == null) {
-            throw new IOException("VLC 3.x was not found. Install VLC to enable legacy 3GP playback.");
-        }
-
-        NativeLibrary.addSearchPath(VLC_LIBRARY_NAME, vlcDirectory.toString());
-        System.setProperty("jna.library.path", vlcDirectory.toString());
-        var pluginsDirectory = vlcDirectory.resolve("plugins");
-        if (Files.isDirectory(pluginsDirectory)) {
-            System.setProperty("VLC_PLUGIN_PATH", pluginsDirectory.toString());
-        }
-        DebugLog.log(LogCategory.MEDIA, VlcVideoWindow.class.getName(), "Configured VLC native directory: " + vlcDirectory);
-    }
-
-    private static Path locateVlcDirectory() {
-        var configured = System.getenv("VLC_HOME");
-        if (configured != null && !configured.isBlank()) {
-            var path = Path.of(configured.trim());
-            if (Files.isDirectory(path)) {
-                return path;
-            }
-        }
-
-        for (var root : new String[]{
-                System.getenv("ProgramFiles"),
-                System.getenv("ProgramFiles(x86)")
-        }) {
-            if (root == null || root.isBlank()) {
-                continue;
-            }
-            var candidate = Path.of(root, "VideoLAN", "VLC");
-            if (Files.isDirectory(candidate)) {
-                return candidate;
-            }
-        }
-        return null;
-    }
 }

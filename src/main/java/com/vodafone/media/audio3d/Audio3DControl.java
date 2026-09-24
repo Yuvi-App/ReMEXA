@@ -1,11 +1,21 @@
 package com.vodafone.media.audio3d;
 
-import javax.microedition.media.Control;
+public interface Audio3DControl extends ExtendedAudioControl {
+    int MODE_DYNAMIC = 2;
 
-public interface Audio3DControl extends Control {
+    int[] getPosition();
+
+    int[] getVelocity();
+
+    int[] getRolloff();
+
+    boolean isListenerRelative();
+
+    void setListenerRelative(boolean relative);
+
     void setPosition(int x, int y, int z);
 
     void setVelocity(int x, int y, int z);
 
-    void setRolloff(int minDistance, int maxDistance, int muteAfter);
+    void setRolloff(int minDistance, int maxDistance, int factor);
 }

@@ -30,6 +30,7 @@ import javax.microedition.media.decoders.WAVTools;
 import javax.microedition.media.decoders.WAVYamahaADPCMDecoder;
 import remexa.audio.pcm.RenderedPcmAudio;
 import remexa.audio.pcm.RenderedPcmPlayer;
+import remexa.audio.pcm.VlcAudioDecoder;
 import remexa.audio.smaf.SmafPlayback;
 import remexa.audio.smaf.YamahaMidiPlayback;
 import remexa.host.LaunchConfig;
@@ -74,7 +75,11 @@ public final class Manager {
             return new MidiPlayer(source, normalizedType.isEmpty() ? "audio/midi" : normalizedType);
         }
         if (isWavType(normalizedType, source)) {
-            return new WavPlayer(source, normalizedType.isEmpty() ? "audio/x-wav" : normalizedType);
+            return new PcmPlayer(source, normalizedType.isEmpty() ? "audio/x-wav" : normalizedType, false);
+        }
+        if (normalizedType.equals("audio/mp4") || normalizedType.equals("audio/3gpp")
+                || normalizedType.equals("audio/3gp")) {
+            return new PcmPlayer(source, normalizedType, true);
         }
         String fallbackType = normalizedType.isEmpty() ? "application/octet-stream" : normalizedType;
         DebugLog.log(
@@ -103,6 +108,23 @@ public final class Manager {
         }
     }
 
+    /** Host bookkeeping for the four extended-audio source slots exposed by MEXA. */
+    public static int getAvailableAudio3DSourceChannels() {
+        synchronized (ACTIVE_PLAYERS) {
+            return availableAudio3DSourceChannels(MidletRuntime.currentAppClassLoader());
+        }
+    }
+
+    private static int availableAudio3DSourceChannels(ClassLoader owner) {
+        int available = 4;
+        for (AbstractPlayer player : ACTIVE_PLAYERS) {
+            if (player.ownerClassLoader == owner && player.audio3DControl.mode != ExtendedAudioControl.MODE_DISABLED) {
+                available--;
+            }
+        }
+        return Math.max(0, available);
+    }
+
     private static String normalizeContentType(String type) {
         return type == null ? "" : type.trim().toLowerCase(Locale.ROOT);
     }
@@ -120,6 +142,7 @@ public final class Manager {
 
     private static boolean isSmafType(String normalizedType, byte[] source) {
         return normalizedType.equals("application/x-smaf")
+                || normalizedType.equals("application/x-smaf-phrase")
                 || normalizedType.equals("audio/x-smaf")
                 || normalizedType.equals("audio/mmf")
                 || normalizedType.equals("ott")
@@ -162,7 +185,7 @@ public final class Manager {
         private final String contentType;
         private final ClassLoader ownerClassLoader;
         private final PlayerVolumeControl volumeControl = new PlayerVolumeControl(this);
-        private final PlayerAudio3DControl audio3DControl = new PlayerAudio3DControl();
+        private final PlayerAudio3DControl audio3DControl = new PlayerAudio3DControl(this);
         private final PlayerReverbControl reverbControl = new PlayerReverbControl();
         private final Control[] controls = new Control[]{volumeControl, audio3DControl, reverbControl};
         private final CopyOnWriteArrayList<PlayerListener> listeners = new CopyOnWriteArrayList<>();
@@ -229,6 +252,7 @@ public final class Manager {
         @Override
         public synchronized void deallocate() {
             ensureNotClosed();
+            audio3DControl.release();
             if (state == UNREALIZED || state == REALIZED) {
                 return;
             }
@@ -249,6 +273,7 @@ public final class Manager {
                 return;
             }
             doClose();
+            audio3DControl.release();
             state = CLOSED;
             ACTIVE_PLAYERS.remove(this);
             notifyListeners(PlayerListener.CLOSED, null);
@@ -545,8 +570,11 @@ public final class Manager {
         }
     }
 
-    private static final class PlayerAudio3DControl implements ExtendedAudioControl {
-        private int mode = MODE_DISABLE;
+    // These controls retain API state; the mixer does not yet apply 3D/reverb DSP.
+    private static final class PlayerAudio3DControl implements Audio3DControl {
+        private final AbstractPlayer owner;
+        private volatile int mode = MODE_DISABLED;
+        private boolean listenerRelative;
         private int positionX;
         private int positionY;
         private int positionZ;
@@ -557,14 +585,61 @@ public final class Manager {
         private int maxDistance;
         private int muteAfter;
 
+        private PlayerAudio3DControl(AbstractPlayer owner) {
+            this.owner = owner;
+        }
+
         @Override
         public synchronized int getMode() {
             return mode;
         }
 
         @Override
-        public synchronized void setMode(int mode) {
-            this.mode = mode;
+        public synchronized void setMode(int mode) throws MediaException {
+            if (mode < MODE_DISABLED || mode > MODE_DYNAMIC) {
+                throw new IllegalArgumentException("Invalid audio mode: " + mode);
+            }
+            synchronized (ACTIVE_PLAYERS) {
+                if (!ACTIVE_PLAYERS.contains(owner)) {
+                    throw new IllegalStateException("Player is closed.");
+                }
+                if (this.mode == MODE_DISABLED && mode != MODE_DISABLED
+                        && availableAudio3DSourceChannels(owner.ownerClassLoader) == 0) {
+                    throw new MediaException("No free Audio3D source channels.");
+                }
+                this.mode = mode;
+            }
+        }
+
+        private synchronized void release() {
+            synchronized (ACTIVE_PLAYERS) {
+                mode = MODE_DISABLED;
+            }
+        }
+
+        @Override
+        public synchronized int[] getPosition() {
+            return new int[]{positionX, positionY, positionZ};
+        }
+
+        @Override
+        public synchronized int[] getVelocity() {
+            return new int[]{velocityX, velocityY, velocityZ};
+        }
+
+        @Override
+        public synchronized int[] getRolloff() {
+            return new int[]{minDistance, maxDistance, muteAfter};
+        }
+
+        @Override
+        public synchronized boolean isListenerRelative() {
+            return listenerRelative;
+        }
+
+        @Override
+        public synchronized void setListenerRelative(boolean relative) {
+            listenerRelative = relative;
         }
 
         @Override
@@ -1014,23 +1089,27 @@ public final class Manager {
         }
     }
 
-    private static final class WavPlayer extends AbstractPlayer {
+    private static final class PcmPlayer extends AbstractPlayer {
         private final byte[] source;
+        private final boolean compressed;
         private RenderedPcmAudio audio;
         private RenderedPcmPlayer playback;
         private float outputGain = 1.0f;
         private volatile long playbackStartedAtNanos;
         private volatile long cachedMediaTimeMillis;
 
-        private WavPlayer(byte[] source, String contentType) {
+        private PcmPlayer(byte[] source, String contentType, boolean compressed) {
             super(contentType);
             this.source = source;
+            this.compressed = compressed;
         }
 
         @Override
         protected synchronized void doRealize() throws MediaException {
             try {
-                DecodedWavAudio decoded = openDecodedAudio(source);
+                DecodedWavAudio decoded = compressed
+                        ? new DecodedWavAudio(VlcAudioDecoder.decode(source), 1.0f)
+                        : openDecodedAudio(source);
                 audio = decoded.audio();
                 outputGain = decoded.outputGain();
                 playback = new RenderedPcmPlayer(audio);
@@ -1046,8 +1125,10 @@ public final class Manager {
                 onVolumeChanged();
             } catch (MediaException exception) {
                 closeQuietly();
+                throw exception;
             } catch (Exception exception) {
                 closeQuietly();
+                throw new MediaException("Failed to decode PCM audio.", exception);
             }
         }
 
@@ -1123,6 +1204,10 @@ public final class Manager {
 
         @Override
         protected synchronized long doGetMediaTime() {
+            return mediaTimeMillis() * 1000L;
+        }
+
+        private long mediaTimeMillis() {
             if (playback == null || audio == null) {
                 return 0L;
             }
@@ -1144,7 +1229,7 @@ public final class Manager {
 
         @Override
         protected synchronized long doGetDuration() {
-            return audio == null ? TIME_UNKNOWN : durationMillis(audio);
+            return audio == null ? TIME_UNKNOWN : durationMillis(audio) * 1000L;
         }
 
         private void closeQuietly() {
