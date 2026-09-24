@@ -1,6 +1,7 @@
 package remexa.audio.smaf;
 
 import remexa.audio.AudioCallbacks;
+import remexa.audio.spatial.Audio3DSource;
 import remexa.host.runtime.MidletRuntime;
 
 import com.jblend.media.smaf.phrase.PhraseTrackListener;
@@ -84,6 +85,7 @@ public final class SmafPlayback implements AutoCloseable {
 
     private final SmafCacheKey cacheKey;
     private final byte[] source;
+    private final Audio3DSource spatialSource;
     private final Object decodeLock = new Object();
     private final Object openLock = new Object();
     private final ClassLoader ownerClassLoader = MidletRuntime.currentAppClassLoader();
@@ -145,16 +147,21 @@ public final class SmafPlayback implements AutoCloseable {
     private Map<Integer, Integer> channelRouting = Collections.emptyMap();
     private Set<Integer> outputChannels = Collections.emptySet();
 
-    private SmafPlayback(SmafCacheKey cacheKey, byte[] source) {
+    private SmafPlayback(SmafCacheKey cacheKey, byte[] source, Audio3DSource spatialSource) {
         this.cacheKey = cacheKey;
         this.source = source;
+        this.spatialSource = spatialSource;
     }
 
     public static SmafPlayback create(byte[] source) throws Exception {
+        return create(source, null);
+    }
+
+    public static SmafPlayback create(byte[] source, Audio3DSource spatialSource) throws Exception {
         MidletRuntime.ensureThreadActive();
         byte[] sourceCopy = source.clone();
         SmafCacheKey cacheKey = new SmafCacheKey(sourceCopy);
-        return new SmafPlayback(cacheKey, sourceCopy);
+        return new SmafPlayback(cacheKey, sourceCopy, spatialSource);
     }
 
     public static void prewarm(byte[] source) {
@@ -503,7 +510,7 @@ public final class SmafPlayback implements AutoCloseable {
         renderedAudioEngine = engine;
         SmafStreamingSession session = engine.openStream(createRenderContext());
         int sampleRate = session.sampleRate();
-        audioPlayer = new SmafStreamingPlayer(session, userEvents, ownerClassLoader);
+        audioPlayer = new SmafStreamingPlayer(session, userEvents, ownerClassLoader, spatialSource);
         audioPlayer.setListener(listener);
         audioPlayer.setVolume(volume);
         audioPlayer.setPanpot(panpot);

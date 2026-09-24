@@ -1,5 +1,7 @@
 package remexa.audio.smaf;
 
+import remexa.audio.spatial.Audio3DSource;
+import remexa.host.runtime.MidletRuntime;
 import java.io.ByteArrayInputStream;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -45,12 +47,19 @@ public final class YamahaMidiPlayback implements AutoCloseable {
     private long startedAtMillis;
     private long pausedAtMillis;
 
-    private YamahaMidiPlayback(SmafStreamingSession session, long durationMillis) {
-        this.player = new SmafStreamingPlayer(session, Collections.emptyList());
+    private YamahaMidiPlayback(SmafStreamingSession session, long durationMillis,
+                               Audio3DSource spatialSource) {
+        this.player = new SmafStreamingPlayer(session, Collections.emptyList(),
+                MidletRuntime.currentAppClassLoader(), spatialSource);
         this.durationMillis = Math.max(0L, durationMillis);
     }
 
     public static YamahaMidiPlayback create(byte[] source, String synthType) throws Exception {
+        return create(source, synthType, null);
+    }
+
+    public static YamahaMidiPlayback create(byte[] source, String synthType,
+                                           Audio3DSource spatialSource) throws Exception {
         var sourceSequence = MidiSystem.getSequence(new ByteArrayInputStream(source));
         var timedEvents = collectTimedEvents(sourceSequence);
         var renderSequence = normalizeMidiTiming(timedEvents);
@@ -65,7 +74,7 @@ public final class YamahaMidiPlayback implements AutoCloseable {
                 Collections.emptyList(),
                 Collections.emptyList()
         ));
-        return new YamahaMidiPlayback(session, sequenceDurationMillis(renderSequence));
+        return new YamahaMidiPlayback(session, sequenceDurationMillis(renderSequence), spatialSource);
     }
 
     private static List<byte[]> drumStartupPackets() {

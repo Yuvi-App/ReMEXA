@@ -11,6 +11,7 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import com.vodafone.media.audio3d.Audio3DControl;
+import com.vodafone.media.audio3d.Environment3D;
 import com.vodafone.media.audio3d.ExtendedAudioControl;
 import com.vodafone.media.audio3d.ReverbControl;
 import javax.sound.midi.InvalidMidiDataException;
@@ -33,6 +34,7 @@ import remexa.audio.pcm.RenderedPcmPlayer;
 import remexa.audio.pcm.VlcAudioDecoder;
 import remexa.audio.smaf.SmafPlayback;
 import remexa.audio.smaf.YamahaMidiPlayback;
+import remexa.audio.spatial.Audio3DSource;
 import remexa.host.LaunchConfig;
 import remexa.host.runtime.MidletRuntime;
 import remexa.probes.DebugLog;
@@ -184,9 +186,10 @@ public final class Manager {
     private abstract static class AbstractPlayer implements Player {
         private final String contentType;
         private final ClassLoader ownerClassLoader;
+        protected final Audio3DSource spatialSource = Environment3D.getDefaultEnvironment3D().audioScene().createSource();
         private final PlayerVolumeControl volumeControl = new PlayerVolumeControl(this);
         private final PlayerAudio3DControl audio3DControl = new PlayerAudio3DControl(this);
-        private final PlayerReverbControl reverbControl = new PlayerReverbControl();
+        private final PlayerReverbControl reverbControl = new PlayerReverbControl(spatialSource);
         private final Control[] controls = new Control[]{volumeControl, audio3DControl, reverbControl};
         private final CopyOnWriteArrayList<PlayerListener> listeners = new CopyOnWriteArrayList<>();
 
@@ -570,20 +573,9 @@ public final class Manager {
         }
     }
 
-    // These controls retain API state; the mixer does not yet apply 3D/reverb DSP.
     private static final class PlayerAudio3DControl implements Audio3DControl {
         private final AbstractPlayer owner;
         private volatile int mode = MODE_DISABLED;
-        private boolean listenerRelative;
-        private int positionX;
-        private int positionY;
-        private int positionZ;
-        private int velocityX;
-        private int velocityY;
-        private int velocityZ;
-        private int minDistance;
-        private int maxDistance;
-        private int muteAfter;
 
         private PlayerAudio3DControl(AbstractPlayer owner) {
             this.owner = owner;
@@ -608,74 +600,71 @@ public final class Manager {
                     throw new MediaException("No free Audio3D source channels.");
                 }
                 this.mode = mode;
+                owner.spatialSource.setMode(mode);
             }
         }
 
         private synchronized void release() {
             synchronized (ACTIVE_PLAYERS) {
                 mode = MODE_DISABLED;
+                owner.spatialSource.setMode(MODE_DISABLED);
             }
         }
 
         @Override
         public synchronized int[] getPosition() {
-            return new int[]{positionX, positionY, positionZ};
+            return owner.spatialSource.getPosition();
         }
 
         @Override
         public synchronized int[] getVelocity() {
-            return new int[]{velocityX, velocityY, velocityZ};
+            return owner.spatialSource.getVelocity();
         }
 
         @Override
         public synchronized int[] getRolloff() {
-            return new int[]{minDistance, maxDistance, muteAfter};
+            return owner.spatialSource.getRolloff();
         }
 
         @Override
         public synchronized boolean isListenerRelative() {
-            return listenerRelative;
+            return owner.spatialSource.isRelative();
         }
 
         @Override
         public synchronized void setListenerRelative(boolean relative) {
-            listenerRelative = relative;
+            owner.spatialSource.setRelative(relative);
         }
 
         @Override
         public synchronized void setPosition(int x, int y, int z) {
-            positionX = x;
-            positionY = y;
-            positionZ = z;
+            owner.spatialSource.setPosition(x, y, z);
         }
 
         @Override
         public synchronized void setVelocity(int x, int y, int z) {
-            velocityX = x;
-            velocityY = y;
-            velocityZ = z;
+            owner.spatialSource.setVelocity(x, y, z);
         }
 
         @Override
-        public synchronized void setRolloff(int minDistance, int maxDistance, int muteAfter) {
-            this.minDistance = minDistance;
-            this.maxDistance = maxDistance;
-            this.muteAfter = muteAfter;
+        public synchronized void setRolloff(int minDistance, int maxDistance, int factor) {
+            owner.spatialSource.setRolloff(minDistance, maxDistance, factor);
         }
     }
 
     private static final class PlayerReverbControl implements ReverbControl {
-        private int level;
+        private final Audio3DSource source;
+
+        private PlayerReverbControl(Audio3DSource source) { this.source = source; }
 
         @Override
         public synchronized int getLevel() {
-            return level;
+            return source.getReverbLevel();
         }
 
         @Override
         public synchronized int setLevel(int level) {
-            this.level = Math.max(0, Math.min(100, level));
-            return this.level;
+            return source.setReverbLevel(level);
         }
     }
 
@@ -747,7 +736,7 @@ public final class Manager {
                     || YamahaMidiPlayback.SYNTH_MA3.equals(midiSynth)
                     || YamahaMidiPlayback.SYNTH_MA5.equals(midiSynth)) {
                 try {
-                    yamahaPlayback = YamahaMidiPlayback.create(source, midiSynth);
+                    yamahaPlayback = YamahaMidiPlayback.create(source, midiSynth, spatialSource);
                     yamahaPlayback.setCompletionListener(this::notifyEndOfMedia);
                     onVolumeChanged();
                     return;
@@ -975,7 +964,7 @@ public final class Manager {
         @Override
         protected synchronized void doRealize() throws MediaException {
             try {
-                playback = SmafPlayback.create(source);
+                playback = SmafPlayback.create(source, spatialSource);
                 playback.setListener(eventId -> {
                     if (eventId == -1) {
                         notifyEndOfMedia();
@@ -1112,7 +1101,7 @@ public final class Manager {
                         : openDecodedAudio(source);
                 audio = decoded.audio();
                 outputGain = decoded.outputGain();
-                playback = new RenderedPcmPlayer(audio);
+                playback = new RenderedPcmPlayer(audio, spatialSource);
                 playback.setCompletionListener(() -> {
                     long duration = durationMillis(audio);
                     cachedMediaTimeMillis = duration <= 0L || loopsForever(loopCount())
@@ -1121,7 +1110,7 @@ public final class Manager {
                     playbackStartedAtNanos = 0L;
                     notifyEndOfMedia();
                 });
-                RenderedPcmPlayer.prewarm(audio.sampleRate(), audio.channelCount());
+                RenderedPcmPlayer.prewarm(audio.sampleRate(), Math.max(2, audio.channelCount()));
                 onVolumeChanged();
             } catch (MediaException exception) {
                 closeQuietly();

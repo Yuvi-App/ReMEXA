@@ -14,6 +14,7 @@ Current areas of work include:
 - Display, input, phone profile, and frame-rate configuration for target device behavior.
 - Bitmap and system font rendering support.
 - SMAF/MMF audio detection and playback paths for MA-3, MA-5, MA-7(in the future), and host MIDI output.
+- Audio3D positioning, Doppler, and reverb
 - Optional virtual Bluetooth-over-IP support for multiplayer titles.
 - Debug logging, FPS overlay, host details, RMS dumps, and frame capture helpers for compatibility work.
 

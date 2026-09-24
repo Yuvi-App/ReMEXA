@@ -1,6 +1,8 @@
 package remexa.audio.smaf;
 
 import remexa.audio.AudioCallbacks;
+import remexa.audio.spatial.Audio3DSource;
+import remexa.audio.spatial.SpatialAudioStream;
 import remexa.host.runtime.MidletRuntime;
 
 import com.jblend.media.smaf.phrase.PhraseTrackListener;
@@ -39,8 +41,13 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
 
     SmafStreamingPlayer(SmafStreamingSession session, List<SMAFDecoder.SequenceUserEvent> userEvents,
                         ClassLoader ownerClassLoader) {
-        SharedEngine engine = sharedEngine(new OutputFormatKey(session.sampleRate(), session.channelCount()));
-        handle = engine.open(session, userEvents, ownerClassLoader);
+        this(session, userEvents, ownerClassLoader, null);
+    }
+
+    SmafStreamingPlayer(SmafStreamingSession session, List<SMAFDecoder.SequenceUserEvent> userEvents,
+                        ClassLoader ownerClassLoader, Audio3DSource spatialSource) {
+        SharedEngine engine = sharedEngine(new OutputFormatKey(session.sampleRate(), spatialSource == null ? session.channelCount() : 2));
+        handle = engine.open(session, userEvents, ownerClassLoader, spatialSource);
         engine.prewarm();
     }
 
@@ -141,8 +148,9 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
             this.pcmBuffer = new byte[chunkFrames * channels * 2];
         }
 
-        PlaybackHandle open(SmafStreamingSession session, List<SMAFDecoder.SequenceUserEvent> userEvents, ClassLoader ownerClassLoader) {
-            PlaybackHandle handle = new PlaybackHandle(this, session, userEvents, ownerClassLoader);
+        PlaybackHandle open(SmafStreamingSession session, List<SMAFDecoder.SequenceUserEvent> userEvents,
+                            ClassLoader ownerClassLoader, Audio3DSource spatialSource) {
+            PlaybackHandle handle = new PlaybackHandle(this, session, userEvents, ownerClassLoader, spatialSource);
             synchronized (engineLock) {
                 handles.add(handle);
                 idleCloseDeadlineMs = Long.MAX_VALUE;
@@ -468,6 +476,7 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
         private final ClassLoader ownerClassLoader;
         private final SharedEngine engine;
         private final SmafStreamingSession session;
+        private final SpatialAudioStream spatial;
         private final List<SMAFDecoder.SequenceUserEvent> userEvents;
         private final Object stateLock = new Object();
 
@@ -491,10 +500,12 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
 
         private PlaybackHandle(SharedEngine engine,
                                SmafStreamingSession session,
-                               List<SMAFDecoder.SequenceUserEvent> userEvents, ClassLoader ownerClassLoader) {
+                               List<SMAFDecoder.SequenceUserEvent> userEvents, ClassLoader ownerClassLoader,
+                               Audio3DSource spatialSource) {
             this.ownerClassLoader = ownerClassLoader;
             this.engine = engine;
             this.session = session;
+            spatial = spatialSource == null ? null : new SpatialAudioStream(session.sampleRate(), session.channelCount(), spatialSource);
             this.userEvents = userEvents == null ? List.of() : List.copyOf(userEvents);
         }
 
@@ -532,6 +543,7 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
                 throwIfFailedLocked();
                 try {
                     session.rewind();
+                    if (spatial != null) spatial.reset();
                     this.completeAtSequenceEnd = completeAtSequenceEnd;
                     session.setLoopMode(completeAtSequenceEnd || loopCount != 1);
                 } catch (Exception exception) {
@@ -594,6 +606,7 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
 
         @SuppressWarnings("RedundantThrows")
         int renderInto(float[] output, int maxFrames, NotificationSink notifications) throws Exception {
+            if (spatial != null) return renderSpatial(output, maxFrames, notifications);
             while (true) {
                 int frames;
                 int channelCount;
@@ -625,6 +638,31 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
                 }
                 for (int eventId : pendingUserEvents) {
                     notifications.add(() -> dispatchUserEvent(eventId, chunkEpoch));
+                }
+                return frames;
+            }
+        }
+
+        private int renderSpatial(float[] output, int maxFrames, NotificationSink notifications) throws Exception {
+            synchronized (stateLock) {
+                if (closed || !playing) return 0;
+                long epoch = playbackEpoch;
+                int frames = spatial.render(output, maxFrames, (input, count) -> {
+                    int read = session.render(input, count);
+                    if (read <= 0 && advanceLoopLocked()) read = session.render(input, count);
+                    if (read > 0) {
+                        for (int event : consumeUserEventsLocked(framePosition, read, session.sampleRate())) {
+                            notifications.add(() -> dispatchUserEvent(event, epoch));
+                        }
+                        framePosition += read;
+                    }
+                    return read;
+                });
+                applyChannelGains(output, frames, 2, channelGainsLocked(2));
+                if (frames == 0) {
+                    paused = playing = false;
+                    framePosition = nextUserEventIndex = 0;
+                    armCompletionLocked(false);
                 }
                 return frames;
             }

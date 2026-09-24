@@ -581,6 +581,138 @@ public class AudioLifecycleTest {
         return keep(new SmafRenderedPlayer(new SmafRenderedAudio(RATE, 2, 8, new byte[32])));
     }
 
+    @Test public void spatialPcmAndStreamingMixersPreserveLoopsAndProduceTheSameStereoTail() throws Exception {
+        byte[] expected = null;
+        for (Class<?> type : List.of(RenderedPcmPlayer.class, SmafStreamingPlayer.class)) {
+            var captured = new java.io.ByteArrayOutputStream();
+            installEngine(type, RATE, (proxy, method, args) -> {
+                if (method.getName().equals("write")) captured.write((byte[]) args[0], (Integer) args[1], (Integer) args[2]);
+                return fakeLineResult(method.getName(), args);
+            });
+            var scene = new remexa.audio.spatial.Audio3DScene();
+            var source = scene.createSource();
+            scene.setReverb(8, 300);
+            source.setMode(2); source.setPosition(-100, 0, -100); source.setReverbLevel(100);
+            byte[] pcm = new byte[1200];
+            for (int i = 0; i < 600; i++) {
+                int sample = (int) (10000 * Math.sin(2 * Math.PI * 400 * i / RATE));
+                pcm[i * 2] = (byte) sample; pcm[i * 2 + 1] = (byte) (sample >> 8);
+            }
+            CountDownLatch completion = new CountDownLatch(1);
+            Object output;
+            if (type == RenderedPcmPlayer.class) {
+                var player = keep(new RenderedPcmPlayer(new RenderedPcmAudio(RATE, 1, 600, pcm), source));
+                player.setCompletionListener(completion::countDown); output = player;
+            } else {
+                SmafStreamingSession session = new SmafStreamingSession() {
+                    int position;
+                    public int sampleRate() { return RATE; }
+                    public int channelCount() { return 1; }
+                    public void rewind() { position = 0; }
+                    public int render(float[] buffer, int count) {
+                        int frames = Math.min(count, 600 - position);
+                        for (int i = 0; i < frames; i++, position++) {
+                            buffer[i] = (short) ((pcm[position * 2] & 255) | (pcm[position * 2 + 1] << 8)) / 32768f;
+                        }
+                        return frames;
+                    }
+                };
+                var player = keep(new SmafStreamingPlayer(session, List.of(), HOST, source));
+                player.setListener(id -> { if (id == -1) completion.countDown(); }); output = player;
+            }
+            call(output, "play", 3);
+            assertTrue("Effects failed to drain", completion.await(3, TimeUnit.SECONDS));
+            byte[] actual = captured.toByteArray();
+            assertEquals("Three iterations, then one room tail", (1800 + 6200) * 4, actual.length);
+            assertTrue(stereoEnergy(actual, 0) > stereoEnergy(actual, 1) * 2);
+            if (expected != null) assertArrayEquals(expected, actual);
+            expected = actual;
+        }
+    }
+
+    @Test public void spatialMuteIncludesReverbAndPauseAndCloseRemainResponsive() throws Exception {
+        for (Class<?> type : List.of(RenderedPcmPlayer.class, SmafStreamingPlayer.class)) {
+            CountDownLatch writing = new CountDownLatch(1), release = new CountDownLatch(1), mutedWrite = new CountDownLatch(1);
+            AtomicBoolean muted = new AtomicBoolean();
+            AtomicInteger nonzeroMutedSamples = new AtomicInteger();
+            installEngine(type, RATE, (proxy, method, args) -> {
+                if (method.getName().equals("write")) {
+                    if (muted.get()) {
+                        byte[] data = (byte[]) args[0];
+                        for (int i = (Integer) args[1]; i < (Integer) args[1] + (Integer) args[2]; i++)
+                            if (data[i] != 0) nonzeroMutedSamples.incrementAndGet();
+                        mutedWrite.countDown();
+                    } else {
+                        writing.countDown();
+                        if (!release.await(3, TimeUnit.SECONDS)) throw new AssertionError("Write never released");
+                    }
+                }
+                return fakeLineResult(method.getName(), args);
+            });
+            var scene = new remexa.audio.spatial.Audio3DScene();
+            scene.setReverb(2, 1000);
+            var source = scene.createSource(); source.setMode(2); source.setReverbLevel(100);
+            Object output;
+            if (type == RenderedPcmPlayer.class) {
+                byte[] pcm = new byte[16000]; Arrays.fill(pcm, (byte) 32);
+                output = keep(new RenderedPcmPlayer(new RenderedPcmAudio(RATE, 1, 8000, pcm), source));
+            } else {
+                SmafStreamingSession session = new SmafStreamingSession() {
+                    public int sampleRate() { return RATE; }
+                    public int channelCount() { return 1; }
+                    public void rewind() { }
+                    public int render(float[] data, int count) { Arrays.fill(data, 0, count, .25f); return count; }
+                };
+                output = keep(new SmafStreamingPlayer(session, List.of(), HOST, source));
+            }
+            try {
+                call(output, "play", 0);
+                assertTrue(writing.await(2, TimeUnit.SECONDS));
+                call(output, "pause");
+                assertEquals(RenderedPcmPlayer.PAUSED, call(output, "getState"));
+                call(output, "setVolume", 0);
+                call(output, "resume");
+                muted.set(true); release.countDown();
+                assertTrue(mutedWrite.await(2, TimeUnit.SECONDS));
+                ((AutoCloseable) output).close();
+                assertEquals(0, nonzeroMutedSamples.get());
+            } finally { release.countDown(); }
+        }
+    }
+
+    @Test public void bothYamahaSynthesizersFeedAudibleOutputThroughTheEffectsStage() throws Exception {
+        Sequence sequence = new Sequence(Sequence.PPQ, 1000);
+        var track = sequence.createTrack();
+        track.add(new MidiEvent(new ShortMessage(ShortMessage.NOTE_ON, 0, 60, 100), 0));
+        track.add(new MidiEvent(new ShortMessage(ShortMessage.NOTE_OFF, 0, 60, 0), 500));
+        var midi = new java.io.ByteArrayOutputStream(); MidiSystem.write(sequence, 0, midi);
+        for (String synth : List.of("ma3", "ma5")) {
+            var captured = new java.io.ByteArrayOutputStream();
+            int rate = synth.equals("ma3") ? 32000 : Integer.getInteger("remexa.ma5SampleRate", 48000);
+            installEngine(SmafStreamingPlayer.class, rate, (proxy, method, args) -> {
+                if (method.getName().equals("write")) captured.write((byte[]) args[0], (Integer) args[1], (Integer) args[2]);
+                return fakeLineResult(method.getName(), args);
+            });
+            var scene = new remexa.audio.spatial.Audio3DScene();
+            var source = scene.createSource(); source.setMode(2); source.setPosition(1000, 0, -200);
+            var playback = keep(YamahaMidiPlayback.create(midi.toByteArray(), synth, source));
+            CountDownLatch completion = new CountDownLatch(1); playback.setCompletionListener(completion::countDown);
+            playback.play(1);
+            assertTrue(synth + " failed to finish", completion.await(5, TimeUnit.SECONDS));
+            byte[] pcm = captured.toByteArray();
+            assertTrue(synth + " was silent", stereoEnergy(pcm, 1) > 100000);
+            assertTrue(synth + " bypassed spatial positioning", stereoEnergy(pcm, 1) > stereoEnergy(pcm, 0) * 10);
+        }
+    }
+
+    private static double stereoEnergy(byte[] pcm, int channel) {
+        double energy = 0;
+        for (int i = channel * 2; i < pcm.length; i += 4) {
+            double value = (short) ((pcm[i] & 255) | (pcm[i + 1] << 8)); energy += value * value;
+        }
+        return energy;
+    }
+
     @Test public void asynchronouslyOpenedSmafKeepsTheCreatingAppsIdentity() throws Exception {
         installEngine(SmafStreamingPlayer.class, 32000);
         String synth = System.getProperty("remexa.smafSynth");

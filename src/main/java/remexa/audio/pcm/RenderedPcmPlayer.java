@@ -1,6 +1,8 @@
 package remexa.audio.pcm;
 
 import remexa.audio.AudioCallbacks;
+import remexa.audio.spatial.Audio3DSource;
+import remexa.audio.spatial.SpatialAudioStream;
 import remexa.host.runtime.MidletRuntime;
 
 import javax.sound.sampled.AudioFormat;
@@ -27,10 +29,17 @@ public final class RenderedPcmPlayer implements AutoCloseable {
     private final PlaybackHandle handle;
 
     public RenderedPcmPlayer(RenderedPcmAudio audio) {
+        this(audio, null);
+    }
+
+    public RenderedPcmPlayer(RenderedPcmAudio audio, Audio3DSource spatialSource) {
         if (audio == null) {
             throw new NullPointerException("audio");
         }
-        handle = sharedEngine(new OutputFormatKey(audio.sampleRate(), audio.channelCount())).open(audio);
+        // Keep existing multichannel WAV output usable; Audio3D describes mono/stereo sources.
+        if (audio.channelCount() > 2) spatialSource = null;
+        handle = sharedEngine(new OutputFormatKey(audio.sampleRate(), spatialSource == null ? audio.channelCount() : 2))
+                .open(audio, spatialSource);
     }
 
     public static void prewarm(int sampleRate, int channelCount) {
@@ -101,8 +110,8 @@ public final class RenderedPcmPlayer implements AutoCloseable {
             this.pcmBuffer = new byte[CHUNK_FRAMES * channels * 2];
         }
 
-        PlaybackHandle open(RenderedPcmAudio audio) {
-            PlaybackHandle handle = new PlaybackHandle(this, audio);
+        PlaybackHandle open(RenderedPcmAudio audio, Audio3DSource spatialSource) {
+            PlaybackHandle handle = new PlaybackHandle(this, audio, spatialSource);
             synchronized (engineLock) {
                 handles.add(handle);
                 idleCloseDeadlineMs = Long.MAX_VALUE;
@@ -352,6 +361,7 @@ public final class RenderedPcmPlayer implements AutoCloseable {
         private final ClassLoader ownerClassLoader = MidletRuntime.currentAppClassLoader();
         private final SharedEngine engine;
         private final RenderedPcmAudio audio;
+        private final SpatialAudioStream spatial;
         private final Object stateLock = new Object();
 
         private Runnable completionListener;
@@ -366,9 +376,10 @@ public final class RenderedPcmPlayer implements AutoCloseable {
         private boolean completionNeedsCurrentWrite;
         private long completionTargetFrame = -1L;
 
-        private PlaybackHandle(SharedEngine engine, RenderedPcmAudio audio) {
+        private PlaybackHandle(SharedEngine engine, RenderedPcmAudio audio, Audio3DSource spatialSource) {
             this.engine = engine;
             this.audio = audio;
+            spatial = spatialSource == null ? null : new SpatialAudioStream(audio.sampleRate(), audio.channelCount(), spatialSource);
         }
 
         int getState() {
@@ -400,6 +411,7 @@ public final class RenderedPcmPlayer implements AutoCloseable {
                 clearCompletionStateLocked();
                 framePosition = 0;
                 remainingLoops = loopCount == 0 ? -1 : Math.max(0, loopCount - 1);
+                if (spatial != null) spatial.reset();
                 paused = false;
                 playing = true;
             }
@@ -483,6 +495,7 @@ public final class RenderedPcmPlayer implements AutoCloseable {
         }
 
         int renderInto(float[] output, int maxFrames) {
+            if (spatial != null) return renderSpatial(output, maxFrames);
             int framesToWrite;
             int startFrame;
             int channelCount = audio.channelCount();
@@ -520,6 +533,40 @@ public final class RenderedPcmPlayer implements AutoCloseable {
             synchronized (stateLock) {
                 return closed || playbackEpoch != chunkEpoch ? 0 : framesToWrite;
             }
+        }
+
+        private int renderSpatial(float[] output, int maxFrames) {
+            synchronized (stateLock) {
+                if (closed || !playing) return 0;
+                int frames;
+                try {
+                    frames = spatial.render(output, maxFrames, this::readSpatialInput);
+                } catch (Exception exception) {
+                    failPlayback();
+                    return 0;
+                }
+                float gain = volume / 127.0f;
+                // Volume/mute follows the effects, including their accumulated tails.
+                for (int i = 0; i < frames * 2; i++) output[i] *= gain;
+                if (frames == 0) {
+                    paused = playing = false;
+                    framePosition = 0;
+                    armCompletionLocked(false);
+                }
+                return frames;
+            }
+        }
+
+        private int readSpatialInput(float[] output, int maxFrames) {
+            int available = audio.frameCount() - framePosition;
+            if (available <= 0) {
+                if (audio.frameCount() == 0 || !advanceLoopLocked()) return 0;
+                available = audio.frameCount();
+            }
+            int frames = Math.min(maxFrames, available);
+            mixIntoBuffer(audio.pcm16Le(), framePosition, frames, audio.channelCount(), 1, output);
+            framePosition += frames;
+            return frames;
         }
 
         void bindCompletionTarget(long writtenBefore, long writtenAfter) {

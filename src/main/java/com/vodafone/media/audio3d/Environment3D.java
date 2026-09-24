@@ -1,6 +1,12 @@
 package com.vodafone.media.audio3d;
 
-/** Vodafone environment state; spatial and reverb processing are not yet applied to host audio. */
+import remexa.audio.spatial.Audio3DScene;
+import remexa.audio.spatial.Audio3DScene.Vector;
+import remexa.host.runtime.MidletRuntime;
+import java.util.Map;
+import java.util.WeakHashMap;
+
+/** Vodafone listener and reverb environment, isolated per running appli. */
 public final class Environment3D {
     public static final int DEVICE_UNKNOWN = 0;
     public static final int DEVICE_HEADPHONES = 1;
@@ -24,7 +30,8 @@ public final class Environment3D {
             REVERB_FOREST, REVERB_MOUNTAINS, REVERB_NONE, REVERB_ROOM, REVERB_UNDERWATER
     };
 
-    private static final Environment3D DEFAULT = new Environment3D();
+    private static final Map<ClassLoader, Environment3D> ENVIRONMENTS = new WeakHashMap<>();
+    private final Audio3DScene scene = new Audio3DScene();
 
     // The SDK keeps a separate decay time for each preset (milliseconds).
     private final int[] reverbTimes = {1800, 1480, 2910, 1490, 1800, 1490, 1490, 0, 400, 1490};
@@ -38,9 +45,12 @@ public final class Environment3D {
     private Environment3D() {
     }
 
-    public static Environment3D getDefaultEnvironment3D() {
-        return DEFAULT;
+    public static synchronized Environment3D getDefaultEnvironment3D() {
+        return ENVIRONMENTS.computeIfAbsent(MidletRuntime.currentAppClassLoader(), ignored -> new Environment3D());
     }
+
+    /** Host renderer bridge; the scene contains no references to appli classes. */
+    public Audio3DScene audioScene() { return scene; }
 
     public synchronized String getReverbPreset() {
         return reverbPreset;
@@ -53,6 +63,7 @@ public final class Environment3D {
         for (String candidate : REVERB_PRESETS) {
             if (candidate.equals(preset)) {
                 reverbPreset = preset;
+                scene.setReverb(presetIndex(), getReverbTime());
                 return;
             }
         }
@@ -76,6 +87,7 @@ public final class Environment3D {
         if (!REVERB_NONE.equals(reverbPreset)) {
             reverbTimes[presetIndex()] = Math.max(300, Math.min(30000, milliseconds));
         }
+        scene.setReverb(presetIndex(), getReverbTime());
         return getReverbTime();
     }
 
@@ -108,6 +120,7 @@ public final class Environment3D {
             throw new IllegalArgumentException("Listener axes must be nonzero and perpendicular");
         }
         listenerOrientation = new int[]{frontX, frontY, frontZ, upX, upY, upZ};
+        updateListener();
     }
 
     public synchronized int[] getListenerPosition() {
@@ -116,6 +129,7 @@ public final class Environment3D {
 
     public synchronized void setListenerPosition(int x, int y, int z) {
         listenerPosition = new int[]{x, y, z};
+        updateListener();
     }
 
     public synchronized int[] getListenerVelocity() {
@@ -124,6 +138,7 @@ public final class Environment3D {
 
     public synchronized void setListenerVelocity(int x, int y, int z) {
         listenerVelocity = new int[]{x, y, z};
+        updateListener();
     }
 
     public synchronized boolean isDeferredCommit() {
@@ -131,11 +146,12 @@ public final class Environment3D {
     }
 
     public synchronized void setDeferredCommit(boolean deferred) {
+        scene.setDeferred(deferred);
         deferredCommit = deferred;
     }
 
     public void commit() {
-        // Retain the control state. Spatial/reverb DSP is not implemented by the host mixer yet.
+        scene.commit();
     }
 
     public synchronized int getOutputDevice() {
@@ -147,5 +163,13 @@ public final class Environment3D {
             throw new IllegalArgumentException("Unknown output device: " + outputDevice);
         }
         this.outputDevice = outputDevice;
+        scene.setOutputDevice(outputDevice);
+    }
+
+    private void updateListener() {
+        scene.setListener(new Vector(listenerPosition[0], listenerPosition[1], listenerPosition[2]),
+                new Vector(listenerVelocity[0], listenerVelocity[1], listenerVelocity[2]),
+                new Vector(listenerOrientation[0], listenerOrientation[1], listenerOrientation[2]),
+                new Vector(listenerOrientation[3], listenerOrientation[4], listenerOrientation[5]));
     }
 }
