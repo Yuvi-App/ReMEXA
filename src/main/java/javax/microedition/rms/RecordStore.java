@@ -25,6 +25,7 @@ public final class RecordStore {
     public static final int AUTHMODE_ANY = 1;
 
     private static final int STORAGE_MAGIC = 0x524d5852;
+    private static final int NEXT_IDS_MAGIC = 0x524d584e; // Optional RMXN trailer after legacy RMS stores.
     private static final java.util.Set<RecordStore> OPEN_STORES =
             java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
 
@@ -397,7 +398,7 @@ public final class RecordStore {
             records.add(new RecordEntry(legacyRecord.id(), legacyRecord.data().clone()));
             maxRecordId = Math.max(maxRecordId, legacyRecord.id());
         }
-        nextRecordId = Math.max(maxRecordId + 1, records.size() + 1);
+        nextRecordId = Math.max(legacyStore.nextRecordId(), Math.max(maxRecordId + 1, records.size() + 1));
         if (records.size() != legacyStore.recordCount()) {
             DebugLog.log(
                     LogCategory.RMS,
@@ -463,7 +464,8 @@ public final class RecordStore {
                 version,
                 lastModified,
                 records.size(),
-                legacyRecords
+                legacyRecords,
+                nextRecordId
         ));
         writeLegacyStores(legacyContainerPath, stores);
     }
@@ -632,7 +634,7 @@ public final class RecordStore {
         return RemexaPreferences.debug().getBoolean(RemexaPreferences.DUMP_RMS_KEY, false);
     }
 
-    private static Optional<Path> legacyContainerPath() {
+    private static synchronized Optional<Path> legacyContainerPath() throws IOException {
         Path sourcePath = MidletRuntime.currentSourcePath();
         Path jarPath = MidletRuntime.currentJarPath();
         Path appDirectory = sourcePath != null ? sourcePath.getParent() : jarPath != null ? jarPath.getParent() : null;
@@ -651,8 +653,19 @@ public final class RecordStore {
         addLegacyCandidates(candidates, sourcePath);
         addLegacyCandidates(candidates, jarPath);
         for (Path candidate : candidates) {
-            if (candidate != null && Files.isRegularFile(candidate)) {
-                return Optional.of(candidate);
+            Path existing = RawScratchpad.findFile(candidate);
+            if (existing != null) {
+                return Optional.of(existing);
+            }
+        }
+        // Search every RMS candidate before consulting raw companions, even if an RMS is empty
+        // or unreadable. A raw dump must never override an existing RMS save.
+        for (Path candidate : candidates) {
+            List<RawScratchpad.Store> rawStores = RawScratchpad.readIfPresent(candidate);
+            if (rawStores != null) {
+                Path destination = candidates.iterator().next();
+                importRawScratchpad(destination, rawStores);
+                return Optional.of(destination);
             }
         }
         if (!candidates.isEmpty()) {
@@ -672,6 +685,31 @@ public final class RecordStore {
             return Optional.empty();
         }
         return Optional.empty();
+    }
+
+    private static void importRawScratchpad(Path destination, List<RawScratchpad.Store> rawStores) throws IOException {
+        Map<String, LegacyStoreRecord> stores = new LinkedHashMap<>();
+        for (RawScratchpad.Store raw : rawStores) {
+            List<LegacyRecord> records = raw.records().entrySet().stream()
+                    .map(entry -> new LegacyRecord(entry.getKey(), entry.getValue())).toList();
+            stores.put(raw.name(), new LegacyStoreRecord(raw.name(), raw.version(), raw.lastModified(),
+                    raw.recordCount(), records, raw.nextRecordId()));
+        }
+        // Publish only a fully validated, fully written import. Never replace a concurrently
+        // created RMS, and never write to the original phone/emulator dump.
+        Path temporary = Files.createTempFile(destination.getParent(), ".remexa-rms-", ".tmp");
+        try {
+            writeLegacyStores(temporary, stores);
+            try {
+                Files.move(temporary, destination);
+            } catch (java.nio.file.FileAlreadyExistsException ignored) {
+                return;
+            }
+        } finally {
+            Files.deleteIfExists(temporary);
+        }
+        DebugLog.log(LogCategory.RMS, RecordStore.class.getName(),
+                "Imported " + stores.size() + " raw scratchpad store(s) to " + destination);
     }
 
     private static void addLegacyCandidates(LinkedHashSet<Path> candidates, Path sourcePath) {
@@ -741,14 +779,36 @@ public final class RecordStore {
                         Math.max(importedVersion, 0),
                         importedLastModified,
                         Math.max(recordCount, 0),
-                        importedRecords
+                        importedRecords,
+                        0
                 ));
             }
+            readNextRecordIds(in, stores);
         } catch (IOException exception) {
             logUnparseableLegacyStore(legacyContainer, exception.getMessage());
             return new LinkedHashMap<>();
         }
         return stores;
+    }
+
+    private static void readNextRecordIds(DataInputStream in, Map<String, LegacyStoreRecord> stores) throws IOException {
+        if (in.available() < Integer.BYTES || in.readInt() != NEXT_IDS_MAGIC) {
+            return;
+        }
+        int count = in.readInt();
+        if (count < 0 || count > stores.size()) {
+            throw new IOException("Invalid RMS next-ID table");
+        }
+        for (int index = 0; index < count; index++) {
+            String name = in.readUTF();
+            int nextId = in.readInt();
+            LegacyStoreRecord store = stores.get(name);
+            if (store == null || nextId < 1) {
+                throw new IOException("Invalid RMS next-ID entry");
+            }
+            stores.put(name, new LegacyStoreRecord(store.name(), store.version(), store.lastModified(),
+                    store.recordCount(), store.records(), nextId));
+        }
     }
 
     private static final java.util.Set<Path> WARNED_LEGACY_PATHS = java.util.concurrent.ConcurrentHashMap.newKeySet();
@@ -780,6 +840,16 @@ public final class RecordStore {
                     dataOut.write(record.data());
                 }
             }
+            var nextIds = stores.values().stream().filter(store -> store.nextRecordId()
+                    > store.records().stream().mapToInt(LegacyRecord::id).max().orElse(0) + 1).toList();
+            if (!nextIds.isEmpty()) {
+                dataOut.writeInt(NEXT_IDS_MAGIC);
+                dataOut.writeInt(nextIds.size());
+                for (LegacyStoreRecord store : nextIds) {
+                    dataOut.writeUTF(store.name());
+                    dataOut.writeInt(store.nextRecordId());
+                }
+            }
         }
         Files.createDirectories(legacyContainer.getParent());
         Files.write(legacyContainer, out.toByteArray());
@@ -809,7 +879,8 @@ public final class RecordStore {
             int version,
             long lastModified,
             int recordCount,
-            List<LegacyRecord> records
+            List<LegacyRecord> records,
+            int nextRecordId
     ) {
     }
 
