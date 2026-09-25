@@ -31,6 +31,7 @@ public abstract class Canvas extends Displayable {
     private final Set<Integer> pressedKeys = new HashSet<>();
     private boolean fullScreenMode;
     private boolean paintInProgress;
+    private Thread paintingThread;
     private boolean repaintQueued;
     private boolean repaintScheduled;
     private boolean repaintPending;
@@ -123,21 +124,15 @@ public abstract class Canvas extends Displayable {
     }
 
     public void repaint() {
-        if (deferRepaintIfPainting(this::repaint)) {
-            return;
-        }
         queueRepaint(0, 0, getWidth(), getHeight(), false);
     }
 
     public void repaint(int x, int y, int width, int height) {
-        if (deferRepaintIfPainting(() -> repaint(x, y, width, height))) {
-            return;
-        }
         queueRepaint(x, y, width, height, true);
     }
 
     public void serviceRepaints() {
-        runQueuedRepaint();
+        runQueuedRepaint(true);
         MidletRuntime.serviceCanvasRepaints(this);
     }
 
@@ -372,12 +367,15 @@ public abstract class Canvas extends Displayable {
     protected final void beginHostPaint() {
         synchronized (repaintLock) {
             paintInProgress = true;
+            paintingThread = Thread.currentThread();
         }
     }
 
     protected final void endHostPaint() {
         synchronized (repaintLock) {
             paintInProgress = false;
+            paintingThread = null;
+            repaintLock.notifyAll();
         }
     }
 
@@ -443,18 +441,31 @@ public abstract class Canvas extends Displayable {
     }
 
     private void runQueuedRepaint() {
+        runQueuedRepaint(false);
+    }
+
+    private void runQueuedRepaint(boolean waitForPaint) {
         int x;
         int y;
         int width;
         int height;
         boolean region;
         synchronized (repaintLock) {
+            while (waitForPaint && paintInProgress && paintingThread != Thread.currentThread()) {
+                try {
+                    repaintLock.wait();
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+            }
+            repaintScheduled = false;
             if (paintInProgress) {
-                scheduleRepaintDrainLocked();
+                // The active painter schedules remaining damage when it
+                // finishes. A paint callback must never wait for itself.
                 return;
             }
             if (!repaintPending) {
-                repaintScheduled = false;
                 return;
             }
             x = repaintX;
@@ -463,25 +474,31 @@ public abstract class Canvas extends Displayable {
             height = repaintHeight;
             region = repaintPendingRegion;
             repaintPending = false;
-            repaintScheduled = false;
             paintInProgress = true;
+            paintingThread = Thread.currentThread();
         }
-        MidletRuntime.renderCanvas(this, graphics -> {
-            try {
-                if (region) {
-                    graphics.setClip(x, y, width, height);
+        try {
+            MidletRuntime.renderCanvas(this, graphics -> {
+                try {
+                    if (region) {
+                        graphics.setClip(x, y, width, height);
+                    }
+                    paint(graphics);
+                } finally {
+                    graphics.dispose();
                 }
-                paint(graphics);
-            } finally {
-                finishQueuedPaint();
-                graphics.dispose();
-            }
-        });
+            });
+        } finally {
+            // Also release waiters if rendering fails or no runtime is bound.
+            finishQueuedPaint();
+        }
     }
 
     private void finishQueuedPaint() {
         synchronized (repaintLock) {
             paintInProgress = false;
+            paintingThread = null;
+            repaintLock.notifyAll();
             if (repaintPending) {
                 scheduleRepaintDrainLocked();
             }

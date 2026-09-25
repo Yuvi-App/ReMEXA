@@ -21,9 +21,9 @@ public class Graphics {
     public static final int SOLID = 0;
     public static final int DOTTED = 1;
     private static final AffineTransform IDENTITY_TRANSFORM = new AffineTransform();
-    private final Graphics2D delegate;
-    private final int surfaceWidth;
-    private final int surfaceHeight;
+    private Graphics2D delegate;
+    private int surfaceWidth;
+    private int surfaceHeight;
     private final boolean disposable;
     private Font font = Font.getDefaultFont();
     private int argbColor = 0xFF000000;
@@ -55,6 +55,19 @@ public class Graphics {
 
     public void setColor(int rgb) {
         argbColor = 0xFF000000 | (rgb & 0x00FFFFFF);
+        setDelegateColor(argbColor);
+    }
+
+    protected final void rebindSurface(Graphics2D nextDelegate, int width, int height) {
+        var clip = clipBounds();
+        boolean fullClip = clip.equals(new Rectangle(0, 0, surfaceWidth, surfaceHeight));
+        delegate = nextDelegate;
+        surfaceWidth = width;
+        surfaceHeight = height;
+        delegate.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
+        delegate.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
+        delegate.setClip(fullClip ? new Rectangle(0, 0, width, height) : clip);
+        delegate.setFont(font.awtFont());
         setDelegateColor(argbColor);
     }
 

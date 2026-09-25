@@ -225,9 +225,14 @@ public final class Display {
         if (!canvas.isShown()) {
             return;
         }
-        // Do not force serviceRepaints() here; some MIDlets finish canvas setup
-        // after setCurrent() returns and rely on paint being asynchronous.
+        // Ordinary MIDP canvases may finish setup after setCurrent() returns
+        // and rely on paint being asynchronous.
         canvas.repaint();
+        if (canvas instanceof com.jblend.graphics.sprite.SpriteCanvas) {
+            // JBlend titles retain the virtual-screen Graphics from the first
+            // paint and may use it as soon as setCurrent returns.
+            canvas.serviceRepaints();
+        }
     }
 
     private static void deactivateDisplayable(Displayable previous, Displayable next) {

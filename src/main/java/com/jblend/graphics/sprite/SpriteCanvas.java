@@ -51,10 +51,8 @@ public abstract class SpriteCanvas extends javax.microedition.lcdui.Canvas {
 
     public void createFrameBuffer (int fw, int fh) {
         remexa.probes.SdkStubSupport.log("com.jblend.graphics.sprite.SpriteCanvas", "createFrameBuffer", fw, fh);
-        remexa.host.runtime.MidletRuntime.updateDisplayMetrics(
-                this,
-                new remexa.host.profile.DisplayMetrics(fw, fh, "SpriteCanvas.createFrameBuffer")
-        );
+        // The framebuffer is an off-screen sprite target. Its dimensions must
+        // not change the handset display or replace the virtual drawing screen.
         remexa.host.runtime.MidletRuntime.createSpriteFrameBuffer(this, fw, fh);
     }
 

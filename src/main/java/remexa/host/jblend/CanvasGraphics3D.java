@@ -21,9 +21,9 @@ import remexa.probes.DebugLog;
 import remexa.probes.LogCategory;
 
 public final class CanvasGraphics3D extends Graphics implements Graphics3D {
-    private final int surfaceWidth;
-    private final int surfaceHeight;
-    private final BufferedImage backingImage;
+    private int surfaceWidth;
+    private int surfaceHeight;
+    private BufferedImage backingImage;
     private final boolean retainDepthAcrossFlushes;
     private final List<QueuedDraw> pendingDraws = new ArrayList<>();
     private int[] scenePixels;
@@ -203,6 +203,18 @@ public final class CanvasGraphics3D extends Graphics implements Graphics3D {
 
     public BufferedImage backingImage() {
         return backingImage;
+    }
+
+    public void rebindSurface(java.awt.Graphics2D delegate, BufferedImage image) {
+        // A host allocation change must not strand Graphics retained by an app.
+        flush();
+        surfaceWidth = image.getWidth();
+        surfaceHeight = image.getHeight();
+        backingImage = image;
+        scenePixels = null;
+        sceneDepth = null;
+        sceneDepthValid = false;
+        super.rebindSurface(delegate, surfaceWidth, surfaceHeight);
     }
 
     @Override

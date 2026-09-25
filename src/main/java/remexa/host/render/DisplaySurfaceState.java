@@ -18,7 +18,7 @@ public final class DisplaySurfaceState {
     private Graphics2D displayGraphicsDelegate;
     private Graphics2D canvasGraphicsDelegate;
     private Graphics2D frameBufferGraphicsDelegate;
-    private javax.microedition.lcdui.Graphics canvasGraphics;
+    private CanvasGraphics3D canvasGraphics;
     private int[] virtualCopyPixels;
     private long renderedFrameCount;
 
@@ -34,10 +34,9 @@ public final class DisplaySurfaceState {
 
     public synchronized void updateDisplayMetrics(DisplayMetrics nextDisplayMetrics) {
         disposeDisplayGraphics();
-        disposeCanvasGraphics();
         displayMetrics = nextDisplayMetrics;
         displayImage = createSurface(nextDisplayMetrics.width(), nextDisplayMetrics.height());
-        virtualImage = createVirtualSurface();
+        replaceVirtualSurface(false);
     }
 
     public synchronized javax.microedition.lcdui.Graphics beginCanvasPaint() {
@@ -210,8 +209,7 @@ public final class DisplaySurfaceState {
         if (virtualImage == null
                 || virtualImage.getWidth() != virtualSurfaceWidth()
                 || virtualImage.getHeight() != virtualSurfaceHeight()) {
-            disposeCanvasGraphics();
-            virtualImage = createVirtualSurface();
+            replaceVirtualSurface(true);
         }
     }
 
@@ -227,7 +225,6 @@ public final class DisplaySurfaceState {
                 && virtualImage.getHeight() == virtualSurfaceHeight()) {
             return;
         }
-        disposeCanvasGraphics();
         canvasGraphicsDelegate = virtualImage.createGraphics();
         canvasGraphics = new CanvasGraphics3D(
                 canvasGraphicsDelegate,
@@ -260,11 +257,27 @@ public final class DisplaySurfaceState {
         return canvasGraphics;
     }
 
-    private void disposeCanvasGraphics() {
-        canvasGraphics = null;
-        if (canvasGraphicsDelegate != null) {
-            canvasGraphicsDelegate.dispose();
-            canvasGraphicsDelegate = null;
+    private void replaceVirtualSurface(boolean preservePixels) {
+        if (canvasGraphics != null) {
+            canvasGraphics.flush();
+        }
+        var previousImage = virtualImage;
+        var previousDelegate = canvasGraphicsDelegate;
+        virtualImage = createVirtualSurface();
+        if (preservePixels && previousImage != null) {
+            int width = Math.min(previousImage.getWidth(), virtualImage.getWidth());
+            int height = Math.min(previousImage.getHeight(), virtualImage.getHeight());
+            for (int y = 0; y < height; y++) {
+                System.arraycopy(pixels(previousImage), y * previousImage.getWidth(),
+                        pixels(virtualImage), y * virtualImage.getWidth(), width);
+            }
+        }
+        if (canvasGraphics != null) {
+            canvasGraphicsDelegate = virtualImage.createGraphics();
+            canvasGraphics.rebindSurface(canvasGraphicsDelegate, virtualImage);
+        }
+        if (previousDelegate != null) {
+            previousDelegate.dispose();
         }
     }
 
