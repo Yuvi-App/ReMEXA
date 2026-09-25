@@ -30,6 +30,13 @@ public class Form extends Screen {
         return append(new StringItem(null, value));
     }
 
+    public void delete(int itemNum) {
+        items.remove(itemNum);
+        if (isShown()) {
+            repaintHost();
+        }
+    }
+
     public int size() {
         return items.size();
     }
