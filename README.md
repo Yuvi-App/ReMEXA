@@ -8,8 +8,8 @@ ReMEXA focuses on preserving and running Japanese feature-phone appli on modern 
 
 Current areas of work include:
 
-- A Swing-based launcher with drag-and-drop `.jad` loading and recent launch history.
-- Direct command-line launch support for `.jad` files.
+- A Swing-based launcher with drag-and-drop `.jad` and `.kjx` loading and recent launch history.
+- Direct command-line launch support for `.jad` and `.kjx` files.
 - Compatibility and runtime support for `javax.microedition`, `com.j_phone`, `com.vodafone`, `com.jblend`, `com.mexa`, and many more APIs.
 - Display, input, phone profile, and frame-rate configuration for target device behavior.
 - Bitmap and system font rendering support.
@@ -52,12 +52,18 @@ Open the desktop launcher:
 java -jar target/ReMEXA-Nightly.jar
 ```
 
-From the launcher, open or drag in a `.jad` file.
+From the launcher, open or drag in a `.jad` or `.kjx` file.
 
 Launch a `.jad` directly:
 
 ```sh
 java -jar target/ReMEXA-Nightly.jar --run-jad path/to/app.jad
+```
+
+Launch a KJX package directly:
+
+```sh
+java -jar target/ReMEXA-Nightly.jar --run-kjx path/to/app.kjx
 ```
 
 Useful launch options:

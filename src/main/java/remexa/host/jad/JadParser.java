@@ -21,14 +21,17 @@ public final class JadParser {
     }
 
     public static JadDescriptor parse(Path path) throws IOException {
-        var properties = parseProperties(path);
+        return parse(path, Files.readAllBytes(path));
+    }
+
+    static JadDescriptor parse(Path path, byte[] bytes) {
+        var properties = parseProperties(bytes);
         var midlets = parseMidlets(properties);
         DebugLog.log(LogCategory.JAD, JadParser.class.getName(), "Parsed JAD: " + path.toAbsolutePath());
         return new JadDescriptor(path.toAbsolutePath(), properties, midlets);
     }
 
-    private static Map<String, String> parseProperties(Path path) throws IOException {
-        var bytes = Files.readAllBytes(path);
+    private static Map<String, String> parseProperties(byte[] bytes) {
         var utf8 = parseCandidate(bytes, StandardCharsets.UTF_8);
         if (utf8.strict() && looksLikeValidJad(utf8.properties())) {
             return utf8.properties();

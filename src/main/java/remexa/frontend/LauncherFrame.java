@@ -27,7 +27,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.ButtonGroup;
@@ -80,7 +79,7 @@ public final class LauncherFrame extends JFrame {
     private static final Color TEXT_SECONDARY = RemexaTheme.TEXT_SECONDARY;
 
     private final JadLauncher launcher;
-    private final JMenu recentJadsMenu = new JMenu("Recent JAD");
+    private final JMenu recentJadsMenu = new JMenu("Recent Applications");
     private final DropPanel dropPanel = new DropPanel();
 
     public LauncherFrame(JadLauncher launcher) {
@@ -109,10 +108,10 @@ public final class LauncherFrame extends JFrame {
     }
 
     private void chooseAndLaunch() {
-        var dialog = new FileDialog((Frame) null, "Open JAD", FileDialog.LOAD);
+        var dialog = new FileDialog((Frame) null, "Open JAD or KJX", FileDialog.LOAD);
         dialog.setDirectory(Path.of(System.getProperty("user.home")).toString());
-        dialog.setFile("*.jad");
-        dialog.setFilenameFilter((directory, name) -> name != null && name.toLowerCase().endsWith(".jad"));
+        dialog.setFile("*.jad;*.kjx");
+        dialog.setFilenameFilter((directory, name) -> name != null && isApplicationPath(Path.of(name)));
         dialog.setVisible(true);
 
         if (dialog.getFile() != null) {
@@ -122,10 +121,10 @@ public final class LauncherFrame extends JFrame {
     }
 
     private void launch(Path jadPath) {
-        if (!isJadPath(jadPath)) {
+        if (!isApplicationPath(jadPath)) {
             JOptionPane.showMessageDialog(
                     this,
-                    "Only .jad files can be opened in ReMEXA.",
+                    "Only .jad and .kjx files can be opened in ReMEXA.",
                     "Unsupported File Type",
                     JOptionPane.ERROR_MESSAGE
             );
@@ -136,19 +135,15 @@ public final class LauncherFrame extends JFrame {
         refreshRecents();
     }
 
-    private static boolean isJadPath(Path path) {
-        if (path == null) {
-            return false;
-        }
-        var fileName = path.getFileName();
-        return fileName != null && fileName.toString().toLowerCase(Locale.ROOT).endsWith(".jad");
+    private static boolean isApplicationPath(Path path) {
+        return remexa.host.jad.AppDescriptorLoader.supports(path);
     }
 
     private void refreshRecents() {
         recentJadsMenu.removeAll();
         var entries = launcher.recentJads().load();
         if (entries.isEmpty()) {
-            var emptyItem = new JMenuItem("No recent JADs");
+            var emptyItem = new JMenuItem("No recent applications");
             emptyItem.setEnabled(false);
             recentJadsMenu.add(emptyItem);
             return;
@@ -173,7 +168,7 @@ public final class LauncherFrame extends JFrame {
 
         var fileMenu = new JMenu("File");
         styleMenu(fileMenu);
-        var openJadItem = new JMenuItem("Open JAD...");
+        var openJadItem = new JMenuItem("Open JAD or KJX...");
         styleMenuItem(openJadItem);
         openJadItem.addActionListener(event -> chooseAndLaunch());
         fileMenu.add(openJadItem);
@@ -1204,10 +1199,10 @@ public final class LauncherFrame extends JFrame {
                 try {
                     @SuppressWarnings("unchecked")
                     List<File> files = (List<File>) support.getTransferable().getTransferData(DataFlavor.javaFileListFlavor);
-                    canImport = files != null && !files.isEmpty() && isJadPath(files.getFirst().toPath());
+                    canImport = files != null && !files.isEmpty() && isApplicationPath(files.getFirst().toPath());
                 } catch (Exception ignored) {
                     // Some drag sources expose the file list lazily during hover.
-                    // Keep the drop eligible here and enforce the .jad check in importData().
+                    // Keep the drop eligible here and check the file type in importData().
                     canImport = true;
                 }
             }
@@ -1229,11 +1224,11 @@ public final class LauncherFrame extends JFrame {
                     return false;
                 }
                 var firstPath = files.getFirst().toPath();
-                if (!isJadPath(firstPath)) {
+                if (!isApplicationPath(firstPath)) {
                     panel.setDragActive(false);
                     JOptionPane.showMessageDialog(
                             LauncherFrame.this,
-                            "Only .jad files can be dropped into ReMEXA.",
+                            "Only .jad and .kjx files can be dropped into ReMEXA.",
                             "Unsupported File Type",
                             JOptionPane.ERROR_MESSAGE
                     );
@@ -1277,7 +1272,7 @@ public final class LauncherFrame extends JFrame {
             eyebrow.setFont(new Font("Segoe UI", Font.BOLD, 12));
 
             subtitle = new JLabel(
-                    "<html><div style='text-align:center;'>Drop a <b>.jad</b> file here to launch it.</div></html>",
+                    "<html><div style='text-align:center;'>Drop a <b>.jad</b> or <b>.kjx</b> file here to launch it.</div></html>",
                     SwingConstants.CENTER
             );
             subtitle.setForeground(TEXT_PRIMARY);
@@ -1290,7 +1285,7 @@ public final class LauncherFrame extends JFrame {
             hint.setForeground(TEXT_SECONDARY);
             hint.setFont(new Font("Segoe UI", Font.PLAIN, 14));
 
-            openButton = new JButton("Open JAD...");
+            openButton = new JButton("Open JAD or KJX...");
             styleLauncherButton(openButton, true);
             openButton.addActionListener(event -> chooseAndLaunch());
 
@@ -1316,9 +1311,9 @@ public final class LauncherFrame extends JFrame {
             eyebrow.setText(dragActive ? "Release to Launch" : "Launcher");
             subtitle.setText(dragActive
                     ? "<html><div style='text-align:center;'>Drop the file to open it in ReMEXA.</div></html>"
-                    : "<html><div style='text-align:center;'>Drop a <b>.jad</b> file here to launch it.</div></html>");
+                    : "<html><div style='text-align:center;'>Drop a <b>.jad</b> or <b>.kjx</b> file here to launch it.</div></html>");
             hint.setText(dragActive
-                    ? "<html><div style='text-align:center;'>The selected JAD will be added to your recent list automatically.</div></html>"
+                    ? "<html><div style='text-align:center;'>The selected application will be added to your recent list automatically.</div></html>"
                     : "<html><div style='text-align:center;'>Open a file manually or drag one in. Recent launches stay available from the <b>File</b> menu.</div></html>");
             openButton.setEnabled(!dragActive);
             repaint();

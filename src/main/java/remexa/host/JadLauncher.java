@@ -4,17 +4,15 @@ import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
 import javax.imageio.ImageIO;
 import javax.swing.JOptionPane;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import remexa.host.HostUiSettings;
+import remexa.host.jad.AppDescriptorLoader;
 import remexa.host.jad.JadDescriptor;
 import remexa.host.jad.JadIconLoader;
-import remexa.host.jad.JadManifestOverlay;
-import remexa.host.jad.JadParser;
 import remexa.host.jad.RecentJadsRepository;
 import remexa.host.profile.LaunchProfileResolver;
 import remexa.host.runtime.AppRuntime;
@@ -60,10 +58,7 @@ public final class JadLauncher {
 
     public void launch(Path jadPath) {
         try {
-            if (!isJadPath(jadPath)) {
-                throw new LaunchException("Only .jad files can be opened in ReMEXA.");
-            }
-            var descriptor = descriptorForLaunch(JadParser.parse(jadPath));
+            var descriptor = AppDescriptorLoader.load(jadPath);
             recentJads.remember(descriptor);
             openFrame(descriptor);
         } catch (Exception exception) {
@@ -84,26 +79,6 @@ public final class JadLauncher {
 
     public RecentJadsRepository recentJads() {
         return recentJads;
-    }
-
-    private static boolean isJadPath(Path path) {
-        if (path == null) {
-            return false;
-        }
-        var fileName = path.getFileName();
-        return fileName != null && fileName.toString().toLowerCase(Locale.ROOT).endsWith(".jad");
-    }
-
-    private JadDescriptor descriptorForLaunch(JadDescriptor descriptor) throws LaunchException {
-        var jarPath = descriptor.resolveJarPath();
-        if (jarPath.isEmpty() || !Files.exists(jarPath.get())) {
-            return descriptor;
-        }
-        try {
-            return JadManifestOverlay.merge(descriptor, jarPath.get());
-        } catch (Exception exception) {
-            throw new LaunchException("Failed to read JAR manifest.", exception);
-        }
     }
 
     private void openFrame(JadDescriptor descriptor) throws LaunchException {

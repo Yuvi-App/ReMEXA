@@ -49,7 +49,7 @@ public final class RecentJadsRepository {
             return entry;
         }
         try {
-            var descriptor = JadParser.parse(entry.jadPath());
+            var descriptor = AppDescriptorLoader.load(entry.jadPath());
             var refreshedTitle = descriptor.title();
             if (refreshedTitle == null || refreshedTitle.isBlank()) {
                 return entry;

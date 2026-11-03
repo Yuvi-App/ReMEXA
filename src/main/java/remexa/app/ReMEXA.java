@@ -7,6 +7,7 @@ import java.nio.file.Path;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import javax.swing.SwingUtilities;
 import remexa.frontend.LauncherFrame;
 import remexa.host.HostUiSettings;
@@ -73,11 +74,11 @@ public final class ReMEXA {
         LaunchConfig.applyBluetoothRemoteHost(launchRequest.bluetoothRemoteHost() == null ? HostUiSettings.bluetoothRemoteHost() : launchRequest.bluetoothRemoteHost());
         LaunchConfig.applyBluetoothPort(launchRequest.bluetoothPort() == null ? HostUiSettings.bluetoothPort() : launchRequest.bluetoothPort());
         if (launchRequest.directLaunchRequested()) {
-            if (launchRequest.jadPath() == null) {
+            if (launchRequest.appPath() == null) {
                 return;
             }
             launchDirect(
-                    launchRequest.jadPath(),
+                    launchRequest.appPath(),
                     launchRequest.showHostDetails(),
                     launchRequest.captureFramePath(),
                     launchRequest.captureDelayMs(),
@@ -221,24 +222,24 @@ public final class ReMEXA {
         return configured.isEmpty() ? DEFAULT_LEGACY_ENCODING : configured;
     }
 
-    private static void launchDirect(Path jadPath, boolean showHostDetails) {
-        launchDirect(jadPath, showHostDetails, null, 0, false);
+    private static void launchDirect(Path appPath, boolean showHostDetails) {
+        launchDirect(appPath, showHostDetails, null, 0, false);
     }
 
     private static void launchDirect(
-            Path jadPath,
+            Path appPath,
             boolean showHostDetails,
             Path captureFramePath,
             int captureDelayMs,
             boolean exitAfterCapture
     ) {
-        if (!Files.exists(jadPath)) {
+        if (!Files.exists(appPath)) {
             DebugLog.log(
                     LogCategory.HOST,
                     ReMEXA.class.getName(),
-                    "JAD file does not exist: " + jadPath.toAbsolutePath()
+                    "Application file does not exist: " + appPath.toAbsolutePath()
             );
-            System.err.println("ReMEXA launch failed: JAD file does not exist: " + jadPath.toAbsolutePath());
+            System.err.println("ReMEXA launch failed: Application file does not exist: " + appPath.toAbsolutePath());
             return;
         }
         SwingUtilities.invokeLater(() -> new JadLauncher(
@@ -247,11 +248,11 @@ public final class ReMEXA {
                 captureFramePath,
                 captureDelayMs,
                 exitAfterCapture
-        ).launch(jadPath));
+        ).launch(appPath));
     }
 
     private static LaunchRequest parseLaunchRequest(List<String> arguments) {
-        Path directJad = null;
+        Path directApp = null;
         boolean showHostDetails = false;
         boolean directLaunchRequested = false;
         Path captureFramePath = null;
@@ -442,23 +443,24 @@ public final class ReMEXA {
                 exitAfterCapture = true;
                 continue;
             }
-            if ("--run-jad".equals(argument)) {
+            if ("--run-jad".equals(argument) || "--run-kjx".equals(argument)) {
                 directLaunchRequested = true;
                 if (index + 1 >= arguments.size()) {
-                    System.err.println("ReMEXA launch failed: --run-jad requires a JAD path.");
+                    System.err.println("ReMEXA launch failed: " + argument + " requires an application path.");
                     return new LaunchRequest(null, showHostDetails, true, captureFramePath, captureDelayMs, exitAfterCapture, fontType, jskyPhoneType, vodafonePhoneType, mexaPhoneType, hostScale, frameRateOption, bluetoothBackend, bluetoothRole, bluetoothLocalName, bluetoothRemoteHost, bluetoothPort);
                 }
-                directJad = Path.of(arguments.get(++index));
+                directApp = Path.of(arguments.get(++index));
                 continue;
             }
-            if (argument.toLowerCase().endsWith(".jad")) {
+            var normalized = argument.toLowerCase(Locale.ROOT);
+            if (normalized.endsWith(".jad") || normalized.endsWith(".kjx")) {
                 directLaunchRequested = true;
-                directJad = Path.of(argument);
+                directApp = Path.of(argument);
             }
         }
 
         return new LaunchRequest(
-                directJad,
+                directApp,
                 showHostDetails,
                 directLaunchRequested,
                 captureFramePath,
@@ -524,7 +526,7 @@ public final class ReMEXA {
     }
 
     private record LaunchRequest(
-            Path jadPath,
+            Path appPath,
             boolean showHostDetails,
             boolean directLaunchRequested,
             Path captureFramePath,

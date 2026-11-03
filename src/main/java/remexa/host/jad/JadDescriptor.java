@@ -11,8 +11,13 @@ import java.util.Optional;
 public record JadDescriptor(
         Path sourcePath,
         Map<String, String> properties,
-        List<MidletEntry> midlets
+        List<MidletEntry> midlets,
+        Path jarPathOverride
 ) {
+    public JadDescriptor(Path sourcePath, Map<String, String> properties, List<MidletEntry> midlets) {
+        this(sourcePath, properties, midlets, null);
+    }
+
     public Optional<String> property(String key) {
         return Optional.ofNullable(properties.get(key));
     }
@@ -34,6 +39,9 @@ public record JadDescriptor(
     }
 
     public Optional<Path> resolveJarPath() {
+        if (jarPathOverride != null) {
+            return Optional.of(jarPathOverride);
+        }
         var configuredJar = property("MIDlet-Jar-URL")
                 .or(() -> property("Jar-URL"))
                 .or(() -> property("AppJar"))

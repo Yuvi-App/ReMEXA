@@ -49,7 +49,8 @@ public final class JadManifestOverlay {
                 mergedProperties.put(key, value.toString());
             }
 
-            return new JadDescriptor(descriptor.sourcePath(), Map.copyOf(mergedProperties), descriptor.midlets());
+            return new JadDescriptor(descriptor.sourcePath(), Map.copyOf(mergedProperties), descriptor.midlets(),
+                    descriptor.jarPathOverride());
         }
     }
 
