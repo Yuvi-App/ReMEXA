@@ -3,9 +3,11 @@ package javax.microedition.lcdui;
 import java.util.ArrayList;
 
 public class List extends Screen implements Choice {
+    public static final Command SELECT_COMMAND = new Command("", Command.SCREEN, 0);
     private final java.util.List<String> values = new ArrayList<>();
     private final int listType;
     private int selectedIndex;
+    private Command selectCommand = SELECT_COMMAND;
 
     public List(String title, int listType) {
         setTitle(title);
@@ -42,6 +44,24 @@ public class List extends Screen implements Choice {
         return values.isEmpty() ? -1 : selectedIndex;
     }
 
+    public void setSelectCommand(Command command) {
+        if (listType != IMPLICIT) {
+            return;
+        }
+        selectCommand = command;
+        if (command != null && command != SELECT_COMMAND) {
+            addCommand(command);
+        }
+    }
+
+    @Override
+    public void removeCommand(Command command) {
+        if (selectCommand == command) {
+            selectCommand = null;
+        }
+        super.removeCommand(command);
+    }
+
     public void setSelectedIndex(int elementNum, boolean selected) {
         if (elementNum < 0 || elementNum >= values.size()) {
             throw new IndexOutOfBoundsException("List index out of range: " + elementNum);
@@ -59,6 +79,13 @@ public class List extends Screen implements Choice {
         if (values.isEmpty()) {
             return;
         }
+        if (listType == IMPLICIT && isSelectKey(keyCode)) {
+            var listener = getCommandListener();
+            if (selectCommand != null && listener != null) {
+                listener.commandAction(selectCommand, this);
+            }
+            return;
+        }
         var previous = selectedIndex;
         switch (keyCode) {
             case Canvas.KEYCODE_UP, Canvas.UP, '2' -> selectedIndex = Math.max(0, selectedIndex - 1);
@@ -71,6 +98,17 @@ public class List extends Screen implements Choice {
         if (selectedIndex != previous) {
             repaintHost();
         }
+    }
+
+    @Override
+    void fireScreenKeyRepeated(int keyCode) {
+        if (!isSelectKey(keyCode)) {
+            fireScreenKeyPressed(keyCode);
+        }
+    }
+
+    private boolean isSelectKey(int keyCode) {
+        return keyCode == Canvas.KEYCODE_FIRE || keyCode == Canvas.FIRE || keyCode == '5';
     }
 
     @Override

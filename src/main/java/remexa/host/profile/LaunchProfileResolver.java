@@ -8,6 +8,7 @@ import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.jar.JarFile;
 import java.util.regex.Pattern;
 import remexa.host.input.InputProfile;
@@ -59,6 +60,9 @@ public final class LaunchProfileResolver {
     private static final List<String> JPHONE_API_MARKERS = List.of("com/j_phone/", "com.j_phone.");
     private static final List<String> VODAFONE_API_MARKERS = List.of("com/vodafone/", "com.vodafone.");
     private static final List<String> MEXA_API_MARKERS = List.of("com/mexa/", "com.mexa.");
+    private static final Set<String> SHARED_MIDXLET_KEYS = Set.of(
+            "midxlet-ver", "midxlet-copyright", "midxlet-network", "midxlet-save"
+    );
     private static final Pattern SIZE_PATTERN = Pattern.compile("(\\d+)\\D+(\\d+)");
 
     private LaunchProfileResolver() {
@@ -84,6 +88,15 @@ public final class LaunchProfileResolver {
         var ocl = resolveDeclaredApi(descriptor).orElse("");
         var normalizedOcl = primaryOclToken(ocl);
         var apiHints = scanJarApiHints(descriptor);
+        if (hasWillcomMetadata(descriptor, platform)
+                && !apiHints.jPhoneApi() && !apiHints.vodafoneApi() && !apiHints.mexaApi()
+                && (ocl.isBlank() || normalizedOcl.toUpperCase(Locale.ROOT).startsWith("JOCL-"))
+                && !looksLikeMexaOcl(normalizedOcl)
+                && !looksLikeMexaPlatform(platform) && !looksLikeMexaVendor(descriptor)
+                && !looksLikeVodafonePlatform(platform) && !looksLikeVodafoneVendor(descriptor)) {
+            // Some WILLCOM ports retain JOCL and MIDxlet declarations from their original release.
+            return genericProfile(descriptor, platform);
+        }
         if (hasMidxletProperties(descriptor) || apiHints.mexaApi() || looksLikeMexaOcl(normalizedOcl)) {
             return applyDescriptorCapabilityOverrides(
                     descriptor,
@@ -115,7 +128,27 @@ public final class LaunchProfileResolver {
                     AppProfile.vodafone(profileApiLabel(normalizedOcl, "VODAFONE-API"), resolveVodafonePhoneType(platform))
             );
         }
-        return AppProfile.generic();
+        return genericProfile(descriptor, platform);
+    }
+
+    private static AppProfile genericProfile(JadDescriptor descriptor, String platform) {
+        var overrides = new LinkedHashMap<String, String>();
+        resolveMicroEditionProperty(descriptor, MICROEDITION_PROFILE_KEYS)
+                .ifPresent(value -> overrides.put("microedition.profiles", value));
+        resolveMicroEditionProperty(descriptor, MICROEDITION_CONFIGURATION_KEYS)
+                .ifPresent(value -> overrides.put("microedition.configuration", value));
+        if (!platform.isBlank()) {
+            overrides.put("microedition.platform", platform);
+        }
+        return AppProfile.generic().withSystemProperties(overrides);
+    }
+
+    private static boolean hasWillcomMetadata(JadDescriptor descriptor, String platform) {
+        return List.of(platform, descriptor.property("MIDlet-Name").orElse(""),
+                        descriptor.property("MIDlet-Vendor").orElse(""))
+                .stream()
+                .map(value -> value.toUpperCase(Locale.ROOT))
+                .anyMatch(value -> value.contains("WILLCOM") || value.contains("AIR-EDGE"));
     }
 
     private static String profileApiLabel(String normalizedOcl, String fallback) {
@@ -186,8 +219,15 @@ public final class LaunchProfileResolver {
     }
 
     private static boolean hasMidxletProperties(JadDescriptor descriptor) {
+        var standardMidp = resolveDeclaredApi(descriptor).isEmpty()
+                && resolveMicroEditionProperty(descriptor, MICROEDITION_PROFILE_KEYS)
+                        .map(value -> value.toUpperCase(Locale.ROOT).startsWith("MIDP-2"))
+                        .orElse(false);
         for (var key : descriptor.properties().keySet()) {
             if (key != null && key.regionMatches(true, 0, "MIDxlet", 0, "MIDxlet".length())) {
+                if (standardMidp && SHARED_MIDXLET_KEYS.contains(key.toLowerCase(Locale.ROOT))) {
+                    continue;
+                }
                 return true;
             }
         }

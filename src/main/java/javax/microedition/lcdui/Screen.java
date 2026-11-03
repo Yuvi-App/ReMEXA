@@ -72,12 +72,24 @@ public class Screen extends Displayable {
     }
 
     protected void paintLines(Graphics graphics, java.util.List<String> lines, int bodyTop) {
+        paintLines(graphics, lines, bodyTop, -1);
+    }
+
+    protected void paintLines(Graphics graphics, java.util.List<String> lines, int bodyTop, int focusedLine) {
         var font = Font.getDefaultFont();
         graphics.setFont(font);
         var lineHeight = font.getHeight() + 1;
         var bodyHeight = Math.max(0, getHeight() - bodyTop);
         var contentHeight = MARGIN * 2 + Math.max(0, lines.size()) * lineHeight;
         setScrollBounds(contentHeight, bodyHeight);
+        if (focusedLine >= 0) {
+            var focusedTop = MARGIN + focusedLine * lineHeight;
+            if (focusedTop < scrollY) {
+                scrollY = focusedTop;
+            } else if (focusedTop + lineHeight > scrollY + bodyHeight) {
+                scrollY = Math.min(maxScrollY, Math.max(0, focusedTop + lineHeight - bodyHeight));
+            }
+        }
 
         graphics.setClip(0, bodyTop, getWidth(), bodyHeight);
         graphics.setColor(TEXT_COLOR);

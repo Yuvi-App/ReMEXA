@@ -59,6 +59,9 @@ public record AppProfile(
                 0,
                 Map.of(
                         "microedition.locale", configuredLocale(),
+                        "microedition.platform", "j2me",
+                        "microedition.configuration", "CLDC-1.1",
+                        "microedition.profiles", "MIDP-2.0",
                         "microedition.m3g.version", "1.1"
                 )
         );
