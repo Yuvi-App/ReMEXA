@@ -771,7 +771,8 @@ public final class Manager {
             if (yamahaPlayback != null) {
                 try {
                     onVolumeChanged();
-                    if (yamahaPlayback.getState() == YamahaMidiPlayback.PAUSED) {
+                    if (yamahaPlayback.getState() == YamahaMidiPlayback.PAUSED
+                            && yamahaPlayback.mediaTimeMicros() < yamahaPlayback.durationMicros()) {
                         yamahaPlayback.resume();
                     } else {
                         yamahaPlayback.play(loopsForever(loopCount()) ? 0 : Math.max(1, loopCount()));
@@ -865,15 +866,16 @@ public final class Manager {
         @Override
         protected synchronized long doSetMediaTime(long now) throws MediaException {
             if (yamahaPlayback != null) {
-                if (now > 0L) {
-                    throw new MediaException("Yamaha MIDI seeking is not supported.");
+                try {
+                    return yamahaPlayback.setMediaTime(now);
+                } catch (RuntimeException exception) {
+                    throw new MediaException("Failed to seek Yamaha MIDI player.", exception);
                 }
-                return yamahaPlayback.setMediaTime(now);
             }
             if (sequencer == null) {
                 return 0L;
             }
-            long targetMicros = Math.max(0L, now) * 1000L;
+            long targetMicros = Math.max(0L, now);
             long maxMicros = sequencer.getMicrosecondLength();
             if (maxMicros > 0L) {
                 targetMicros = Math.min(targetMicros, maxMicros);
@@ -883,23 +885,23 @@ public final class Manager {
             } catch (RuntimeException exception) {
                 throw new MediaException("Failed to seek MIDI player.", exception);
             }
-            return sequencer.getMicrosecondPosition() / 1000L;
+            return sequencer.getMicrosecondPosition();
         }
 
         @Override
         protected synchronized long doGetMediaTime() {
             if (yamahaPlayback != null) {
-                return yamahaPlayback.mediaTimeMillis();
+                return yamahaPlayback.mediaTimeMicros();
             }
-            return sequencer == null ? 0L : sequencer.getMicrosecondPosition() / 1000L;
+            return sequencer == null ? 0L : sequencer.getMicrosecondPosition();
         }
 
         @Override
         protected synchronized long doGetDuration() {
             if (yamahaPlayback != null) {
-                return yamahaPlayback.durationMillis();
+                return yamahaPlayback.durationMicros();
             }
-            return sequencer == null ? TIME_UNKNOWN : sequencer.getMicrosecondLength() / 1000L;
+            return sequencer == null ? TIME_UNKNOWN : sequencer.getMicrosecondLength();
         }
 
         private void closeQuietly() {
@@ -1084,8 +1086,6 @@ public final class Manager {
         private RenderedPcmAudio audio;
         private RenderedPcmPlayer playback;
         private float outputGain = 1.0f;
-        private volatile long playbackStartedAtNanos;
-        private volatile long cachedMediaTimeMillis;
 
         private PcmPlayer(byte[] source, String contentType, boolean compressed) {
             super(contentType);
@@ -1102,14 +1102,7 @@ public final class Manager {
                 audio = decoded.audio();
                 outputGain = decoded.outputGain();
                 playback = new RenderedPcmPlayer(audio, spatialSource);
-                playback.setCompletionListener(() -> {
-                    long duration = durationMillis(audio);
-                    cachedMediaTimeMillis = duration <= 0L || loopsForever(loopCount())
-                            ? duration
-                            : duration * Math.max(1, loopCount());
-                    playbackStartedAtNanos = 0L;
-                    notifyEndOfMedia();
-                });
+                playback.setCompletionListener(this::notifyEndOfMedia);
                 RenderedPcmPlayer.prewarm(audio.sampleRate(), Math.max(2, audio.channelCount()));
                 onVolumeChanged();
             } catch (MediaException exception) {
@@ -1129,9 +1122,12 @@ public final class Manager {
             }
             try {
                 onVolumeChanged();
-                cachedMediaTimeMillis = 0L;
-                playbackStartedAtNanos = System.nanoTime();
-                playback.play(loopsForever(loopCount()) ? 0 : Math.max(1, loopCount()));
+                if (playback.getState() == RenderedPcmPlayer.PAUSED
+                        && playback.mediaTimeMicros() < doGetDuration()) {
+                    playback.resume();
+                } else {
+                    playback.playFromCurrentPosition(loopsForever(loopCount()) ? 0 : Math.max(1, loopCount()));
+                }
             } catch (RuntimeException exception) {
                 throw new MediaException("Failed to start WAV player.", exception);
             }
@@ -1143,9 +1139,7 @@ public final class Manager {
                 return;
             }
             try {
-                playback.stop();
-                playbackStartedAtNanos = 0L;
-                cachedMediaTimeMillis = 0L;
+                playback.pause();
             } catch (RuntimeException exception) {
                 throw new MediaException("Failed to stop WAV player.", exception);
             }
@@ -1180,45 +1174,21 @@ public final class Manager {
             if (playback == null) {
                 return 0L;
             }
-            boolean wasStarted = isStarted();
-            playback.stop();
-            cachedMediaTimeMillis = 0L;
-            playbackStartedAtNanos = 0L;
-            if (wasStarted) {
-                playbackStartedAtNanos = System.nanoTime();
-                playback.play(loopsForever(loopCount()) ? 0 : Math.max(1, loopCount()));
+            try {
+                return playback.seek(now);
+            } catch (RuntimeException exception) {
+                throw new MediaException("Failed to seek PCM player.", exception);
             }
-            return 0L;
         }
 
         @Override
         protected synchronized long doGetMediaTime() {
-            return mediaTimeMillis() * 1000L;
-        }
-
-        private long mediaTimeMillis() {
-            if (playback == null || audio == null) {
-                return 0L;
-            }
-            long startedAt = playbackStartedAtNanos;
-            if (startedAt <= 0L || playback.getState() != RenderedPcmPlayer.PLAYING) {
-                return cachedMediaTimeMillis;
-            }
-            long elapsedMillis = Math.max(0L, (System.nanoTime() - startedAt) / 1_000_000L);
-            long durationMillis = durationMillis(audio);
-            if (durationMillis <= 0L) {
-                return elapsedMillis;
-            }
-            if (loopsForever(loopCount())) {
-                return elapsedMillis % durationMillis;
-            }
-            long totalMillis = durationMillis * Math.max(1, loopCount());
-            return Math.min(elapsedMillis, totalMillis);
+            return playback == null ? 0L : playback.mediaTimeMicros();
         }
 
         @Override
         protected synchronized long doGetDuration() {
-            return audio == null ? TIME_UNKNOWN : durationMillis(audio) * 1000L;
+            return audio == null ? TIME_UNKNOWN : Math.round(audio.frameCount() * (1_000_000.0 / audio.sampleRate()));
         }
 
         private void closeQuietly() {
@@ -1226,8 +1196,6 @@ public final class Manager {
             playback = null;
             audio = null;
             outputGain = 1.0f;
-            playbackStartedAtNanos = 0L;
-            cachedMediaTimeMillis = 0L;
             if (currentPlayback != null) {
                 try {
                     currentPlayback.close();
@@ -1312,13 +1280,6 @@ public final class Manager {
             int frameCount = usableLength / frameSize;
             int sampleRate = Math.max(1, Math.round(format.getSampleRate()));
             return new RenderedPcmAudio(sampleRate, channels, frameCount, pcm);
-        }
-
-        private static long durationMillis(RenderedPcmAudio audio) {
-            if (audio == null || audio.sampleRate() <= 0) {
-                return TIME_UNKNOWN;
-            }
-            return Math.max(0L, Math.round(audio.frameCount() * 1000.0 / audio.sampleRate()));
         }
 
         private static LegacyWavDecode decodeLegacyWav(byte[] source) throws MediaException {

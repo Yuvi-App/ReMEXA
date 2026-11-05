@@ -81,6 +81,19 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
         handle.play(loopCount, completeAtSequenceEnd);
     }
 
+    void playFromCurrentPosition(int loopCount) {
+        handle.play(loopCount, false, false);
+    }
+
+    /** Generated source position; queued device audio can lag behind it. */
+    long mediaTimeMicros() {
+        return handle.mediaTimeMicros();
+    }
+
+    long seek(long micros) {
+        return handle.seek(micros);
+    }
+
     @Override
     public void stop() {
         handle.stop();
@@ -488,6 +501,7 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
         private int remainingLoops;
         private int nextUserEventIndex;
         private int framePosition;
+        private boolean sessionPositionValid = true;
         private int volume = 127;
         private int panpot = 64;
         private long playbackEpoch;
@@ -538,12 +552,21 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
         }
 
         void play(int loopCount, boolean completeAtSequenceEnd) {
+            play(loopCount, completeAtSequenceEnd, true);
+        }
+
+        void play(int loopCount, boolean completeAtSequenceEnd, boolean rewind) {
             synchronized (stateLock) {
                 ensureOpenLocked();
                 throwIfFailedLocked();
                 try {
-                    session.rewind();
-                    if (spatial != null) spatial.reset();
+                    if (rewind || framePosition == 0 || !sessionPositionValid) {
+                        session.rewind();
+                        if (spatial != null) spatial.reset();
+                        framePosition = 0;
+                        sessionPositionValid = true;
+                        nextUserEventIndex = 0;
+                    }
                     this.completeAtSequenceEnd = completeAtSequenceEnd;
                     session.setLoopMode(completeAtSequenceEnd || loopCount != 1);
                 } catch (Exception exception) {
@@ -551,13 +574,44 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
                 }
                 playbackEpoch++;
                 clearCompletionStateLocked();
-                framePosition = 0;
-                nextUserEventIndex = 0;
                 remainingLoops = loopCount == 0 ? -1 : Math.max(0, loopCount - 1);
                 paused = false;
                 playing = true;
             }
             engine.wake();
+        }
+
+        long mediaTimeMicros() {
+            synchronized (stateLock) {
+                return Math.round(framePosition * (1_000_000.0 / session.sampleRate()));
+            }
+        }
+
+        long seek(long micros) {
+            synchronized (stateLock) {
+                ensureOpenLocked();
+                throwIfFailedLocked();
+                long limit = Integer.MAX_VALUE * 1_000_000L / session.sampleRate();
+                int targetFrame = (int) Math.round(Math.clamp(micros, 0L, limit)
+                        * (session.sampleRate() / 1_000_000.0));
+                playbackEpoch++;
+                clearCompletionStateLocked();
+                try {
+                    boolean unchanged = sessionPositionValid && targetFrame == framePosition;
+                    if (!sessionPositionValid || targetFrame < framePosition) {
+                        framePosition = session.seek(targetFrame);
+                    } else if (targetFrame > framePosition) {
+                        framePosition += session.skip(targetFrame - framePosition);
+                    }
+                    sessionPositionValid = true;
+                    nextUserEventIndex = 0;
+                    if (spatial != null && !unchanged) spatial.reset();
+                } catch (Exception exception) {
+                    failPlayback(new RuntimeException("Failed to seek streamed audio", exception));
+                    throw playbackFailure;
+                }
+                return Math.round(framePosition * (1_000_000.0 / session.sampleRate()));
+            }
         }
 
         void stop() {
@@ -570,6 +624,7 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
                 paused = false;
                 playing = false;
                 framePosition = 0;
+                sessionPositionValid = false;
                 nextUserEventIndex = 0;
                 remainingLoops = 0;
             }
@@ -626,7 +681,7 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
                         }
                         paused = false;
                         playing = false;
-                        framePosition = 0;
+                        sessionPositionValid = false;
                         nextUserEventIndex = 0;
                         armCompletionLocked(false);
                         return 0;
@@ -661,7 +716,8 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
                 applyChannelGains(output, frames, 2, channelGainsLocked(2));
                 if (frames == 0) {
                     paused = playing = false;
-                    framePosition = nextUserEventIndex = 0;
+                    sessionPositionValid = false;
+                    nextUserEventIndex = 0;
                     armCompletionLocked(false);
                 }
                 return frames;
@@ -754,6 +810,7 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
                     remainingLoops--;
                 }
                 session.rewind();
+                sessionPositionValid = true;
                 if (remainingLoops == 0 && !completeAtSequenceEnd) {
                     // About to enter the final iteration: let the natural FM
                     // tail play out instead of cutting at the SEQU boundary.

@@ -62,6 +62,18 @@ public final class RenderedPcmPlayer implements AutoCloseable {
         handle.play(loopCount);
     }
 
+    public void playFromCurrentPosition(int loopCount) {
+        handle.play(loopCount, false);
+    }
+
+    public long mediaTimeMicros() {
+        return handle.mediaTimeMicros();
+    }
+
+    public long seek(long micros) {
+        return handle.seek(micros);
+    }
+
     public void stop() {
         handle.stop();
     }
@@ -405,17 +417,42 @@ public final class RenderedPcmPlayer implements AutoCloseable {
         }
 
         void play(int loopCount) {
+            play(loopCount, true);
+        }
+
+        void play(int loopCount, boolean rewind) {
             synchronized (stateLock) {
                 ensureOpenLocked();
                 playbackEpoch++;
                 clearCompletionStateLocked();
-                framePosition = 0;
+                if (rewind || framePosition == 0 || framePosition >= audio.frameCount()) {
+                    framePosition = 0;
+                    if (spatial != null) spatial.reset();
+                }
                 remainingLoops = loopCount == 0 ? -1 : Math.max(0, loopCount - 1);
-                if (spatial != null) spatial.reset();
                 paused = false;
                 playing = true;
             }
             engine.wake();
+        }
+
+        long mediaTimeMicros() {
+            synchronized (stateLock) {
+                return Math.round(framePosition * (1_000_000.0 / audio.sampleRate()));
+            }
+        }
+
+        long seek(long micros) {
+            synchronized (stateLock) {
+                ensureOpenLocked();
+                long duration = Math.round(audio.frameCount() * (1_000_000.0 / audio.sampleRate()));
+                framePosition = (int) Math.min(audio.frameCount(), Math.round(Math.clamp(micros, 0L, duration)
+                        * (audio.sampleRate() / 1_000_000.0)));
+                playbackEpoch++;
+                clearCompletionStateLocked();
+                if (spatial != null) spatial.reset();
+                return Math.round(framePosition * (1_000_000.0 / audio.sampleRate()));
+            }
         }
 
         void stop() {
@@ -510,7 +547,6 @@ public final class RenderedPcmPlayer implements AutoCloseable {
                     if (!advanceLoopLocked()) {
                         paused = false;
                         playing = false;
-                        framePosition = 0;
                         armCompletionLocked(false);
                         return 0;
                     }
@@ -524,7 +560,6 @@ public final class RenderedPcmPlayer implements AutoCloseable {
                 if (framePosition >= audio.frameCount() && !advanceLoopLocked()) {
                     paused = false;
                     playing = false;
-                    framePosition = 0;
                     armCompletionLocked(true);
                 }
             }
@@ -550,7 +585,6 @@ public final class RenderedPcmPlayer implements AutoCloseable {
                 for (int i = 0; i < frames * 2; i++) output[i] *= gain;
                 if (frames == 0) {
                     paused = playing = false;
-                    framePosition = 0;
                     armCompletionLocked(false);
                 }
                 return frames;

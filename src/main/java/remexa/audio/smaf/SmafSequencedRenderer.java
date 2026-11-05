@@ -955,13 +955,16 @@ final class SmafSequencedRenderer {
                     if (eventsDone && framePosition >= loopBoundary) {
                         break;
                     }
-                } else if (eventsDone && sampler.isFinished() && framePosition >= pcmEndFrame) {
+                } else if (eventsDone && sampler.isFinished() && framePosition >= Math.max(pcmEndFrame, sequenceEndFrame)) {
                     break;
                 }
                 int framesUntilEvent = maxFrames - producedFrames;
                 if (!eventsDone) {
                     framesUntilEvent = Math.min(framesUntilEvent,
                             Math.max(0, tickToFrames(events.get(eventIndex).tick()) - framePosition));
+                }
+                if (framePosition < sequenceEndFrame) {
+                    framesUntilEvent = Math.min(framesUntilEvent, sequenceEndFrame - framePosition);
                 }
                 if (tightLoop) {
                     framesUntilEvent = Math.min(framesUntilEvent,
@@ -970,7 +973,7 @@ final class SmafSequencedRenderer {
                         break;
                     }
                 }
-                boolean tailOnly = eventsDone && framePosition >= pcmEndFrame;
+                boolean tailOnly = eventsDone && framePosition >= Math.max(pcmEndFrame, sequenceEndFrame);
                 if (tailOnly && !tightLoop) {
                     int remainingTailFrames = maxTailFrames - tailFramesRendered;
                     if (remainingTailFrames <= 0) {
@@ -990,7 +993,7 @@ final class SmafSequencedRenderer {
             }
             if (producedFrames > 0) {
                 mixScheduledPcmClips(output, chunkStartFrame, producedFrames, scheduledPcmClips);
-                boolean tailOnly = eventIndex >= events.size() && framePosition >= pcmEndFrame;
+                boolean tailOnly = eventIndex >= events.size() && framePosition >= Math.max(pcmEndFrame, sequenceEndFrame);
                 if (tailOnly && !tightLoop) {
                     float peak = peak(output, producedFrames * OUTPUT_CHANNELS);
                     if (peak <= TRAILING_SILENCE_EPSILON) {

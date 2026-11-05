@@ -9,6 +9,24 @@ interface SmafStreamingSession extends AutoCloseable {
 
     void rewind() throws Exception;
 
+    default int seek(int targetFrame) throws Exception {
+        rewind();
+        return skip(targetFrame);
+    }
+
+    default int skip(int frameCount) throws Exception {
+        int position = 0;
+        if (frameCount > 0) {
+            float[] discard = new float[1024 * channelCount()];
+            while (position < frameCount) {
+                int frames = render(discard, Math.min(1024, frameCount - position));
+                if (frames <= 0) break;
+                position += frames;
+            }
+        }
+        return position;
+    }
+
     /**
      * Configures whether the session should end at the SEQU-defined sequence
      * boundary (tight loop) or render the natural FM tail. Tight mode is used

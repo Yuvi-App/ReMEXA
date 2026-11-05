@@ -16,7 +16,6 @@ import javax.sound.midi.MidiSystem;
 import javax.sound.midi.Sequence;
 import javax.sound.midi.ShortMessage;
 import javax.sound.midi.SysexMessage;
-import javax.sound.midi.Track;
 
 public final class YamahaMidiPlayback implements AutoCloseable {
     public static final String SYNTH_AUTO = "auto";
@@ -41,17 +40,14 @@ public final class YamahaMidiPlayback implements AutoCloseable {
     private static final Ma3SmafAudioEngine MA3_ENGINE = new Ma3SmafAudioEngine();
     private static final Ma5SmafAudioEngine MA5_ENGINE = new Ma5SmafAudioEngine();
 
-    private final SmafAudioPlayer player;
-    private final long durationMillis;
+    private final SmafStreamingPlayer player;
+    private final long durationMicros;
 
-    private long startedAtMillis;
-    private long pausedAtMillis;
-
-    private YamahaMidiPlayback(SmafStreamingSession session, long durationMillis,
+    private YamahaMidiPlayback(SmafStreamingSession session, long durationMicros,
                                Audio3DSource spatialSource) {
         this.player = new SmafStreamingPlayer(session, Collections.emptyList(),
                 MidletRuntime.currentAppClassLoader(), spatialSource);
-        this.durationMillis = Math.max(0L, durationMillis);
+        this.durationMicros = Math.max(0L, durationMicros);
     }
 
     public static YamahaMidiPlayback create(byte[] source, String synthType) throws Exception {
@@ -74,7 +70,7 @@ public final class YamahaMidiPlayback implements AutoCloseable {
                 Collections.emptyList(),
                 Collections.emptyList()
         ));
-        return new YamahaMidiPlayback(session, sequenceDurationMillis(renderSequence), spatialSource);
+        return new YamahaMidiPlayback(session, sourceSequence.getMicrosecondLength(), spatialSource);
     }
 
     private static List<byte[]> drumStartupPackets() {
@@ -98,52 +94,34 @@ public final class YamahaMidiPlayback implements AutoCloseable {
     }
 
     public void play(int loopCount) {
-        startedAtMillis = System.currentTimeMillis();
-        pausedAtMillis = 0L;
-        player.play(loopCount);
+        if (mediaTimeMicros() >= durationMicros) {
+            player.seek(0L);
+        }
+        player.playFromCurrentPosition(loopCount);
     }
 
     public void stop() {
-        startedAtMillis = 0L;
-        pausedAtMillis = 0L;
         player.stop();
     }
 
     public void pause() {
-        if (player.getState() == PLAYING) {
-            pausedAtMillis = mediaTimeMillis();
-        }
         player.pause();
     }
 
     public void resume() {
-        if (pausedAtMillis > 0L) {
-            startedAtMillis = System.currentTimeMillis() - pausedAtMillis;
-        }
-        pausedAtMillis = 0L;
         player.resume();
     }
 
-    public long setMediaTime(long millis) {
-        if (millis > 0L) {
-            return mediaTimeMillis();
-        }
-        stop();
-        return 0L;
+    public long setMediaTime(long micros) {
+        return Math.min(durationMicros, player.seek(Math.clamp(micros, 0L, durationMicros)));
     }
 
-    public long mediaTimeMillis() {
-        if (pausedAtMillis > 0L) {
-            return pausedAtMillis;
-        }
-        if (startedAtMillis <= 0L) {
-            return 0L;
-        }
-        return Math.min(durationMillis, Math.max(0L, System.currentTimeMillis() - startedAtMillis));
+    public long mediaTimeMicros() {
+        return Math.min(durationMicros, player.mediaTimeMicros());
     }
 
-    public long durationMillis() {
-        return durationMillis;
+    public long durationMicros() {
+        return durationMicros;
     }
 
     @Override
@@ -261,16 +239,6 @@ public final class YamahaMidiPlayback implements AutoCloseable {
             return clampedEnd - 1;
         }
         return clampedEnd;
-    }
-
-    private static long sequenceDurationMillis(Sequence sequence) {
-        long duration = 0L;
-        for (Track track : sequence.getTracks()) {
-            for (int index = 0; index < track.size(); index++) {
-                duration = Math.max(duration, track.get(index).getTick());
-            }
-        }
-        return duration;
     }
 
     private static List<TimedMidiEvent> collectTimedEvents(Sequence source) {

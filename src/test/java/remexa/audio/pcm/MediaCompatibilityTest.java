@@ -32,10 +32,7 @@ public class MediaCompatibilityTest {
         try {
             player.realize();
             assertEquals(1000000L, player.getDuration());
-            // Simulate a completed/paused playback without relying on a physical sound device or a timer.
-            var cachedTime = player.getClass().getDeclaredField("cachedMediaTimeMillis");
-            cachedTime.setAccessible(true);
-            cachedTime.setLong(player, 750L);
+            assertEquals(750000L, player.setMediaTime(750000L));
             assertEquals(750000L, player.getMediaTime());
         } finally {
             player.close();
