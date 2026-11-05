@@ -18,6 +18,7 @@ package javax.microedition.media.decoders;
 
 import java.io.InputStream;
 import java.io.ByteArrayInputStream;
+import java.io.EOFException;
 import java.io.IOException;
 import java.util.Arrays;
 
@@ -41,174 +42,87 @@ public final class WAVTools
 		hostSampleRate = getDefaultAudioSampleRate();
 	}
 
-    /*
-	 * Since the header is always expected to be positioned right at the start
-	 * of a byte array, read it to determine the WAV type.
-	 * 
-	 * Optionally it also returns some information about the audio format to help build a 
-	 * new header for the decoded stream.
-	*/
-	public static final int[] readHeader(InputStream input) throws IOException 
+	/**
+	 * Reads the format and data location, leaving the stream at the first sample.
+	 * Returns format, sample rate, channels, block alignment, bit depth, data length, and data offset.
+	 */
+	public static final int[] readHeader(InputStream input) throws IOException
 	{
-		/*
-			The header of a WAV (RIFF) file has the following format:
+		if (!"RIFF".equals(readInputStreamASCII(input, 4)))
+			throw new IOException("Not a RIFF file");
+		long riffSize = Integer.toUnsignedLong(readInputStreamInt32(input));
+		// Callers use int offsets and in-memory byte arrays.
+		if (riffSize < 4 || riffSize > Integer.MAX_VALUE - 8L)
+			throw new IOException("Invalid or unsupported WAV RIFF size: " + riffSize);
+		if (!"WAVE".equals(readInputStreamASCII(input, 4)))
+			throw new IOException("Not a WAVE file");
 
-			CHAR[4] "RIFF" header
-			UINT32  Size of the file (chunkSize).
-			  CHAR[4] "WAVE" format
-				CHAR[4] "fmt " header
-				UINT32  SubChunkSize (16 for standard PCM, 18+ for extended formats)
-				  UINT16 AudioFormat (ex: 1 [PCM], 17 [IMA ADPCM] )
-				  UINT16 NumChannels
-				  UINT32 SampleRate
-				  UINT32 BytesPerSec (samplerate*frame size)
-				  UINT16 frameSize or blockAlign (256 on some gameloft games)
-				  UINT16 BitsPerSample (gameloft games appear to use 4)
-				  [optional extra fmt bytes if SubChunkSize > 16]
-				[optional sub-chunks: "fact", "LIST", etc.]
-				CHAR[4] "data" header
-				UINT32 Length of sample data.
-				<Sample data>
-
-			IMA ADPCM usually carries extra fmt bytes and often a fact chunk before data; parser scans chunks dynamically instead of relying on fixed offsets.
-		*/
-
-		String riff = readInputStreamASCII(input, 4); // 0 - 4
-		int dataSize = readInputStreamInt32(input);  // 4 - 8
-		String format = readInputStreamASCII(input, 4);  // 8 - 12
-		String fmt = readInputStreamASCII(input, 4);  // 12 - 16
-		int chunkSize = readInputStreamInt32(input);  // 16 - 20
-		short audioFormat = (short) readInputStreamInt16(input);  // 20 - 22
-		short audioChannels = (short) readInputStreamInt16(input);  // 22 - 24
-		int sampleRate = readInputStreamInt32(input);  // 24 - 28
-		int bytesPerSec = readInputStreamInt32(input); // 28 - 32
-		short frameSize = (short) readInputStreamInt16(input); // 32 - 34
-		short bitsPerSample = (short) readInputStreamInt16(input); // 34 - 36
-		
-		int totalBytesRead = 36; // Bytes consumed so far
-
-		// Read extra fmt bytes for IMA ADPCM, then skip any remaining extra
-		// 'fmt' bytes
-		short ByteExtraData = 0;
-		short ExtraData = 0;
-		String factHeader = "";
-		int SubChunk2Size = 0;
-		int numOfSamples = 0;
-		String dataHeader = "";
-		int dataLen = 0;
-
-		// If the 'junk' header is present, we will read these
-		String junkHeader = null;
-		int junkSize = 0;
-
-		if(audioFormat == 0x11 && chunkSize > 16)
+		long remaining = riffSize - 4;
+		int totalBytesRead = 12;
+		int[] header = null;
+		while (remaining > 0)
 		{
-			ByteExtraData = (short) readInputStreamInt16(input);
-			ExtraData = (short) readInputStreamInt16(input);
-			totalBytesRead += 4;
-			int extraFmtRemaining = chunkSize - 20;
-			if(extraFmtRemaining > 0) { input.skip(extraFmtRemaining); totalBytesRead += extraFmtRemaining; }
-		}
-		else if(chunkSize > 16)
-		{
-			int extraFmtBytes = chunkSize - 16;
-			input.skip(extraFmtBytes);
-			totalBytesRead += extraFmtBytes;
-		}
-
-		while(true)
-		{
+			if (remaining < 8)
+				throw new IOException("Truncated WAV chunk header");
 			String chunkId = readInputStreamASCII(input, 4);
-			int chunkSz = readInputStreamInt32(input);
+			long chunkSize = Integer.toUnsignedLong(readInputStreamInt32(input));
+			remaining -= 8;
 			totalBytesRead += 8;
+			long paddedSize = chunkSize + (chunkSize & 1);
+			if (paddedSize > remaining)
+				throw new IOException("WAV " + chunkId + " chunk exceeds RIFF boundary");
 
-			if(chunkId.equals("data"))
+			if ("data".equals(chunkId))
 			{
-				dataHeader = chunkId;
-				dataLen = chunkSz;
-				break;
+				if (header == null)
+					throw new IOException("WAV data chunk precedes fmt chunk");
+				header[5] = (int) chunkSize;
+				header[6] = totalBytesRead;
+				Mobile.log(Mobile.LOG_DEBUG, WAVTools.class.getName()
+						+ ": WAV format=" + header[0] + " sampleRate=" + header[1]
+						+ " channels=" + header[2] + " blockAlign=" + header[3]
+						+ " bitsPerSample=" + header[4] + " dataLength=" + header[5]
+						+ " dataOffset=" + header[6]);
+				return header;
 			}
-			else if(chunkId.equals("fact"))
-			{
-				factHeader = chunkId;
-				SubChunk2Size = chunkSz;
-				if(chunkSz >= 4)
-				{
-					numOfSamples = readInputStreamInt32(input);
-					totalBytesRead += 4;
-					int factRemaining = chunkSz - 4;
-					if(factRemaining > 0) { input.skip(factRemaining); totalBytesRead += factRemaining; }
-				}
-				else { input.skip(chunkSz); totalBytesRead += chunkSz; }
-			}
-			else if(chunkId.equals("junk"))
-			{
-				junkHeader = chunkId;
-				junkSize = readInputStreamInt32(input);
-				input.skip(junkSize);
 
-				// Skip one extra byte if junkSize is odd
-				if(junkSize % 2 == 1)
-					input.skip(1);
-			}
-			else
+			long consumed = 0;
+			if ("fmt ".equals(chunkId))
 			{
-				input.skip(chunkSz);
-				totalBytesRead += chunkSz;
+				if (chunkSize < 16)
+					throw new IOException("WAV fmt chunk is shorter than 16 bytes");
+				int audioFormat = readInputStreamInt16(input);
+				int audioChannels = readInputStreamInt16(input);
+				int sampleRate = readInputStreamInt32(input);
+				readInputStreamInt32(input); // Average bytes per second.
+				int blockAlign = readInputStreamInt16(input);
+				int bitsPerSample = readInputStreamInt16(input);
+				if (audioChannels == 0 || sampleRate <= 0 || blockAlign == 0)
+					throw new IOException("Invalid WAV format parameters");
+				header = new int[] {audioFormat, sampleRate, audioChannels, blockAlign, bitsPerSample, 0, 0};
+				consumed = 16;
 			}
+			// Metadata can precede fmt, and every chunk includes WORD padding.
+			input.skipNBytes(paddedSize - consumed);
+			totalBytesRead += (int) paddedSize;
+			remaining -= paddedSize;
 		}
-
-		Mobile.log(Mobile.LOG_DEBUG, WAVTools.class.getPackage().getName() + "." + WAVTools.class.getSimpleName() + ": " + (audioFormat == 0x11 ? "IMA ADPCM" : "PCM") + " WAV HEADER_START");
-
-		Mobile.log(Mobile.LOG_DEBUG, WAVTools.class.getPackage().getName() + "." + WAVTools.class.getSimpleName() + ": " + riff);
-		Mobile.log(Mobile.LOG_DEBUG, WAVTools.class.getPackage().getName() + "." + WAVTools.class.getSimpleName() + ": " + "FileSize:" + dataSize);
-		Mobile.log(Mobile.LOG_DEBUG, WAVTools.class.getPackage().getName() + "." + WAVTools.class.getSimpleName() + ": " + "Format: " + format);
-
-		Mobile.log(Mobile.LOG_DEBUG, WAVTools.class.getPackage().getName() + "." + WAVTools.class.getSimpleName() + ": " + "---'" + fmt + "' header---");
-		Mobile.log(Mobile.LOG_DEBUG, WAVTools.class.getPackage().getName() + "." + WAVTools.class.getSimpleName() + ": " + "Header ChunkSize:" + Integer.toString(chunkSize));
-		Mobile.log(Mobile.LOG_DEBUG, WAVTools.class.getPackage().getName() + "." + WAVTools.class.getSimpleName() + ": " + "AudioFormat: " + Integer.toString(audioFormat));
-		Mobile.log(Mobile.LOG_DEBUG, WAVTools.class.getPackage().getName() + "." + WAVTools.class.getSimpleName() + ": " + "AudioChannels:" + Integer.toString(audioChannels));
-		Mobile.log(Mobile.LOG_DEBUG, WAVTools.class.getPackage().getName() + "." + WAVTools.class.getSimpleName() + ": " + "SampleRate:" + Integer.toString(sampleRate));
-		Mobile.log(Mobile.LOG_DEBUG, WAVTools.class.getPackage().getName() + "." + WAVTools.class.getSimpleName() + ": " + "BytesPerSec:" + Integer.toString(bytesPerSec));
-		Mobile.log(Mobile.LOG_DEBUG, WAVTools.class.getPackage().getName() + "." + WAVTools.class.getSimpleName() + ": " + "FrameSize:" + Integer.toString(frameSize));
-		Mobile.log(Mobile.LOG_DEBUG, WAVTools.class.getPackage().getName() + "." + WAVTools.class.getSimpleName() + ": " + "BitsPerSample:" + Integer.toString(bitsPerSample));
-		
-		if(audioFormat == 0x11) 
-		{
-			Mobile.log(Mobile.LOG_DEBUG, WAVTools.class.getPackage().getName() + "." + WAVTools.class.getSimpleName() + ": " + "ByteExtraData:" + Integer.toString(ByteExtraData));
-			Mobile.log(Mobile.LOG_DEBUG, WAVTools.class.getPackage().getName() + "." + WAVTools.class.getSimpleName() + ": " + "ExtraData:" + Integer.toString(ExtraData));
-			Mobile.log(Mobile.LOG_DEBUG, WAVTools.class.getPackage().getName() + "." + WAVTools.class.getSimpleName() + ": " + "---'" + factHeader +"' header---");
-			Mobile.log(Mobile.LOG_DEBUG, WAVTools.class.getPackage().getName() + "." + WAVTools.class.getSimpleName() + ": " + "SubChunk2Size:" + Integer.toString(SubChunk2Size));
-			Mobile.log(Mobile.LOG_DEBUG, WAVTools.class.getPackage().getName() + "." + WAVTools.class.getSimpleName() + ": " + "numOfSamples:" + Integer.toString(numOfSamples));
-		}
-
-		if(junkHeader != null)
-		{
-			Mobile.log(Mobile.LOG_DEBUG, WAVTools.class.getPackage().getName() + "." + WAVTools.class.getSimpleName() + ": " + "---'" + junkHeader + "' header---");
-			Mobile.log(Mobile.LOG_DEBUG, WAVTools.class.getPackage().getName() + "." + WAVTools.class.getSimpleName() + ": " + "JunkSize:" + junkSize);
-		}
-		
-		Mobile.log(Mobile.LOG_DEBUG, WAVTools.class.getPackage().getName() + "." + WAVTools.class.getSimpleName() + ": " + "---'" + dataHeader +"' header---");
-		Mobile.log(Mobile.LOG_DEBUG, WAVTools.class.getPackage().getName() + "." + WAVTools.class.getSimpleName() + ": " + "SampleDataLength:" + Integer.toString(dataLen));
-
-		Mobile.log(Mobile.LOG_DEBUG, WAVTools.class.getPackage().getName() + "." + WAVTools.class.getSimpleName() + ": " + "WAV HEADER_END");
-		
-		/* 
-		 * We need the audio format to check if it's ADPCM or PCM, and the file's 
-		 * dataSize, SampleRate and audioChannels to decode ADPCM and build a new header. 
-		 */
-		return new int[] {audioFormat, sampleRate, audioChannels, frameSize, bitsPerSample, dataLen, totalBytesRead};
+		throw new IOException("WAV data chunk is missing");
 	}
 
 	/* Read a 16-bit little-endian unsigned integer from input.*/
 	private static final int readInputStreamInt16(InputStream input) throws IOException 
-	{ return ( input.read() & 0xFF ) | ( ( input.read() & 0xFF ) << 8 ); }
+	{
+		int low = input.read();
+		int high = input.read();
+		if ((low | high) < 0) throw new EOFException("Truncated WAV header");
+		return low | (high << 8);
+	}
 
 	/* Read a 32-bit little-endian signed integer from input.*/
 	private static final int readInputStreamInt32(InputStream input) throws IOException 
 	{
-		return ( input.read() & 0xFF ) | ( ( input.read() & 0xFF ) << 8 )
-			| ( ( input.read() & 0xFF ) << 16 ) | ( ( input.read() & 0xFF ) << 24 );
+		return readInputStreamInt16(input) | (readInputStreamInt16(input) << 16);
 	}
 
 	/* Return a String containing 'n' Characters of ASCII/ISO-8859-1 text from input. */

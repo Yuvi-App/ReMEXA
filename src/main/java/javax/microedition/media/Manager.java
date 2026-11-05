@@ -1329,11 +1329,12 @@ public final class Manager {
                 int channels = Math.max(1, header[2]);
                 int blockAlign = header[3];
                 int bitsPerSample = header[4];
-                int dataLength = Math.max(0, header[5]);
-                int headerLength = Math.max(0, header[6]);
-                int payloadStart = Math.min(source.length, headerLength);
-                int payloadEnd = Math.min(source.length, payloadStart + dataLength);
-                byte[] payload = Arrays.copyOfRange(source, payloadStart, payloadEnd);
+                int dataLength = header[5];
+                int headerLength = header[6];
+                if (headerLength > source.length || dataLength > source.length - headerLength) {
+                    throw new MediaException("Truncated WAV data chunk.");
+                }
+                byte[] payload = Arrays.copyOfRange(source, headerLength, headerLength + dataLength);
 
                 if (audioFormat == 1) {
                     byte[] decoded = switch (bitsPerSample) {
