@@ -9,6 +9,9 @@ interface SmafStreamingSession extends AutoCloseable {
 
     void rewind() throws Exception;
 
+    default void drainNotifications(java.util.function.Consumer<Runnable> sink) {
+    }
+
     default int seek(int targetFrame) throws Exception {
         rewind();
         return skip(targetFrame);

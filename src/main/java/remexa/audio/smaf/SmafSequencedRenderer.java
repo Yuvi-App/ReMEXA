@@ -41,7 +41,6 @@ final class SmafSequencedRenderer {
     private final String rendererName;
     private final SmafSynthProvider synthProvider;
     private final int outputSampleRate;
-    private final int framesPerTick;
     private final int tailRenderLimitFrames;
 
     SmafSequencedRenderer(String rendererName, SmafSynthProvider synthProvider) {
@@ -52,7 +51,6 @@ final class SmafSequencedRenderer {
         this.rendererName = rendererName;
         this.synthProvider = synthProvider;
         this.outputSampleRate = outputSampleRate;
-        this.framesPerTick = outputSampleRate / 1_000;
         this.tailRenderLimitFrames = outputSampleRate * 10;
     }
 
@@ -69,17 +67,15 @@ final class SmafSequencedRenderer {
         MidiChannelState[] channelStates = createChannelStates();
 
         float[] mix = new float[Math.max(outputSampleRate * OUTPUT_CHANNELS, 1)];
-        long currentTick = 0L;
         int framePosition = 0;
         int eventIndex = 0;
         while (eventIndex < events.size()) {
             long targetTick = events.get(eventIndex).tick();
-            int frames = tickToFrames(targetTick - currentTick);
+            int frames = Math.max(0, tickToFrames(targetTick) - framePosition);
             if (frames > 0) {
                 mix = ensureFrameCapacity(mix, framePosition + frames);
                 sampler.render(mix, framePosition * OUTPUT_CHANNELS, frames, 1.0f, 1.0f, true, false);
                 framePosition += frames;
-                currentTick = targetTick;
             }
             while (eventIndex < events.size() && events.get(eventIndex).tick() == targetTick) {
                 applyEvent(sampler, channelStates, events.get(eventIndex));
@@ -778,11 +774,11 @@ final class SmafSequencedRenderer {
         if (tick <= 0L) {
             return 0;
         }
-        long maxTick = Integer.MAX_VALUE / Math.max(1, framesPerTick);
+        long maxTick = Integer.MAX_VALUE * 1_000L / outputSampleRate;
         if (tick > maxTick) {
             return Integer.MAX_VALUE;
         }
-        return (int) (tick * framesPerTick);
+        return (int) Math.min(Integer.MAX_VALUE, (tick * outputSampleRate + 500L) / 1_000L);
     }
 
     private static final class MidiChannelState {

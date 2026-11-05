@@ -185,18 +185,18 @@ public final class PhraseTrack {
 
     public void stop() {
         DebugLog.log(LogCategory.MEDIA, PhraseTrack.class.getName(), "Track " + id + " stop()");
-        boolean dispatchTerminalEvent;
+        List<PhraseTrack> stopped = new ArrayList<>();
         synchronized (this) {
             if (disposed || subjectTo != null) {
                 return;
             }
-            dispatchTerminalEvent = shouldDispatchTerminalEvent();
+            collectPlaybackGroup(stopped, new HashSet<>());
+            stopped.removeIf(track -> !track.shouldDispatchTerminalEvent());
+            for (PhraseTrack track : stopped) track.terminalEventDispatched = true;
             cancelLoopCoordinator();
             stopInternal(new HashSet<>());
         }
-        if (dispatchTerminalEvent) {
-            dispatchTerminalEvent("stop");
-        }
+        for (PhraseTrack track : stopped) track.dispatchTerminalEvent("stop");
     }
 
     public synchronized void pause() {
@@ -290,6 +290,13 @@ public final class PhraseTrack {
         List<PhraseTrack> group = new ArrayList<>();
         collectPlaybackGroup(group, new HashSet<>());
         preparePlaybackGroup(group);
+        if (group.size() > 1) {
+            for (PhraseTrack track : group) {
+                track.ensureActive();
+                track.terminalEventDispatched = false;
+            }
+            if (SmafPlayback.playLinkedGroup(group.stream().map(track -> track.playback).toList(), loop)) return;
+        }
         if (group.size() == 1 || loop == 1) {
             startPreparedPlaybackGroup(group, loop);
             return;

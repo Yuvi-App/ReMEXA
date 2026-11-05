@@ -265,6 +265,20 @@ public final class SmafPlayback implements AutoCloseable {
         }
     }
 
+    public static boolean playLinkedGroup(List<SmafPlayback> group, int loopCount) {
+        List<SmafStreamingPlayer> streams = new ArrayList<>();
+        for (SmafPlayback playback : group) {
+            synchronized (playback.openLock) {
+                if (playback.closed || !MidletRuntime.isAppActive(playback.ownerClassLoader))
+                    throw new IllegalStateException("Linked phrase belongs to a closed appli");
+                if (!(playback.audioPlayer instanceof SmafStreamingPlayer stream)) return false;
+                streams.add(stream);
+            }
+        }
+        SmafStreamingPlayer.playLinked(streams, loopCount);
+        return true;
+    }
+
     public void stop() {
         synchronized (openLock) {
             playbackEpoch++;

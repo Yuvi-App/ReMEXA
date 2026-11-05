@@ -303,8 +303,8 @@ public class AudioLifecycleTest {
         attachPlayback(slave, slaveSession);
         slave.setSubjectTo(master);
         CountDownLatch complete = new CountDownLatch(2);
-        master.setEventListener(id -> complete.countDown());
-        slave.setEventListener(id -> complete.countDown());
+        master.setEventListener(id -> { if (id == -1) complete.countDown(); });
+        slave.setEventListener(id -> { if (id == -1) complete.countDown(); });
         master.play(3);
         assertTrue("Grouped repeats stopped early", complete.await(2, TimeUnit.SECONDS));
         assertEquals(3, masterSession.rewinds.get());
@@ -316,6 +316,54 @@ public class AudioLifecycleTest {
         slave.setEventListener(id -> again.countDown());
         master.play(1);
         assertTrue(again.await(2, TimeUnit.SECONDS));
+    }
+
+    @Test public void linkedStartDoesNotRenderUntilEveryLayerIsReady() throws Exception {
+        installEngine(SmafStreamingPlayer.class, RATE);
+        enter(owner("atomic-group"));
+        PhraseTrack master = PhrasePlayer.getPlayer().getTrack(0), slave = PhrasePlayer.getPlayer().getTrack(1);
+        AtomicInteger rendered = new AtomicInteger();
+        CountDownLatch preparing = new CountDownLatch(1), release = new CountDownLatch(1);
+        attachPlayback(master, new SmafStreamingSession() {
+            private int position;
+            public int sampleRate() { return RATE; }
+            public int channelCount() { return 2; }
+            public void rewind() { position = 0; }
+            public int render(float[] output, int frames) { rendered.incrementAndGet(); return position++ == 0 ? 8 : 0; }
+        });
+        attachPlayback(slave, new SmafStreamingSession() {
+            private int position;
+            public int sampleRate() { return RATE; }
+            public int channelCount() { return 2; }
+            public void rewind() throws Exception {
+                preparing.countDown();
+                if (!release.await(2, TimeUnit.SECONDS)) throw new IllegalStateException("Preparation timed out");
+                position = 0;
+            }
+            public int render(float[] output, int frames) { return position++ == 0 ? 8 : 0; }
+        });
+        slave.setSubjectTo(master);
+        CountDownLatch complete = new CountDownLatch(2);
+        master.setEventListener(id -> { if (id == -1) complete.countDown(); });
+        slave.setEventListener(id -> { if (id == -1) complete.countDown(); });
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        Thread start = new Thread(() -> {
+            try { master.play(1); } catch (Throwable error) { failure.set(error); }
+        });
+        start.start();
+        try {
+            assertTrue(preparing.await(1, TimeUnit.SECONDS));
+            Thread.sleep(75);
+            assertEquals(0, rendered.get());
+            assertEquals(0, writes.get());
+        } finally {
+            release.countDown();
+            start.join(2000);
+        }
+        assertFalse(start.isAlive());
+        if (failure.get() != null) throw new AssertionError(failure.get());
+        assertTrue(complete.await(2, TimeUnit.SECONDS));
+        assertTrue(rendered.get() > 0);
     }
 
     @Test public void aReplacedPhraseCannotCompleteTheCurrentPhrase() throws Exception {
@@ -783,10 +831,10 @@ public class AudioLifecycleTest {
     }
     private void enter(ClassLoader owner) { Thread.currentThread().setContextClassLoader(owner); }
     private <T extends AutoCloseable> T keep(T resource) { resources.add(resource); return resource; }
-    private SmafStreamingPlayer stream(Session session, List<SMAFDecoder.SequenceUserEvent> events) {
+    private SmafStreamingPlayer stream(SmafStreamingSession session, List<SMAFDecoder.SequenceUserEvent> events) {
         return keep(new SmafStreamingPlayer(session, events));
     }
-    private SmafPlayback attachPlayback(PhraseTrack track, Session session) throws Exception {
+    private SmafPlayback attachPlayback(PhraseTrack track, SmafStreamingSession session) throws Exception {
         SmafStreamingPlayer output = stream(session, List.of());
         SmafPlayback playback = keep(SmafPlayback.create(new byte[0]));
         set(playback, "audioPlayer", output);

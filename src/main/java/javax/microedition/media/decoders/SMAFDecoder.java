@@ -30,6 +30,7 @@ import java.io.IOException;
 import java.util.Arrays;
 
 import javax.sound.midi.InvalidMidiDataException;
+import javax.sound.midi.MetaMessage;
 import javax.sound.midi.MidiEvent;
 import javax.sound.midi.MidiSystem;
 import javax.sound.midi.Sequence;
@@ -1314,6 +1315,7 @@ public final class SMAFDecoder
                     if (data[offset] == (byte) 0x2F) // EOS
                     {
                         smafLog(SMAF_LOG_DEBUG, SMAFDecoder.class.getPackage().getName() + "." + SMAFDecoder.class.getSimpleName() + ": " + "End of Sequence reached. " + status);
+                        preserveSequenceEnd(totalDuration);
                         return;
                     }
                     if (data[offset] == (byte) 0x00) // NOP
@@ -1823,7 +1825,17 @@ public final class SMAFDecoder
             }
         }
 
+        // NOPs, user events and vendor packets can carry the final rest without
+        // adding a MIDI note/controller. Retain that time for linked loop boundaries.
+        preserveSequenceEnd(totalDuration);
         smafLog(SMAF_LOG_DEBUG, SMAFDecoder.class.getPackage().getName() + "." + SMAFDecoder.class.getSimpleName() + ": " +"Sequence data end reached. Returning.");
+    }
+
+    private static void preserveSequenceEnd(long tick) throws InvalidMidiDataException
+    {
+        MetaMessage end = new MetaMessage();
+        end.setMessage(0x2F, new byte[0], 0);
+        track.add(new MidiEvent(end, tick));
     }
 
     private static String getContentCodeType(int codeType) 

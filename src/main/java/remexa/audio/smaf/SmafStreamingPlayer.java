@@ -18,6 +18,8 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 final class SmafStreamingPlayer implements SmafAudioPlayer {
     private static final int TARGET_CHUNK_MILLIS = 20;
@@ -34,6 +36,7 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
     private static final Map<OutputFormatKey, SharedEngine> ENGINES = new HashMap<>();
 
     private final PlaybackHandle handle;
+    private volatile LinkedGroup linkedGroup;
 
     SmafStreamingPlayer(SmafStreamingSession session, List<SMAFDecoder.SequenceUserEvent> userEvents) {
         this(session, userEvents, MidletRuntime.currentAppClassLoader());
@@ -53,7 +56,8 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
 
     @Override
     public int getState() {
-        return handle.getState();
+        LinkedGroup group = linkedGroup;
+        return group == null ? handle.getState() : group.output.getState();
     }
 
     @Override
@@ -73,11 +77,13 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
 
     @Override
     public void play(int loopCount) {
-        handle.play(loopCount, false);
+        play(loopCount, false);
     }
 
     @Override
     public void play(int loopCount, boolean completeAtSequenceEnd) {
+        LinkedGroup group = linkedGroup;
+        if (group != null) group.detach();
         handle.play(loopCount, completeAtSequenceEnd);
     }
 
@@ -96,22 +102,200 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
 
     @Override
     public void stop() {
-        handle.stop();
+        LinkedGroup group = linkedGroup;
+        if (group == null) handle.stop();
+        else group.stop();
     }
 
     @Override
     public void pause() {
-        handle.pause();
+        LinkedGroup group = linkedGroup;
+        if (group == null) handle.pause();
+        else group.pause();
     }
 
     @Override
     public void resume() {
-        handle.resume();
+        LinkedGroup group = linkedGroup;
+        if (group == null) handle.resume();
+        else group.output.resume();
     }
 
     @Override
     public void close() {
+        LinkedGroup group = linkedGroup;
+        if (group != null) group.detach();
         handle.close();
+    }
+
+    static void playLinked(List<SmafStreamingPlayer> members, int loopCount) {
+        if (members.size() < 2 || members.stream().distinct().count() != members.size())
+            throw new IllegalArgumentException("A linked group needs distinct players");
+        LinkedGroup current = members.getFirst().linkedGroup;
+        if (current != null && current.members.equals(members)) {
+            current.play(loopCount);
+            return;
+        }
+        for (SmafStreamingPlayer member : members) {
+            LinkedGroup previous = member.linkedGroup;
+            if (previous != null) previous.detach();
+        }
+        new LinkedGroup(members).play(loopCount);
+    }
+
+    private static final class LinkedGroup {
+        private final List<SmafStreamingPlayer> members;
+        private final SmafStreamingPlayer output;
+        private final LinkedSmafStreamingSession session;
+        private final ConcurrentLinkedQueue<Runnable> callbacks = new ConcurrentLinkedQueue<>();
+        private final AtomicBoolean dispatching = new AtomicBoolean();
+        private volatile long generation;
+        private volatile boolean detached;
+
+        private LinkedGroup(List<SmafStreamingPlayer> players) {
+            members = List.copyOf(players);
+            ClassLoader owner = members.getFirst().handle.ownerClassLoader;
+            List<SmafStreamingSession> layers = new ArrayList<>();
+            for (SmafStreamingPlayer member : members) {
+                synchronized (member.handle.stateLock) {
+                    member.handle.ensureOpenLocked();
+                    member.handle.throwIfFailedLocked();
+                    if (member.handle.ownerClassLoader != owner || member.handle.playing || member.handle.paused)
+                        throw new IllegalStateException("Linked phrases must be ready and belong to the same appli");
+                }
+                layers.add(new LayerSession(member.handle));
+            }
+            session = new LinkedSmafStreamingSession(layers, members.getFirst().handle.session.sampleRate(),
+                    () -> event(-2));
+            output = new SmafStreamingPlayer(session, List.of(), owner);
+            output.setListener(id -> { if (id == -1) event(-1).run(); });
+            for (SmafStreamingPlayer member : members) member.linkedGroup = this;
+        }
+
+        private synchronized void play(int count) {
+            if (detached) throw new IllegalStateException("Linked group was detached");
+            generation++;
+            output.stop();
+            for (SmafStreamingPlayer member : members) {
+                synchronized (member.handle.stateLock) { member.handle.ensureOpenLocked(); }
+                member.handle.invalidateLinked(true);
+            }
+            session.setLoopCount(count);
+            output.play(1, true);
+        }
+
+        private synchronized void stop() {
+            generation++;
+            output.stop();
+            for (SmafStreamingPlayer member : members) member.handle.invalidateLinked(true);
+        }
+
+        private void pause() {
+            Runnable notification;
+            synchronized (this) {
+                if (detached || output.getState() != SmafPlayback.PLAYING) return;
+                output.pause();
+                for (SmafStreamingPlayer member : members) member.handle.invalidateLinked(false);
+                notification = event(-3);
+            }
+            notification.run();
+        }
+
+        private synchronized void detach() {
+            if (detached) return;
+            stop();
+            detached = true;
+            for (SmafStreamingPlayer member : members) {
+                if (member.linkedGroup == this) member.linkedGroup = null;
+            }
+            output.close();
+        }
+
+        private Runnable event(int id) {
+            long groupEpoch = generation;
+            long[] epochs = new long[members.size()];
+            for (int i = 0; i < epochs.length; i++) {
+                PlaybackHandle member = members.get(i).handle;
+                synchronized (member.stateLock) { epochs[i] = member.playbackEpoch; }
+            }
+            return () -> enqueue(() -> {
+                for (int i = 0; i < epochs.length; i++) {
+                    if (detached || generation != groupEpoch) return;
+                    members.get(i).handle.dispatchUserEvent(id, epochs[i]);
+                }
+            });
+        }
+
+        private void enqueue(Runnable callback) {
+            callbacks.add(callback);
+            if (dispatching.compareAndSet(false, true)) {
+                AudioCallbacks.dispatch(members.getFirst().handle.ownerClassLoader, "remexa-linked-smaf-events", () -> {
+                    do {
+                        try {
+                            Runnable next;
+                            while ((next = callbacks.poll()) != null) next.run();
+                        } finally {
+                            dispatching.set(false);
+                        }
+                    } while (!callbacks.isEmpty() && dispatching.compareAndSet(false, true));
+                });
+            }
+        }
+
+        private final class LayerSession implements SmafStreamingSession {
+            private final PlaybackHandle member;
+            private final List<Runnable> notifications = new ArrayList<>();
+
+            private LayerSession(PlaybackHandle member) {
+                if (member.session.channelCount() < 1 || member.session.channelCount() > 2)
+                    throw new IllegalArgumentException("Linked phrases require mono or stereo sources");
+                this.member = member;
+            }
+
+            @Override public int sampleRate() { return member.session.sampleRate(); }
+            @Override public int channelCount() { return 2; }
+
+            @Override public int render(float[] data, int maxFrames) throws Exception {
+                synchronized (member.stateLock) {
+                    member.ensureOpenLocked();
+                    int start = member.framePosition;
+                    int frames = member.session.render(data, maxFrames);
+                    long epoch = member.playbackEpoch;
+                    long groupEpoch = generation;
+                    // An event exactly at EOF still precedes the loop/end notification.
+                    for (int id : member.consumeUserEventsLocked(start, Math.max(1, frames), sampleRate())) {
+                        notifications.add(() -> enqueue(() -> {
+                            if (!detached && generation == groupEpoch) member.dispatchUserEvent(id, epoch);
+                        }));
+                    }
+                    if (frames <= 0) return 0;
+                    if (member.session.channelCount() == 1) {
+                        for (int i = frames - 1; i >= 0; i--) data[i * 2] = data[i * 2 + 1] = data[i];
+                    }
+                    member.framePosition += frames;
+                    PlaybackHandle.applyChannelGains(data, frames, 2, member.channelGainsLocked(2));
+                    return frames;
+                }
+            }
+
+            @Override public void rewind() throws Exception {
+                synchronized (member.stateLock) {
+                    member.session.rewind();
+                    member.framePosition = member.nextUserEventIndex = 0;
+                    member.sessionPositionValid = true;
+                    notifications.clear();
+                }
+            }
+
+            @Override public void setLoopMode(boolean tight) throws Exception {
+                synchronized (member.stateLock) { member.session.setLoopMode(tight); }
+            }
+
+            @Override public void drainNotifications(java.util.function.Consumer<Runnable> sink) {
+                notifications.forEach(sink);
+                notifications.clear();
+            }
+        }
     }
 
     private static SharedEngine sharedEngine(OutputFormatKey key) {
@@ -551,6 +735,18 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
             }
         }
 
+        void invalidateLinked(boolean resetPosition) {
+            synchronized (stateLock) {
+                playbackEpoch++;
+                clearCompletionStateLocked();
+                playing = paused = false;
+                if (resetPosition) {
+                    framePosition = nextUserEventIndex = remainingLoops = 0;
+                    sessionPositionValid = false;
+                }
+            }
+        }
+
         void play(int loopCount, boolean completeAtSequenceEnd) {
             play(loopCount, completeAtSequenceEnd, true);
         }
@@ -675,6 +871,7 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
                     int startFrame = framePosition;
                     channelCount = session.channelCount();
                     frames = session.render(output, maxFrames);
+                    session.drainNotifications(notifications::add);
                     if (frames <= 0) {
                         if (advanceLoopLocked()) {
                             continue;
@@ -704,6 +901,7 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
                 long epoch = playbackEpoch;
                 int frames = spatial.render(output, maxFrames, (input, count) -> {
                     int read = session.render(input, count);
+                    session.drainNotifications(notifications::add);
                     if (read <= 0 && advanceLoopLocked()) read = session.render(input, count);
                     if (read > 0) {
                         for (int event : consumeUserEventsLocked(framePosition, read, session.sampleRate())) {
