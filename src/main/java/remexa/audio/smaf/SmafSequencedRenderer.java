@@ -139,7 +139,7 @@ final class SmafSequencedRenderer {
             if (startupPacket == null || startupPacket.length == 0) {
                 continue;
             }
-            events.add(RenderEvent.sysEx(0L, order++, 0, startupPacket));
+            events.add(RenderEvent.sysEx(0L, order++, -1, startupPacket));
         }
         for (Track track : sequence.getTracks()) {
             for (int i = 0; i < track.size(); i++) {
