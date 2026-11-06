@@ -42,16 +42,22 @@ final class SmafSequencedRenderer {
     private final SmafSynthProvider synthProvider;
     private final int outputSampleRate;
     private final int tailRenderLimitFrames;
+    private final boolean phraseClock;
 
     SmafSequencedRenderer(String rendererName, SmafSynthProvider synthProvider) {
         this(rendererName, synthProvider, DEFAULT_OUTPUT_SAMPLE_RATE);
     }
 
     SmafSequencedRenderer(String rendererName, SmafSynthProvider synthProvider, int outputSampleRate) {
+        this(rendererName, synthProvider, outputSampleRate, false);
+    }
+
+    SmafSequencedRenderer(String rendererName, SmafSynthProvider synthProvider, int outputSampleRate, boolean phraseClock) {
         this.rendererName = rendererName;
         this.synthProvider = synthProvider;
         this.outputSampleRate = outputSampleRate;
         this.tailRenderLimitFrames = outputSampleRate * 10;
+        this.phraseClock = phraseClock;
     }
 
     SmafRenderedAudio render(Sequence sequence,
@@ -187,7 +193,7 @@ final class SmafSequencedRenderer {
                     .computeIfAbsent(tickChannelNoteKey(trigger.startTick(), trigger.midiChannel(), trigger.midiNote()),
                             ignored -> new ArrayDeque<>())
                     .add(trigger.smafChannel());
-            noteOffChannels
+            if (!trigger.gateReplaced()) noteOffChannels
                     .computeIfAbsent(tickChannelNoteKey(trigger.triggerTick(), trigger.midiChannel(), trigger.midiNote()),
                             ignored -> new ArrayDeque<>())
                     .add(trigger.smafChannel());
@@ -842,7 +848,7 @@ final class SmafSequencedRenderer {
             return new RenderEvent(
                     tick,
                     order,
-                    0,
+                    sysEx != null && sysEx.length >= 2 && sysEx[0] == 0x72 && sysEx[1] == 0x0e ? 4 : 0,
                     0,
                     0,
                     0,
@@ -940,14 +946,15 @@ final class SmafSequencedRenderer {
             Arrays.fill(output, 0, Math.min(output.length, maxFrames * OUTPUT_CHANNELS), 0.0f);
             int producedFrames = 0;
             int chunkStartFrame = framePosition;
-            int loopBoundary = tightLoop ? Math.max(sequenceEndFrame, pcmEndFrame) : Integer.MAX_VALUE;
+            boolean endAtBoundary = tightLoop || phraseClock;
+            int loopBoundary = endAtBoundary ? Math.max(sequenceEndFrame, pcmEndFrame) : Integer.MAX_VALUE;
             while (producedFrames < maxFrames) {
                 while (eventIndex < events.size() && tickToFrames(events.get(eventIndex).tick()) <= framePosition) {
                     applyEvent(sampler, channelStates, events.get(eventIndex));
                     eventIndex++;
                 }
                 boolean eventsDone = eventIndex >= events.size();
-                if (tightLoop) {
+                if (endAtBoundary) {
                     if (eventsDone && framePosition >= loopBoundary) {
                         break;
                     }
@@ -962,7 +969,7 @@ final class SmafSequencedRenderer {
                 if (framePosition < sequenceEndFrame) {
                     framesUntilEvent = Math.min(framesUntilEvent, sequenceEndFrame - framePosition);
                 }
-                if (tightLoop) {
+                if (endAtBoundary) {
                     framesUntilEvent = Math.min(framesUntilEvent,
                             Math.max(0, loopBoundary - framePosition));
                     if (framesUntilEvent == 0 && eventsDone) {
@@ -970,7 +977,7 @@ final class SmafSequencedRenderer {
                     }
                 }
                 boolean tailOnly = eventsDone && framePosition >= Math.max(pcmEndFrame, sequenceEndFrame);
-                if (tailOnly && !tightLoop) {
+                if (tailOnly && !endAtBoundary) {
                     int remainingTailFrames = maxTailFrames - tailFramesRendered;
                     if (remainingTailFrames <= 0) {
                         break;
@@ -983,14 +990,14 @@ final class SmafSequencedRenderer {
                 sampler.render(output, producedFrames * OUTPUT_CHANNELS, framesUntilEvent, 1.0f, 1.0f, false, false);
                 producedFrames += framesUntilEvent;
                 framePosition += framesUntilEvent;
-                if (tailOnly && !tightLoop) {
+                if (tailOnly && !endAtBoundary) {
                     tailFramesRendered += framesUntilEvent;
                 }
             }
             if (producedFrames > 0) {
                 mixScheduledPcmClips(output, chunkStartFrame, producedFrames, scheduledPcmClips);
                 boolean tailOnly = eventIndex >= events.size() && framePosition >= Math.max(pcmEndFrame, sequenceEndFrame);
-                if (tailOnly && !tightLoop) {
+                if (tailOnly && !endAtBoundary) {
                     float peak = peak(output, producedFrames * OUTPUT_CHANNELS);
                     if (peak <= TRAILING_SILENCE_EPSILON) {
                         trailingSilentFrames += producedFrames;
@@ -1010,6 +1017,17 @@ final class SmafSequencedRenderer {
 
         @Override
         public void rewind() throws Exception {
+            resetTimeline();
+            resetSampler();
+        }
+
+        @Override public void repeat() throws Exception {
+            if (!phraseClock) { rewind(); return; }
+            resetTimeline();
+            sampler.repeat();
+        }
+
+        private void resetTimeline() {
             framePosition = 0;
             eventIndex = 0;
             trailingSilentFrames = 0;
@@ -1017,7 +1035,20 @@ final class SmafSequencedRenderer {
             for (MidiChannelState channelState : channelStates) {
                 channelState.reset();
             }
-            resetSampler();
+        }
+
+        @Override
+        public int renderTail(float[] output, int maxFrames) {
+            if (!phraseClock) return 0;
+            // RR=0/XOF can run until the next play/stop/close in the SDK.
+            int frames = maxFrames;
+            if (frames <= 0 || sampler.isFinished()) return 0;
+            sampler.render(output, 0, frames, 1, 1, true, false);
+            if (peak(output, frames * OUTPUT_CHANNELS) < .5f / 32767f) {
+                trailingSilentFrames += frames;
+                if (trailingSilentFrames >= trailingSilenceGraceFrames) return 0;
+            } else trailingSilentFrames = 0;
+            return frames;
         }
 
         @Override

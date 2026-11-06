@@ -56,6 +56,23 @@ public final class MA5FmVoice {
         for (Operator op : operators) if (op.stage != 0 && !op.definition.ignoreKeyOff()) op.stage = 1;
     }
 
+    public void keyOn() {
+        for (Operator op : operators) { op.stage = 2; op.previous = op.previous2 = 0; }
+    }
+
+    public void stop() { for (Operator op : operators) { op.stage = 0; op.level = 0; } }
+
+    public void reuseSlot(MA5FmVoice previous) {
+        for (int i = 0; i < Math.min(operators.length, previous.operators.length); i++)
+            operators[i].level = previous.operators[i].level;
+        lfoPhase = previous.lfoPhase;
+        lfoIndex = previous.lfoIndex;
+        frame = previous.frame;
+        serviceTick = previous.serviceTick;
+        serviceEndFrame = previous.serviceEndFrame;
+        nextLfoFrame = previous.nextLfoFrame;
+    }
+
     public boolean isFinished() {
         int carriers = MA5FmTables.CARRIERS[program.algorithm()];
         for (int i = 0; i < operators.length; i++) if ((carriers & (1 << i)) != 0 && operators[i].stage != 0) return false;
@@ -175,7 +192,7 @@ public final class MA5FmVoice {
             switch (stage) {
                 case 1 -> { level = level * release >> 30; if (level == 0) stage = 0; }
                 case 2 -> { phase = 0; stage = 3; }
-                case 3 -> { level += attack; if (level >= 0x80000000L) { level = 0x80000000L; stage = 4; } }
+                case 3 -> { level = (level + attack) & 0xffffffffL; if (level >= 0x80000000L) { level = 0x80000000L; stage = 4; } }
                 case 4 -> { level = level * decay >> 30; if (level == 0) stage = 0; else if (level <= sustainLevel) stage = 5; }
                 case 5 -> { level = level * sustain >> 30; if (level == 0) stage = 0; }
                 default -> { }

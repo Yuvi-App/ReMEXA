@@ -2,6 +2,7 @@ package remexa.audio.smaf;
 
 interface SmafSynthAdapter {
     void reset();
+    default void repeat() { reset(); }
 
     void drumEnable(int channel, boolean enable);
 

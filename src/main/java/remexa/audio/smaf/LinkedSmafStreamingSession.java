@@ -38,12 +38,20 @@ final class LinkedSmafStreamingSession implements SmafStreamingSession {
         while (produced < maxFrames) {
             int mixed = 0;
             for (Layer layer : layers) {
-                int frames = layer.render(scratch, maxFrames - produced);
-                for (int i = 0; i < frames * 2; i++) output[produced * 2 + i] += scratch[i];
-                mixed = Math.max(mixed, frames);
+                int count = maxFrames - produced;
+                if (layer.audio.length < count * 2) layer.audio = new float[count * 2];
+                layer.frames = layer.renderSequence(layer.audio, count);
+                mixed = Math.max(mixed, layer.frames);
                 layer.source.drainNotifications(notifications::add);
             }
             if (mixed > 0) {
+                for (Layer layer : layers) {
+                    for (int i = 0; i < layer.frames * 2; i++) output[produced * 2 + i] += layer.audio[i];
+                    if (layer.frames < mixed) {
+                        int tail = layer.renderTail(scratch, mixed - layer.frames);
+                        for (int i = 0; i < tail * 2; i++) output[(produced + layer.frames) * 2 + i] += scratch[i];
+                    }
+                }
                 produced += mixed;
                 iterationFrames += mixed;
                 continue;
@@ -51,7 +59,19 @@ final class LinkedSmafStreamingSession implements SmafStreamingSession {
             if (iterationFrames == 0 || remainingRepeats == 0) break;
             if (remainingRepeats > 0) remainingRepeats--;
             if (loopEvent != null) notifications.add(loopEvent.get());
-            rewindLayers();
+            rewindLayers(true);
+        }
+        return produced;
+    }
+
+    @Override public int renderTail(float[] output, int maxFrames) throws Exception {
+        Arrays.fill(output, 0, maxFrames * 2, 0f);
+        if (scratch.length < maxFrames * 2) scratch = new float[maxFrames * 2];
+        int produced = 0;
+        for (Layer layer : layers) {
+            int frames = layer.renderTail(scratch, maxFrames);
+            for (int i = 0; i < frames * 2; i++) output[i] += scratch[i];
+            produced = Math.max(produced, frames);
         }
         return produced;
     }
@@ -59,12 +79,12 @@ final class LinkedSmafStreamingSession implements SmafStreamingSession {
     @Override public void rewind() throws Exception {
         notifications.clear();
         remainingRepeats = loopCount == 0 ? -1 : loopCount - 1;
-        rewindLayers();
+        rewindLayers(false);
     }
 
-    private void rewindLayers() throws Exception {
+    private void rewindLayers(boolean repeat) throws Exception {
         iterationFrames = 0;
-        for (Layer layer : layers) layer.rewind();
+        for (Layer layer : layers) layer.rewind(repeat);
     }
 
     @Override public void drainNotifications(Consumer<Runnable> sink) {
@@ -81,6 +101,10 @@ final class LinkedSmafStreamingSession implements SmafStreamingSession {
         private long sourceEnd = Long.MAX_VALUE;
         private long outputPosition;
         private long phase;
+        private float[] audio = new float[0];
+        private int frames;
+        private boolean sequenceEnded;
+        private boolean tailMode;
 
         private Layer(SmafStreamingSession source) {
             if (source.channelCount() != 2 || source.sampleRate() <= 0)
@@ -88,16 +112,30 @@ final class LinkedSmafStreamingSession implements SmafStreamingSession {
             this.source = source;
         }
 
-        private void rewind() throws Exception {
+        private void rewind(boolean repeat) throws Exception {
             source.setLoopMode(true);
-            source.rewind();
+            if (repeat) source.repeat(); else source.rewind();
             bufferedFrames = 0;
             bufferStart = phase = outputPosition = 0;
             sourceEnd = Long.MAX_VALUE;
+            sequenceEnded = tailMode = false;
+        }
+
+        private int renderSequence(float[] output, int maxFrames) throws Exception {
+            if (sequenceEnded) return 0;
+            int frames = render(output, maxFrames);
+            if (frames < maxFrames) sequenceEnded = true;
+            return frames;
+        }
+
+        private int renderTail(float[] output, int maxFrames) throws Exception {
+            if (!tailMode) { tailMode = true; sourceEnd = Long.MAX_VALUE; }
+            return render(output, maxFrames);
         }
 
         private int render(float[] output, int maxFrames) throws Exception {
-            if (source.sampleRate() == sampleRate) return source.render(output, maxFrames);
+            if (source.sampleRate() == sampleRate)
+                return tailMode ? source.renderTail(output, maxFrames) : source.render(output, maxFrames);
             long first = phase / sampleRate;
             int discarded = (int) Math.min(bufferedFrames, first - bufferStart);
             if (discarded > 0) {
@@ -111,7 +149,7 @@ final class LinkedSmafStreamingSession implements SmafStreamingSession {
             while (bufferStart + bufferedFrames <= needed && sourceEnd == Long.MAX_VALUE) {
                 int count = Math.toIntExact(needed - bufferStart - bufferedFrames + 1);
                 if (input.length < count * 2) input = new float[count * 2];
-                int frames = source.render(input, count);
+                int frames = tailMode ? source.renderTail(input, count) : source.render(input, count);
                 if (frames <= 0) {
                     sourceEnd = bufferStart + bufferedFrames;
                     break;

@@ -7,7 +7,11 @@ interface SmafStreamingSession extends AutoCloseable {
 
     int render(float[] output, int maxFrames) throws Exception;
 
+    default int renderTail(float[] output, int maxFrames) throws Exception { return 0; }
+
     void rewind() throws Exception;
+
+    default void repeat() throws Exception { rewind(); }
 
     default void drainNotifications(java.util.function.Consumer<Runnable> sink) {
     }

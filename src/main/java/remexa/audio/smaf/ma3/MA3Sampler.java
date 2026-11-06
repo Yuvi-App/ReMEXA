@@ -37,6 +37,7 @@ public class MA3Sampler
      * Channel states
      */
     final MA3Channel[] channels;
+    private final java.util.Map<Integer, MA3Note> phraseVoices = new java.util.HashMap<>();
 
     /**
      * Output sampling rate
@@ -191,6 +192,42 @@ public class MA3Sampler
             note.off();
 
         chan.notesOn[MA3SamplerProvider.A4 + key] = null;
+    }
+
+    public void keyOnPhrase(int channel, int key, float velocity, boolean legato) {
+        if (channel < 0 || channel >= channels.length || key + MA3SamplerProvider.A4 < 0
+                || key + MA3SamplerProvider.A4 >= 128) return;
+        MA3Channel chan = channels[channel];
+        MA3Note previous = phraseVoices.get(channel);
+        if (legato && previous != null && !chan.isDrum) {
+            Arrays.fill(chan.notesOn, null);
+            previous.key = key;
+            previous.volBase = velocity;
+            previous.freqBase = (float)(440 * Math.pow(2, key / 12.0));
+            previous.onFrequency(this.bendOut * chan.bendOut);
+            previous.onVolume();
+            chan.notesOn[key + MA3SamplerProvider.A4] = previous;
+            return;
+        }
+        stopChannel(channel);
+        keyOn(channel, key, velocity);
+        MA3Note current = chan.notesOn[key + MA3SamplerProvider.A4];
+        if (current != null) phraseVoices.put(channel, current);
+    }
+
+    public void stopChannel(int channel) {
+        if (channel < 0 || channel >= channels.length) return;
+        MA3Channel chan = channels[channel];
+        for (MA3Note note : chan.notesOut) note.stop();
+        chan.notesOut.clear();
+        Arrays.fill(chan.notesOn, null);
+        phraseVoices.remove(channel);
+    }
+
+    public void keyOffPhrase(int channel) {
+        MA3Note note = phraseVoices.get(channel);
+        if (note != null) note.off();
+        if (channel >= 0 && channel < channels.length) Arrays.fill(channels[channel].notesOn, null);
     }
 
     /**
@@ -568,6 +605,7 @@ public class MA3Sampler
     @Override
     public void reset()
     {
+        phraseVoices.clear();
         this.amPhase = 0;
         this.bendOut = 1.0f;
         this.smpPosition = 0.0f;

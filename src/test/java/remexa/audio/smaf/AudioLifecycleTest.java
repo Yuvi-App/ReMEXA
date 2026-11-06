@@ -173,6 +173,31 @@ public class AudioLifecycleTest {
         assertNotSame(cached, PhrasePlayer.getPlayer().getAudioTrack(0));
     }
 
+    @Test public void phraseCompletionDoesNotWaitForReleaseAndStopCancelsTheRemainingTail() throws Exception {
+        installEngine(SmafStreamingPlayer.class, RATE);
+        CountDownLatch completed = new CountDownLatch(1), tailEntered = new CountDownLatch(1);
+        AtomicInteger calls = new AtomicInteger();
+        SmafStreamingPlayer player = stream(new SmafStreamingSession() {
+            int position;
+            public int sampleRate() { return RATE; }
+            public int channelCount() { return 2; }
+            public int render(float[] output,int max) { return position++ == 0 ? 8 : 0; }
+            public int renderTail(float[] output,int max) {
+                calls.incrementAndGet(); tailEntered.countDown();
+                Arrays.fill(output,0,max*2,.1f); return max;
+            }
+            public void rewind() { position=0; }
+        },List.of());
+        player.setListener(id -> { if (id == -1) completed.countDown(); });
+        player.play(1,true);
+        assertTrue(completed.await(2,TimeUnit.SECONDS));
+        assertTrue(tailEntered.await(2,TimeUnit.SECONDS));
+        assertEquals(SmafPlayback.READY,player.getState());
+        player.stop();
+        int count=calls.get();
+        assertFalse(await(() -> calls.get() != count,100));
+    }
+
     @Test public void queuedCompletionIsDiscardedAfterClose() throws Exception {
         installEngine(SmafStreamingPlayer.class, RATE);
         SmafStreamingPlayer player = stream(new Session(), List.of());

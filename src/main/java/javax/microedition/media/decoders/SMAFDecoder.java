@@ -972,6 +972,10 @@ public final class SMAFDecoder
         byte firstGateByte = 0;
         byte noteNumber = 0;
         MidiEvent midiEvent = null;
+        MidiEvent[] phraseGateOffs = new MidiEvent[16];
+        int[] phraseTriggers = new int[16];
+        java.util.Arrays.fill(phraseTriggers, -1);
+        long previousSequenceEnd = track.ticks();
 
         // Handy Phone and SoftBank MMMG no-inline-velocity notes use the same
         // loud default as the reference Yamaha path; authored volume and
@@ -1805,6 +1809,15 @@ public final class SMAFDecoder
                     }
                     
                     smafLog(SMAF_LOG_DEBUG, SMAFDecoder.class.getPackage().getName() + "." + SMAFDecoder.class.getSimpleName() + ": " + "Adding note value " + noteValue + " to channel " + channel);
+                    // M5_EmuSmw5 100df5a0 overwrites the one gate timer on
+                    // this logical channel, including same-key replacements.
+                    MidiEvent oldOff = phraseGateOffs[channel];
+                    if (oldOff != null && oldOff.getTick() > totalDuration) {
+                        track.remove(oldOff);
+                        int index = phraseTriggers[channel];
+                        pcmSequenceTriggers.set(index, pcmSequenceTriggers.get(index).endingAt(totalDuration, true));
+                    }
+                    phraseTriggers[channel] = pcmSequenceTriggers.size();
                     recordPcmSequenceTrigger(totalDuration,
                             gateTime,
                             noteValue,
@@ -1822,13 +1835,35 @@ public final class SMAFDecoder
                     setChannelMessage(noteOff, ShortMessage.NOTE_OFF, channel, noteValue, 0);
                     midiEvent = new MidiEvent(noteOff, totalDuration+(gateTime * timeBasetoMs(TimeBase_G)));
                     track.add(midiEvent);
+                    phraseGateOffs[channel] = midiEvent;
                 }
+            }
+        }
+
+        if (formatType == (byte)0x04) {
+            for (int ch = handyChannelIdx; ch < Math.min(16, handyChannelIdx + 4); ch++) {
+                MidiEvent off = phraseGateOffs[ch];
+                if (off != null && off.getTick() > totalDuration) {
+                    // Phrase_GetLength follows SEQU, even when a gate extends
+                    // past it. End-of-sequence releases, respecting RR/XOF.
+                    track.remove(off);
+                    off.setTick(totalDuration);
+                    track.add(off);
+                    int index = phraseTriggers[ch];
+                    pcmSequenceTriggers.set(index, pcmSequenceTriggers.get(index).endingAt(totalDuration, false));
+                }
+                recordInternalLegacyYamahaStateEvent(totalDuration, ch >> 2, ch & 3, 0x0e, 0);
+            }
+            // Track's implicit EOT only moves forward; discard the stale gate end.
+            for (int i = track.size() - 1; i >= 0; i--) {
+                MidiEvent event = track.get(i);
+                if (event.getMessage() instanceof MetaMessage meta && meta.getType() == 0x2f) track.remove(event);
             }
         }
 
         // NOPs, user events and vendor packets can carry the final rest without
         // adding a MIDI note/controller. Retain that time for linked loop boundaries.
-        preserveSequenceEnd(totalDuration);
+        preserveSequenceEnd(formatType == (byte)0x04 ? Math.max(previousSequenceEnd, totalDuration) : totalDuration);
         smafLog(SMAF_LOG_DEBUG, SMAFDecoder.class.getPackage().getName() + "." + SMAFDecoder.class.getSimpleName() + ": " +"Sequence data end reached. Returning.");
     }
 
@@ -2125,8 +2160,18 @@ public final class SMAFDecoder
                                             int velocity,
                                             int smafChannel,
                                             int midiChannel,
-                                            int midiNote)
+                                            int midiNote,
+                                            boolean gateReplaced)
     {
+        public PcmSequenceTrigger(int triggerTick, int startTick, int gateTime, int gateTimeMs,
+                                  int noteValue, int velocity, int smafChannel, int midiChannel, int midiNote) {
+            this(triggerTick, startTick, gateTime, gateTimeMs, noteValue, velocity, smafChannel, midiChannel, midiNote, false);
+        }
+
+        private PcmSequenceTrigger endingAt(int end, boolean replaced) {
+            return new PcmSequenceTrigger(end, startTick, gateTime, Math.max(0, end - startTick),
+                    noteValue, velocity, smafChannel, midiChannel, midiNote, replaced);
+        }
     }
 
     public static record DecodedChannelState(int smafChannel,
