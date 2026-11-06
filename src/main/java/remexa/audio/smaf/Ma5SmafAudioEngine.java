@@ -1,9 +1,12 @@
 package remexa.audio.smaf;
 
 import remexa.audio.smaf.ma3.MA3SamplerProvider;
+import remexa.audio.smaf.ma3.MA3Rom;
 import remexa.audio.smaf.ma3.Sampler;
 import remexa.audio.smaf.ma5.MA5PacketInventory;
 import remexa.audio.smaf.ma5.MA5PcmVoiceProgram;
+import remexa.audio.smaf.ma5.MA5FmVoice;
+import remexa.audio.smaf.ma5.MA5VoiceProgram;
 import remexa.audio.smaf.ma5.MA5SoftbankBridge;
 import remexa.audio.smaf.ma5.MA5WaveDataPacket;
 import remexa.host.LaunchConfig;
@@ -14,6 +17,8 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.HashSet;
+import java.util.Set;
 
 final class Ma5SmafAudioEngine implements YamahaAudioEngine {
     /**
@@ -120,8 +125,23 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
                 0x5A9E, 0x558C, 0x50C3, 0x4C3F, 0x47FB, 0x43F4, 0x4027
         };
         private static final double PCM_EPSILON = 1.0 / 32768.0;
-        private static final double PCM_DECAY_DB_PER_SEC_AT_4 = 17.9342 / 2.0;
-        private static final double PCM_ATTACK_TIME_SEC_AT_1 = 3.07068;
+
+        private static final int[] PCM_TOTAL_LEVEL_Q15 = {
+                0x7fff, 0x7569, 0x6bb3, 0x62ca, 0x5a9e, 0x531f, 0x4c3f, 0x45f0,
+                0x4027, 0x3ad8, 0x35fa, 0x3183, 0x2d6b, 0x29a9, 0x2637, 0x230d,
+                0x2027, 0x1d7e, 0x1b0d, 0x18d1, 0x16c3, 0x14e1, 0x1327, 0x1191,
+                0x101d, 0xec8, 0xd8f, 0xc70, 0xb68, 0xa77, 0x999, 0x8ce,
+                0x814, 0x768, 0x6cc, 0x63c, 0x5b8, 0x53f, 0x4d0, 0x46a,
+                0x40c, 0x3b6, 0x368, 0x320, 0x2de, 0x2a1, 0x269, 0x236,
+                0x207, 0x1dc, 0x1b5, 0x191, 0x170, 0x151, 0x135, 0x11c,
+                0x104, 0xef, 0xdb, 0xc9, 0xb8, 0xa9, 0x9b, 0x8e
+        };
+        private static final long[] PCM_SUSTAIN_LEVEL_Q31 = {
+                0x80000000L, 0x5a9df7acL, 0x4026e73dL, 0x2d6a866fL,
+                0x2026f310L, 0x16c310e3L, 0x101d3f2eL, 0xb68737aL,
+                0x8138562L, 0x5b7b15bL, 0x40c3714L, 0x2dd958aL,
+                0x207567aL, 0x16fa9bbL, 0x1044915L, 0xbbccL
+        };
 
         /**
          * MIDI key at which a melodic PCM voice's frequencySetting represents
@@ -139,13 +159,13 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
          * stored at struct {@code +0x1934} by {@code sub_10006a90} when
          * sample rate is 32000). The chip's PCM voice generator
          * ({@code sub_100129a0}) multiplies the Q30 envelope value by this
-         * factor every 7 output samples in decay/sustain/release stages.
+         * factor once per output sample in decay/sustain/release stages.
          *
          * <p>The SDK stores these as Q30 coefficients; {@code 0x40000000}
          * means unity. A previous transcription used the decompiler's IEEE
          * float view of those same bit patterns, which made low and mid PCM
          * rates behave like no-ops. Rate fields (0..15) map to
-         * {@code idx = rate << 2}.</p>
+         * {@code idx = rate == 0 ? 0 : (rate << 2) + (keycode >> 2)}.</p>
          */
         private static final float[] HW_RATE_TABLE_32K = {
                 1.000000000f, 1.000000000f, 1.000000000f, 1.000000000f,
@@ -172,6 +192,19 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
          * decay by raising the coefficient to a fractional power.
          */
         private static final int HW_RATE_TABLE_SAMPLE_RATE = 32_000;
+
+        // Q31 attack increments read from the native PCM engine's +0x1019dc
+        // table at 32 kHz. AR=15 is instantaneous at every output rate.
+        private static final long[] HW_ATTACK_TABLE_32K = {
+                0, 0, 0, 0, 0x5555, 0x6aab, 0x8000, 0x9555,
+                0xaaab, 0xd555, 0x10000, 0x12aab, 0x15555, 0x1aaab, 0x1ffff, 0x25554,
+                0x2aaa8, 0x35557, 0x40004, 0x4aaaf, 0x5555a, 0x6aa9f, 0x80007, 0x9555e,
+                0xaaa8f, 0xd5579, 0x10000f, 0x12aabc, 0x15551e, 0x1aaa07, 0x1ffeca, 0x255578,
+                0x2aaa3b, 0x3557bc, 0x4002e1, 0x4aa3b9, 0x555476, 0x6aaf78, 0x7ff090, 0x95644e,
+                0xaa8342, 0xd52413, 0x10035fa, 0x12ac89d, 0x1550685, 0x1aa4826, 0x2006bf3, 0x253c473,
+                0x2aa0d0a, 0x354904c, 0x3fb8f88, 0x4a788e5, 0x9a86f42, 0xc128b13, 0xe4eddb8, 0x10cbe2e3,
+                0x1350de85, 0x18251626, 0x1db77db9, 0x203172dd, 0x80000000L, 0x80000000L, 0x80000000L, 0x80000000L
+        };
 
         /**
          * LFO frequency in Hz for the 2-bit {@code lfo} index, decoded
@@ -233,8 +266,13 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
         private final float[] channelPans = new float[CHANNEL_COUNT];
         private final Map<Integer, List<MA5PcmVoiceProgram>> pcmPrograms = new HashMap<>();
         private final Map<Integer, MA5PcmVoiceProgram> pcmDrumPrograms = new HashMap<>();
+        private final Set<Integer> fmDrumPrograms = new HashSet<>();
+        private final Map<Integer, MA5VoiceProgram> fmPrograms = new HashMap<>();
+        private final Map<Integer, MA5VoiceProgram> fmDrumVoices = new HashMap<>();
         private final Map<Integer, int[]> pcmWaves = new HashMap<>();
         private final List<PcmNote> pcmNotes = new ArrayList<>();
+        private final List<FmNote> fmNotes = new ArrayList<>();
+        private final int[] channelModulation = new int[CHANNEL_COUNT];
 
         private Ma5Adapter(Sampler sampler, float sampleRate) {
             this.sampler = sampler;
@@ -248,8 +286,13 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
             softbankBridge.reset();
             pcmPrograms.clear();
             pcmDrumPrograms.clear();
+            fmDrumPrograms.clear();
+            fmPrograms.clear();
+            fmDrumVoices.clear();
             pcmWaves.clear();
             pcmNotes.clear();
+            fmNotes.clear();
+            Arrays.fill(channelModulation, 0);
             Arrays.fill(channelBanks, 0);
             Arrays.fill(channelPrograms, 0);
             Arrays.fill(channelDrumBanks, false);
@@ -268,26 +311,23 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
 
         @Override
         public void drumEnable(int channel, boolean enable) {
+            if (channel >= 0 && channel < CHANNEL_COUNT) channelDrumBanks[channel] = enable;
             sampler.drumEnable(channel, enable);
         }
 
         @Override
         public boolean isFinished() {
-            return sampler.isFinished() && pcmNotes.isEmpty();
+            return sampler.isFinished() && pcmNotes.isEmpty() && fmNotes.isEmpty();
         }
 
         @Override
         public void keyOff(int channel, int key) {
-            boolean releasedPcmNote = false;
             for (PcmNote note : pcmNotes) {
                 if (note.channel == channel && note.key == key) {
                     note.beginRelease();
-                    releasedPcmNote = true;
                 }
             }
-            if (releasedPcmNote) {
-                return;
-            }
+            for (FmNote note : fmNotes) if (note.channel == channel && note.key == key) note.core.keyOff();
             sampler.keyOff(channel, key);
         }
 
@@ -298,6 +338,22 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
             if (PCM_OVERLAY_ENABLED && pcmVoice != null && pcmWave != null && pcmWave.length > 0) {
                 pcmNotes.add(new PcmNote(channel, key, velocity, pcmVoice, pcmWave, sampleRate));
                 return;
+            }
+            if (PCM_OVERLAY_ENABLED && pcmVoice != null) return; // Missing wave is not an FM voice.
+            MA5VoiceProgram fmVoice = fmProgram(channel, key);
+            if (fmVoice != null && MA5FmVoice.supports(fmVoice)) {
+                for (FmNote note : fmNotes) if (note.channel == channel && note.key == key) note.core.keyOff();
+                sampler.keyOff(channel, key);
+                FmNote note = new FmNote(channel, key, velocity, fmVoice, Math.round(sampleRate));
+                note.frequency(pitchBendSemitones[channel]);
+                note.core.setModulation(channelModulation[channel]);
+                fmNotes.add(note);
+                return;
+            }
+            if (channel >= 0 && channel < CHANNEL_COUNT && (channelDrumBanks[channel] || channel == MIDI_PERCUSSION_CHANNEL)) {
+                int drumKey = key + 69 - MA5_DRUM_KEY_MIDI_BASE;
+                if (channelBanks[channel] != 0
+                        && !fmDrumPrograms.contains(programKey(channelBanks[channel], drumKey))) return;
             }
             sampler.keyOn(channel, key, velocity);
         }
@@ -324,6 +380,7 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
                 return;
             }
             pitchBendSemitones[channel] = semitones;
+            for (FmNote note : fmNotes) if (note.channel == channel) note.frequency(semitones);
             sampler.pitchBend(channel, normalizePitchBend(semitones, pitchBendRanges[channel]));
         }
 
@@ -348,6 +405,10 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
 
         @Override
         public void modulation(int channel, int value) {
+            if (channel >= 0 && channel < CHANNEL_COUNT) {
+                channelModulation[channel] = Math.clamp(value, 0, 127);
+                for (FmNote note : fmNotes) if (note.channel == channel) note.core.setModulation(value);
+            }
             sampler.modulation(channel, value);
         }
 
@@ -361,8 +422,12 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
 
         @Override
         public void render(float[] samples, int offset, int frames, float left, float right, boolean erase, boolean clamp) {
-            sampler.render(samples, offset, frames, left, right, erase, clamp);
-            renderPcmOverlay(samples, offset, frames, left, right, clamp);
+            sampler.render(samples, offset, frames, left, right, erase, false);
+            renderFmVoices(samples, offset, frames, left, right);
+            renderPcmOverlay(samples, offset, frames, left, right, false);
+            if (clamp) for (int i = offset, end = offset + frames * 2; i < end; i++) {
+                samples[i] = Math.clamp(samples[i], -1.0f, 1.0f);
+            }
         }
 
         @Override
@@ -491,10 +556,73 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
         @Override
         public void onPcmVoice(MA5PcmVoiceProgram voice) {
             if (voice.drumVoice()) {
+                fmDrumPrograms.remove(programKey(voice.bankLsb(), voice.program()));
+                fmDrumVoices.remove(programKey(voice.bankLsb(), voice.program()));
                 pcmDrumPrograms.put(programKey(voice.bankLsb(), voice.program()), voice);
             } else {
                 pcmPrograms.computeIfAbsent(programKey(voice.bankLsb(), voice.program()), ignored -> new ArrayList<>())
-                        .add(voice);
+                        .addFirst(voice);
+            }
+        }
+
+        @Override
+        public void onFmVoice(MA5VoiceProgram voice) {
+            int key = programKey(voice.bankLsb(), voice.program());
+            if (voice.drumVoice()) {
+                pcmDrumPrograms.remove(key);
+                fmDrumPrograms.add(key);
+                fmDrumVoices.put(key, voice);
+            } else {
+                pcmPrograms.remove(key);
+                fmPrograms.put(key, voice);
+            }
+        }
+
+        private MA5VoiceProgram fmProgram(int channel, int key) {
+            if (channel < 0 || channel >= CHANNEL_COUNT) return null;
+            return channelDrumBanks[channel] || channel == MIDI_PERCUSSION_CHANNEL
+                    ? fmDrumVoices.get(programKey(channelBanks[channel], key + 69 - MA5_DRUM_KEY_MIDI_BASE))
+                    : fmPrograms.get(programKey(channelBanks[channel], channelPrograms[channel]));
+        }
+
+        private void renderFmVoices(float[] samples, int offset, int frames, float left, float right) {
+            for (Iterator<FmNote> it = fmNotes.iterator(); it.hasNext();) {
+                FmNote note = it.next();
+                // Retain the existing host FM pan/gain staging. Native output
+                // filtering and final mixed gain are calibrated separately.
+                float voiceRight = note.program.panpot() / (note.program.panpot() <= 15 ? 30.0f : 31.0f);
+                float channelRight = (channelPans[note.channel] + 1) * .5f;
+                float gain = channelVolumes[note.channel] * note.velocity / 65536.0f;
+                float gainLeft = left * (1 - voiceRight) * (1 - channelRight) * gain;
+                float gainRight = right * voiceRight * channelRight * gain;
+                for (int i = 0; i < frames; i++) {
+                    int value = note.core.nextSample();
+                    samples[offset + i * 2] += value * gainLeft;
+                    samples[offset + i * 2 + 1] += value * gainRight;
+                    if (note.core.isFinished()) break;
+                }
+                if (note.core.isFinished()) it.remove();
+            }
+        }
+
+        private static final class FmNote {
+            private final int channel;
+            private final int key;
+            private final float velocity;
+            private final MA5VoiceProgram program;
+            private final MA5FmVoice core;
+
+            private FmNote(int channel, int key, float velocity, MA5VoiceProgram program, int sampleRate) {
+                this.channel = channel;
+                this.key = key;
+                this.velocity = velocity;
+                this.program = program;
+                this.core = new MA5FmVoice(program, sampleRate);
+            }
+
+            private void frequency(float bend) {
+                double midi = program.drumVoice() ? program.drumKey() : key + 69 + bend;
+                core.setFrequency(440 * Math.pow(2, (midi - 69) / 12));
             }
         }
 
@@ -505,6 +633,7 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
             int midiNote = key + 69;
             if (channelDrumBanks[channel] || channel == MIDI_PERCUSSION_CHANNEL) {
                 int drumKey = midiNote - MA5_DRUM_KEY_MIDI_BASE;
+                if (fmDrumPrograms.contains(programKey(channelBanks[channel], drumKey))) return null;
                 MA5PcmVoiceProgram drumVoice = pcmDrumPrograms.get(programKey(channelBanks[channel], drumKey));
                 if (drumVoice != null) {
                     return drumVoice;
@@ -513,10 +642,8 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
                 if (drumVoice != null) {
                     return drumVoice;
                 }
-                drumVoice = pcmDrumPrograms.get(programKey(0, drumKey));
-                if (drumVoice != null) {
-                    return drumVoice;
-                }
+                // Missing percussion must never select a melodic PCM program.
+                return channelBanks[channel] == 0 ? MA5PcmVoiceProgram.presetDrum(midiNote) : null;
             }
             MA5PcmVoiceProgram voice = pcmProgramForKey(channelBanks[channel], channelPrograms[channel], midiNote);
             if (voice != null) {
@@ -546,14 +673,23 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
             if (!PCM_OVERLAY_ENABLED || voice == null) {
                 return null;
             }
-            int[] userWave = pcmWaves.get(voice.waveId());
-            if (userWave != null) {
-                return userWave;
+            if (!voice.romWave()) return pcmWaves.get(voice.waveId());
+            return voice.waveId() < PcmRom.WAVES.length ? PcmRom.WAVES[voice.waveId()] : null;
+        }
+
+        private static final class PcmRom {
+            private static final int[][] WAVES = load();
+
+            private static int[][] load() {
+                int[][] waves = new int[7][];
+                for (int i = 0; i < waves.length; i++) {
+                    byte[] data = MA3Rom.MA3_WAVEROM.bytes(i);
+                    // Encoded bytes match the MA5 DLL. Decode without MA3
+                    // predictor leakage, using native integer bitwise deltas.
+                    waves[i] = decodeYamaha(data, 0, data.length);
+                }
+                return waves;
             }
-            if (voice.drumVoice()) {
-                return MA3SamplerProvider.decodedWaveRom(voice.waveId());
-            }
-            return null;
         }
 
         private void renderPcmOverlay(float[] samples,
@@ -569,7 +705,7 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
             while (iterator.hasNext()) {
                 PcmNote note = iterator.next();
                 int[] wave = note.wave;
-                int end = Math.min(note.voice.endPoint() + 1, wave.length);
+                int end = Math.min(note.voice.endPoint(), wave.length);
                 int loop = Math.max(0, Math.min(note.voice.loopPoint(), end));
                 boolean repeat = note.voice.repeatMode()
                         && note.voice.loopPoint() < note.voice.endPoint()
@@ -607,7 +743,7 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
                     }
 
                     note.computeLfoSin();
-                    float sample = interpolatedWaveSample(wave, note.position)
+                    float sample = interpolatedWaveSample(wave, note.position, repeat ? loop : end, end)
                             * gain
                             * note.envelope()
                             * note.amScale()
@@ -660,10 +796,23 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
             };
         }
 
-        private static float interpolatedWaveSample(int[] wave, float position) {
-            int source = Math.max(0, Math.min((int) position, wave.length - 1));
-            int next = Math.min(source + 1, wave.length - 1);
-            float fraction = position - source;
+        private static float nativePcmAdvance(float frequency, float outputSampleRate) {
+            long register = nativePcmRegister(frequency);
+            long q16 = ((0x5dc00000L / (int) outputSampleRate) * register) >> 15;
+            return q16 / 65536.0f;
+        }
+
+        private static long nativePcmRegister(float frequency) {
+            double ideal = Math.max(0, frequency) * 65536.0 / 48000.0;
+            int shift = Math.max(0, Math.getExponent(ideal) - 10);
+            long quantum = 1L << Math.min(shift, 30);
+            return (long) (ideal / quantum) * quantum;
+        }
+
+        private static float interpolatedWaveSample(int[] wave, double position, int loop, int end) {
+            int source = Math.max(0, Math.min((int) position, end - 1));
+            int next = source + 1 < end ? source + 1 : loop < end ? loop : source;
+            float fraction = (float) (position - source);
             float sample = wave[source] + (wave[next] - wave[source]) * fraction;
             return sample / 32768.0f;
         }
@@ -782,6 +931,11 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
             private final MA5PcmVoiceProgram voice;
             private final int[] wave;
             private final float baseAdvance;
+            private final float sourceFrequency;
+            private final float outputSampleRate;
+            private final float noteSemitones;
+            private float cachedBend = Float.NaN;
+            private float cachedAdvance;
             private final float totalLevelGain;
             private final float attackDelta;
             private final float decayCoef;
@@ -791,12 +945,12 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
             private final float lfoPhasePerSample;
             private final float vibratoDepthSemitones;
             private final float amDepth;
-            private float position;
+            private double position;
             private float releaseGain = 1.0f;
             private boolean releasing;
             private boolean holding;
             private boolean finished;
-            private EnvelopeStage envelopeStage = EnvelopeStage.ATTACK;
+            private EnvelopeStage envelopeStage = EnvelopeStage.RESET;
             private float envelopeLevel = 0.0f;
             private float lfoPhase;
 
@@ -808,13 +962,20 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
                 this.wave = wave;
                 // The VM35 frequency field stores the wave's authored sample
                 // rate for the one-shot MA-5 PCM effects seen in MGS Mobile.
-                this.baseAdvance = Math.max(0.001f,
-                        voice.frequencySetting() * PCM_FREQ_SCALE / outputSampleRate);
+                this.sourceFrequency = voice.frequencySetting() * PCM_FREQ_SCALE;
+                this.outputSampleRate = outputSampleRate;
+                this.noteSemitones = voice.drumVoice() ? 0 : key + 69 - PCM_REFERENCE_KEY;
+                float frequency = sourceFrequency * hardwarePitchRatio(noteSemitones);
+                this.baseAdvance = nativePcmAdvance(frequency, outputSampleRate);
+                long register = nativePcmRegister(frequency);
+                int block = Math.clamp(Math.getExponent((double) register) - 11, 0, 7);
+                int fnum = (int) (register >> (block + 1)) - 1024;
+                int keyRateOffset = ((block << 1) | ((fnum >> 9) & 1)) >> 2;
                 this.totalLevelGain = PCM_ENVELOPE_ENABLED ? totalLevelGain(voice.totalLevel()) : 1.0f;
-                this.attackDelta = attackDelta(voice.attackRate(), outputSampleRate);
-                this.decayCoef = decayCoef(voice.decayRate(), outputSampleRate);
-                this.sustainCoef = decayCoef(voice.sustainRate(), outputSampleRate);
-                this.releaseCoef = decayCoef(voice.releaseRate(), outputSampleRate);
+                this.attackDelta = attackDelta(voice.attackRate(), keyRateOffset, outputSampleRate);
+                this.decayCoef = decayCoef(voice.decayRate(), keyRateOffset, outputSampleRate);
+                this.sustainCoef = decayCoef(voice.sustainRate(), keyRateOffset, outputSampleRate);
+                this.releaseCoef = decayCoef(voice.releaseRate(), keyRateOffset, outputSampleRate);
                 this.sustainLevel = sustainLevel(voice.sustainLevel());
                 int lfoIdx = Math.max(0, Math.min(LFO_FREQ_HZ.length - 1, voice.lfo()));
                 this.lfoPhasePerSample = (float) (2.0 * Math.PI * LFO_FREQ_HZ[lfoIdx] / outputSampleRate);
@@ -827,9 +988,11 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
                         voice.vibratoEnabled() ? voice.vibratoDepth() / 3.0f : 0.0f;
                 this.amDepth =
                         voice.amplitudeModEnabled() ? voice.amplitudeModDepth() / 6.0f : 0.0f;
-                if (!PCM_ENVELOPE_ENABLED || voice.attackRate() <= 0) {
+                if (!PCM_ENVELOPE_ENABLED) {
                     this.envelopeLevel = 1.0f;
                     this.envelopeStage = EnvelopeStage.DECAY;
+                } else if (voice.attackRate() == 0) {
+                    this.finished = true; // Native AR=0 has a zero attack increment.
                 }
             }
 
@@ -842,27 +1005,12 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
 
             private float advance(float bendSemitones) {
                 float vibrato = vibratoSemitones();
-                if (voice.drumVoice()) {
-                    // Drum-kit voices play at the authored natural rate. The
-                    // MIDI note only selects WHICH drum (via the per-note
-                    // program lookup), so transposing by key would shift bass
-                    // content out of the kick/tom thump range. Pitch bend
-                    // still applies as a fine adjustment if the sequence
-                    // sweeps a hit.
-                    float totalSemitones = bendSemitones + vibrato;
-                    if (totalSemitones == 0.0f) {
-                        return baseAdvance;
-                    }
-                    return baseAdvance * hardwarePitchRatio(totalSemitones);
-                }
-                // SmafSequencedRenderer passes keys relative to MIDI note 69;
-                // convert back to absolute MIDI before applying PCM tuning.
-                int midiKey = key + 69;
-                // Melodic PCM transposes relative to a chip-defined center
-                // key. The voice's frequencySetting is calibrated for that
-                // key; above it plays faster, below it slower.
-                return baseAdvance
-                        * hardwarePitchRatio(midiKey - PCM_REFERENCE_KEY + bendSemitones + vibrato);
+                if (bendSemitones == 0 && vibrato == 0) return baseAdvance;
+                if (vibrato == 0 && cachedBend == bendSemitones) return cachedAdvance;
+                float advance = nativePcmAdvance(sourceFrequency
+                        * hardwarePitchRatio(noteSemitones + bendSemitones + vibrato), outputSampleRate);
+                if (vibrato == 0) { cachedBend = bendSemitones; cachedAdvance = advance; }
+                return advance;
             }
 
             private boolean oneShotDrum() {
@@ -952,6 +1100,7 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
                     envelopeStage = EnvelopeStage.RELEASE;
                 }
                 switch (envelopeStage) {
+                    case RESET -> envelopeStage = EnvelopeStage.ATTACK;
                     case ATTACK -> {
                         envelopeLevel += attackDelta;
                         if (envelopeLevel >= 1.0f) {
@@ -1012,12 +1161,11 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
                 }
             }
 
-            private static float attackDelta(int attackRate, float outputSampleRate) {
-                if (attackRate <= 0) {
-                    return 1.0f;
-                }
-                double seconds = PCM_ATTACK_TIME_SEC_AT_1 / (1 << Math.min(attackRate - 1, 30));
-                return (float) (1.0 / Math.max(1.0, seconds * outputSampleRate));
+            private static float attackDelta(int attackRate, int keyRateOffset, float outputSampleRate) {
+                int index = attackRate == 0 ? 0 : Math.min(63, (attackRate << 2) + keyRateOffset);
+                long delta = HW_ATTACK_TABLE_32K[index];
+                if (delta == 0x80000000L) return 1.0f;
+                return (float) (delta / 2147483648.0 * HW_RATE_TABLE_SAMPLE_RATE / outputSampleRate);
             }
 
             /**
@@ -1033,11 +1181,11 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
              * Higher rates are just below unity and decay over the same
              * wall-clock time as the SDK.</p>
              */
-            private static float decayCoef(int rate, float outputSampleRate) {
+            private static float decayCoef(int rate, int keyRateOffset, float outputSampleRate) {
                 if (rate <= 0) {
                     return 1.0f;
                 }
-                int idx = Math.max(0, Math.min(15, rate)) << 2;
+                int idx = (Math.max(0, Math.min(15, rate)) << 2) + keyRateOffset;
                 if (idx >= HW_RATE_TABLE_32K.length) {
                     idx = HW_RATE_TABLE_32K.length - 1;
                 }
@@ -1050,21 +1198,16 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
             }
 
             private static float sustainLevel(int sustainLevel) {
-                if (sustainLevel >= 0x0f) {
-                    return 0.0f;
-                }
-                return (float) Math.pow(10.0, -3.0 * sustainLevel / 20.0);
+                return (float) (PCM_SUSTAIN_LEVEL_Q31[Math.clamp(sustainLevel, 0, 15)] / 2147483648.0);
             }
 
             private static float totalLevelGain(int totalLevel) {
-                if (totalLevel >= 63) {
-                    return 0.0f;
-                }
-                return (float) Math.pow(10.0, -0.75 * totalLevel / 20.0);
+                return PCM_TOTAL_LEVEL_Q15[Math.clamp(totalLevel, 0, 63)] / 32768.0f;
             }
         }
 
         private enum EnvelopeStage {
+            RESET,
             ATTACK,
             DECAY,
             SUSTAIN,

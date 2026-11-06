@@ -1788,8 +1788,9 @@ public final class SMAFDecoder
                 {
                     channel = (byte) ((status >> 6) & 0x03);
                     channel += handyChannelIdx;
+                    // Native MA5 ignores octave shifts on percussion
                     byte noteValue = clampMidiNote((status & 15) + ((status >> 4 & 3) + 3) * 12
-                            + (12 * channelData[channel].octaveShift));
+                            + (channelData[channel].usingDrumBank ? 0 : 12 * channelData[channel].octaveShift));
 
                     offsetRef[0] = offset;
                     gateTime = readSmafPhraseVariableLength(data, offsetRef);

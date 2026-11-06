@@ -58,6 +58,7 @@ public final class MA5SoftbankBridge {
             int slot = implicitCompactVoiceSlot++ & 0x3f;
             voice = voice.withBankProgram(0, slot);
             sampler.sysEx(voice.toMa3FmAlgorithmMessage());
+            pcmVoiceSink.onFmVoice(voice);
             if (SmafDebug.isEnabled("ma5", SmafDebug.Level.DEBUG)) {
                 SmafDebug.debug("ma5", "[MA5] loaded compact 4op FM voice slot=" + slot + " " + voice.summary());
             }
@@ -86,6 +87,7 @@ public final class MA5SoftbankBridge {
                 return true;
             }
             sampler.sysEx(voice.toMa3FmAlgorithmMessage());
+            pcmVoiceSink.onFmVoice(voice);
             if (SmafDebug.isEnabled("ma5", SmafDebug.Level.DEBUG)) {
                 SmafDebug.debug("ma5", "[MA5] loaded VM5 FM voice " + voice.summary());
             }
@@ -213,5 +215,7 @@ public final class MA5SoftbankBridge {
         void onWaveData(MA5WaveDataPacket waveData);
 
         void onPcmVoice(MA5PcmVoiceProgram voice);
+
+        default void onFmVoice(MA5VoiceProgram voice) { }
     }
 }

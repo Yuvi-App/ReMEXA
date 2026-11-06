@@ -103,6 +103,8 @@ public class MA3Sampler
 
     /** 4-operator instruments. */
     Map<Integer, MA3Algorithm> fm4ops;
+    private final Map<Integer, MA3Algorithm> fmDrum2ops = new HashMap<>();
+    private final Map<Integer, MA3Algorithm> fmDrum4ops = new HashMap<>();
 
     public MA3Sampler(MA3SamplerProvider __ma3, float sampleRate)
     {
@@ -231,7 +233,7 @@ public class MA3Sampler
             }
 
             if (algorithm == null)
-                algorithm = this.getDrumFM(key);
+                algorithm = this.getDrumFM(chan.prgBank, key);
 
             if (algorithm == null)
                 return;
@@ -577,6 +579,8 @@ public class MA3Sampler
         this.wavRam = null;
         this.fm2ops.clear();
         this.fm4ops.clear();
+        this.fmDrum2ops.clear();
+        this.fmDrum4ops.clear();
         MA3Channel[] channels = this.channels;
         for (int i = 0, n = channels.length; i < n; i++)
             channels[i].reset();
@@ -734,8 +738,11 @@ public class MA3Sampler
                 continue;
 
             // Register the algorithm
-            (type == 1 ? fm2ops : fm4ops).put(
-                (message[offset + 1] & 0xFF) << 8 | // Bank
+            boolean drum = (message[offset + 1] & 0x80) != 0;
+            algorithm.isDrum = drum;
+            if (drum) algorithm.freqBase = (float) (440 * Math.pow(2, (algorithm.drumKey - 69) / 12.0));
+            (drum ? (type == 1 ? fmDrum2ops : fmDrum4ops) : (type == 1 ? fm2ops : fm4ops)).put(
+                (message[offset + 1] & 0x7F) << 8 | // Bank
                     message[offset + 2] & 0xFF,        // Program
                 algorithm);
 
@@ -748,8 +755,14 @@ public class MA3Sampler
     /**
      * Retrieve an algorithm for playing an FM drum note
      */
-    MA3Algorithm getDrumFM(int key)
+    MA3Algorithm getDrumFM(int bank, int key)
     {
+        int program = key + 69 - 36;
+        int lookup = bank << 8 | program;
+        MA3Algorithm authored = this.ma3.prgInstrumentType == MA3SamplerProvider.FM_MA3_4OP
+                ? fmDrum4ops.get(lookup) : null;
+        if (authored == null) authored = fmDrum2ops.get(lookup);
+        if (authored != null) return authored;
         MA3Algorithm[] algDrums = this.ma3.algDrums;
 
         // Transform wave drum keys into FM drum keys. Keep the legacy offset:

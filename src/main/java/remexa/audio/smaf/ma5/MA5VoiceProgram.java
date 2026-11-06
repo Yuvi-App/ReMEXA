@@ -16,6 +16,7 @@ import java.util.Arrays;
  */
 public record MA5VoiceProgram(int bankLsb,
                               int program,
+                              boolean drumVoice,
                               int drumKey,
                               int panpot,
                               int basicOctave,
@@ -75,7 +76,7 @@ public record MA5VoiceProgram(int bankLsb,
             operators[i] = Operator.decode(i, payload, offset);
             offset += OPERATOR_BYTES;
         }
-        return new MA5VoiceProgram(bankLsb, program, drumKey, panpot, basicOctave,
+        return new MA5VoiceProgram(bankLsb, program, (body[3] & 0x80) != 0, drumKey, panpot, basicOctave,
                 lfo, panpotEnable, algorithm, operators, payload);
     }
 
@@ -103,12 +104,12 @@ public record MA5VoiceProgram(int bankLsb,
             operators[i] = Operator.decode(i, payload, offset);
             offset += OPERATOR_BYTES;
         }
-        return new MA5VoiceProgram(0, 0, 0, panpot, basicOctave,
+        return new MA5VoiceProgram(0, 0, false, 0, panpot, basicOctave,
                 lfo, panpotEnable, algorithm, operators, payload);
     }
 
     public MA5VoiceProgram withBankProgram(int bankLsb, int program) {
-        return new MA5VoiceProgram(bankLsb & 0x7f, program & 0x7f, drumKey, panpot,
+        return new MA5VoiceProgram(bankLsb & 0x7f, program & 0x7f, drumVoice, drumKey, panpot,
                 basicOctave, lfo, panpotEnable, algorithm, operators, payload);
     }
 
@@ -119,6 +120,7 @@ public record MA5VoiceProgram(int bankLsb,
     public String summary() {
         return "bankLsb=" + bankLsb
                 + " program=" + program
+                + " drumVoice=" + drumVoice
                 + " alg=" + algorithm
                 + " ops=" + operatorCount()
                 + " panpot=" + panpot
@@ -138,7 +140,7 @@ public record MA5VoiceProgram(int bankLsb,
 
         int offset = 4;
         message[offset] = (byte) type;
-        message[offset + 1] = (byte) (bankLsb & 0x7f);
+        message[offset + 1] = (byte) ((bankLsb & 0x7f) | (drumVoice ? 0x80 : 0));
         message[offset + 2] = (byte) (program & 0x7f);
         message[offset + 3] = (byte) (drumKey & 0xff);
         message[offset + 4] = (byte) (((panpot & 0x1f) << 3) | (basicOctave & 0x03));

@@ -1,6 +1,9 @@
 package remexa.audio.smaf.ma5;
 
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Map;
+import remexa.audio.smaf.ma3.MA3Rom;
 
 /**
  * Raw Yamaha VM35/VM5 PCM voice metadata decoded from {@code 43 05 02 ...}
@@ -31,7 +34,7 @@ public record MA5PcmVoiceProgram(int bankLsb,
                                  boolean vibratoEnabled,
                                  int loopPoint,
                                  int endPoint,
-                                 boolean repeatMode,
+                                 boolean romWave,
                                  int waveId,
                                  int keyLow,
                                  int keyHigh,
@@ -84,7 +87,7 @@ public record MA5PcmVoiceProgram(int bankLsb,
                               boolean vibratoEnabled,
                               int loopPoint,
                               int endPoint,
-                              boolean repeatMode,
+                              boolean romWave,
                               int waveId,
                               byte[] payload) {
         this(bankLsb,
@@ -108,7 +111,7 @@ public record MA5PcmVoiceProgram(int bankLsb,
                 vibratoEnabled,
                 loopPoint,
                 endPoint,
-                repeatMode,
+                romWave,
                 waveId,
                 0,
                 127,
@@ -146,7 +149,8 @@ public record MA5PcmVoiceProgram(int bankLsb,
                 + " keys=" + keyLow + "-" + keyHigh
                 + " loop=" + loopPoint
                 + " end=" + endPoint
-                + " repeat=" + repeatMode
+                + " rom=" + romWave
+                + " repeat=" + repeatMode()
                 + " panpot=" + panpot
                 + " pe=" + panpotEnable
                 + " lfo=" + lfo
@@ -158,6 +162,33 @@ public record MA5PcmVoiceProgram(int bankLsb,
                 + " tl=" + totalLevel
                 + " dam=" + amplitudeModDepth
                 + " dvb=" + vibratoDepth;
+    }
+
+    /** Looping follows LP/EP */
+    public boolean repeatMode() {
+        return loopPoint < endPoint;
+    }
+
+    /** SoftBank phrase note convention. */
+    public static MA5PcmVoiceProgram presetDrum(int midiNote) {
+        return PresetDrums.VOICES.get(midiNote);
+    }
+
+    private static final class PresetDrums {
+        private static final Map<Integer, MA5PcmVoiceProgram> VOICES = load();
+
+        private static Map<Integer, MA5PcmVoiceProgram> load() {
+            Map<Integer, MA5PcmVoiceProgram> voices = new HashMap<>();
+            // Native M5 phrase traces select these 19 ROM definitions at stored
+            // key + 2. Decoded note 42 selects wave 1, FS=23000, LP=EP=2971.
+            for (int i = 2; i < 21; i++) {
+                byte[] entry = MA3Rom.MA3_DRUMS_WAVE.bytes(i);
+                int midiNote = (entry[0] & 0xff) + 2;
+                voices.put(midiNote, fromPayload(0, Math.max(0, midiNote - 36), true,
+                        0, 127, Arrays.copyOfRange(entry, 1, entry.length)));
+            }
+            return Map.copyOf(voices);
+        }
     }
 
     private static MA5PcmVoiceProgram decodeLegacySoftbankVoice(byte[] body) {
