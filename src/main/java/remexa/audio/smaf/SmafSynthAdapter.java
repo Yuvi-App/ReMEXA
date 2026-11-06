@@ -21,6 +21,9 @@ interface SmafSynthAdapter {
     void pitchBendRange(int channel, float range);
 
     void volume(int channel, float volume);
+    default void channelLevels(int channel, float volume, float expression) { volume(channel, volume * expression); }
+    default void phraseVolume(int volume) { }
+    default void phrasePanpot(int pan) { }
 
     void panpot(int channel, float panpot);
 

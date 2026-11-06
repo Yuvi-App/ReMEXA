@@ -43,6 +43,7 @@ final class SmafSequencedRenderer {
     private final int outputSampleRate;
     private final int tailRenderLimitFrames;
     private final boolean phraseClock;
+    private final boolean nativeMa5Output;
 
     SmafSequencedRenderer(String rendererName, SmafSynthProvider synthProvider) {
         this(rendererName, synthProvider, DEFAULT_OUTPUT_SAMPLE_RATE);
@@ -53,11 +54,17 @@ final class SmafSequencedRenderer {
     }
 
     SmafSequencedRenderer(String rendererName, SmafSynthProvider synthProvider, int outputSampleRate, boolean phraseClock) {
+        this(rendererName,synthProvider,outputSampleRate,phraseClock,phraseClock);
+    }
+
+    SmafSequencedRenderer(String rendererName,SmafSynthProvider synthProvider,int outputSampleRate,
+                          boolean phraseClock,boolean nativeMa5Output) {
         this.rendererName = rendererName;
         this.synthProvider = synthProvider;
         this.outputSampleRate = outputSampleRate;
         this.tailRenderLimitFrames = outputSampleRate * 10;
         this.phraseClock = phraseClock;
+        this.nativeMa5Output = nativeMa5Output;
     }
 
     SmafRenderedAudio render(Sequence sequence,
@@ -109,6 +116,13 @@ final class SmafSequencedRenderer {
         int mixedFrameCount = requiredPcmFrameCount(framePosition, pcmClips, pcmTriggers);
         mix = ensureFrameCapacity(mix, mixedFrameCount);
         mixPcmClips(mix, pcmClips, pcmTriggers);
+        if (nativeMa5Output) {
+            var outputStage=new remexa.audio.smaf.ma5.MA5OutputStage(outputSampleRate);
+            for (int i=0;i<mixedFrameCount*2;i+=2) {
+                outputStage.process(Math.round(mix[i]*32768f),Math.round(mix[i+1]*32768f));
+                mix[i]=outputStage.left()/32767f; mix[i+1]=outputStage.right()/32767f;
+            }
+        }
         int finalFrameCount = trimTrailingSilence(mix, mixedFrameCount);
         return new SmafRenderedAudio(outputSampleRate, OUTPUT_CHANNELS, finalFrameCount,
                 encodePcm16Le(mix, finalFrameCount));
@@ -162,6 +176,14 @@ final class SmafSequencedRenderer {
         for (SMAFDecoder.SequenceSysExEvent event : sysExEvents) {
             events.add(RenderEvent.sysEx(event.tick(), order++, event.sourceBank(), event.data()));
         }
+        boolean phraseNotes=sysExEvents.stream().anyMatch(e -> e.data().length>=2 && e.data()[0]==0x72 && e.data()[1]==0x0e);
+        if (phraseNotes) {
+            Set<Long> zeroNotes=new HashSet<>();
+            for (var trigger : pcmTriggers) if (trigger.velocity()==0)
+                zeroNotes.add(tickChannelNoteKey(trigger.startTick(),trigger.midiChannel(),trigger.midiNote()));
+            events.replaceAll(event -> event.sysEx==null && event.command==ShortMessage.NOTE_ON && event.data2==0
+                    && zeroNotes.contains(tickChannelNoteKey(event.tick,event.channel,event.data1)) ? event.asPhraseNote() : event);
+        }
         events.sort(Comparator
                 .comparingLong(RenderEvent::tick)
                 .thenComparingInt(RenderEvent::priority)
@@ -212,7 +234,7 @@ final class SmafSequencedRenderer {
                 continue;
             }
 
-            boolean noteOn = event.command == ShortMessage.NOTE_ON && event.data2 > 0;
+            boolean noteOn = event.command == ShortMessage.NOTE_ON && event.isNoteOn();
             Map<Long, Deque<Integer>> channelsByKey = noteOn ? noteOnChannels : noteOffChannels;
             Deque<Integer> channels = channelsByKey.get(tickChannelNoteKey(event.tick, event.channel, event.data1));
             if (channels == null || channels.isEmpty()) {
@@ -271,7 +293,7 @@ final class SmafSequencedRenderer {
         Set<Integer> suppressedNotes = new HashSet<>();
         int suppressed = 0;
         for (RenderEvent event : events) {
-            if (event.sysEx == null && event.command == ShortMessage.NOTE_ON && event.data2 > 0
+            if (event.sysEx == null && event.command == ShortMessage.NOTE_ON && event.isNoteOn()
                     && extendedNoteTicks.contains(tickChannelKey(event.tick, event.channel))) {
                 suppressedNotes.add(channelNoteKey(event.channel, event.data1));
                 suppressed++;
@@ -317,7 +339,7 @@ final class SmafSequencedRenderer {
         List<RenderEvent> filtered = new ArrayList<>(events.size());
         int suppressed = 0;
         for (RenderEvent event : events) {
-            if (event.sysEx == null && event.command == ShortMessage.NOTE_ON && event.data2 > 0
+            if (event.sysEx == null && event.command == ShortMessage.NOTE_ON && event.isNoteOn()
                     && noteOnKeys.contains(tickChannelNoteKey(event.tick, event.channel, event.data1))) {
                 suppressed++;
                 continue;
@@ -376,7 +398,7 @@ final class SmafSequencedRenderer {
         switch (event.command) {
             case ShortMessage.NOTE_OFF -> sampler.keyOff(event.channel, event.data1 - 69);
             case ShortMessage.NOTE_ON -> {
-                if (event.data2 == 0) {
+                if (event.data2 == 0 && !event.phraseNote) {
                     sampler.keyOff(event.channel, event.data1 - 69);
                 } else {
                     sampler.keyOn(event.channel, event.data1 - 69, event.data2 / 127.0f);
@@ -407,12 +429,12 @@ final class SmafSequencedRenderer {
             case 1 -> sampler.modulation(channel, value);
             case 7 -> {
                 channelState.channelVolume = value / 127.0f;
-                sampler.volume(channel, channelState.channelVolume * channelState.expression);
+                sampler.channelLevels(channel, channelState.channelVolume, channelState.expression);
             }
             case 10 -> sampler.panpot(channel, midiPanToFloat(value));
             case 11 -> {
                 channelState.expression = value / 127.0f;
-                sampler.volume(channel, channelState.channelVolume * channelState.expression);
+                sampler.channelLevels(channel, channelState.channelVolume, channelState.expression);
             }
             case 32 -> channelState.bankLsb = value;
             case 100 -> channelState.rpnLsb = value;
@@ -829,7 +851,8 @@ final class SmafSequencedRenderer {
                                int data1,
                                int data2,
                                int sysExSourceBank,
-                               byte[] sysEx) {
+                               byte[] sysEx,
+                               boolean phraseNote) {
         private static RenderEvent shortMessage(long tick, int order, ShortMessage message) {
             int command = message.getCommand();
             return new RenderEvent(
@@ -841,7 +864,7 @@ final class SmafSequencedRenderer {
                     message.getData1(),
                     message.getData2(),
                     -1,
-                    null);
+                    null,false);
         }
 
         private static RenderEvent sysEx(long tick, int order, int sourceBank, byte[] sysEx) {
@@ -854,7 +877,7 @@ final class SmafSequencedRenderer {
                     0,
                     0,
                     sourceBank,
-                    sysEx == null ? new byte[0] : sysEx.clone());
+                    sysEx == null ? new byte[0] : sysEx.clone(),false);
         }
 
         private RenderEvent withChannel(int newChannel) {
@@ -867,8 +890,11 @@ final class SmafSequencedRenderer {
                     data1,
                     data2,
                     sysExSourceBank,
-                    sysEx == null ? null : sysEx.clone());
+                    sysEx == null ? null : sysEx.clone(),phraseNote);
         }
+
+        private boolean isNoteOn() { return command==ShortMessage.NOTE_ON && (data2>0 || phraseNote); }
+        private RenderEvent asPhraseNote() { return new RenderEvent(tick,order,3,command,channel,data1,data2,sysExSourceBank,sysEx,true); }
 
         private static int priorityFor(int command, int velocity) {
             return switch (command) {
@@ -898,6 +924,7 @@ final class SmafSequencedRenderer {
         private int trailingSilentFrames;
         private int tailFramesRendered;
         private boolean tightLoop;
+        private int phraseVolume=127,phrasePanpot=64;
 
         private StreamingSession(Sequence sequence,
                                  List<SMAFDecoder.SequenceSysExEvent> sysExEvents,
@@ -927,6 +954,11 @@ final class SmafSequencedRenderer {
             }
             resetSampler();
         }
+
+        @Override public boolean nativeMa5Output() { return nativeMa5Output; }
+        @Override public boolean handlesPhraseMix() { return phraseClock; }
+        @Override public void phraseVolume(int value) { phraseVolume=value; if (phraseClock) sampler.phraseVolume(value); }
+        @Override public void phrasePanpot(int value) { phrasePanpot=value; if (phraseClock) sampler.phrasePanpot(value); }
 
         @Override
         public int sampleRate() {
@@ -1058,6 +1090,7 @@ final class SmafSequencedRenderer {
 
         private void resetSampler() throws Exception {
             sampler = synthProvider.instance(outputSampleRate);
+            if (phraseClock) { sampler.phraseVolume(phraseVolume); sampler.phrasePanpot(phrasePanpot); }
             sampler.reset();
         }
     }

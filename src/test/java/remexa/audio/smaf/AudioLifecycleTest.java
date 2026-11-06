@@ -63,6 +63,51 @@ public class AudioLifecycleTest {
         Thread.currentThread().setContextClassLoader(previousContext);
     }
 
+    @Test public void compactPhraseVoicesUseTheAuthoredBankAfterResetAndRepeat() throws Exception {
+        var provider = new remexa.audio.smaf.ma3.MA3SamplerProvider(
+                remexa.audio.smaf.ma3.MA3SamplerProvider.FM_MA3_4OP,
+                remexa.audio.smaf.ma3.MA3SamplerProvider.FM_MA3_4OP,
+                remexa.audio.smaf.ma3.MA3SamplerProvider.WAVE_DRUM_NONE);
+        byte[] compactVoice = HexFormat.of().parseHex(
+                "43040179850250f0000010000250f0000410000250f0000810000250f0000c1000");
+        for (boolean phrase : new boolean[]{false, true}) {
+            SmafSynthAdapter synth = (SmafSynthAdapter) construct(Ma5SmafAudioEngine.class.getName() + "$Ma5Adapter",
+                    provider.instance(48000), 48000f, phrase);
+            synth.reset();
+            synth.sysEx(compactVoice);
+            synth.keyOn(0, -9, 1);
+            var notes = (List<?>) get(synth, "fmNotes");
+            assertEquals("Compact EXVO must select its native voice, without falling back", 1, notes.size());
+            var program = (remexa.audio.smaf.ma5.MA5VoiceProgram) get(notes.getFirst(), "program");
+            assertEquals(phrase ? 1 : 0, program.bankLsb());
+            if (phrase) {
+                synth.repeat();
+                synth.keyOn(0, -9, 1);
+                assertEquals(1, ((List<?>) get(synth, "fmNotes")).size());
+                assertEquals(1, ((int[]) get(synth, "channelBanks"))[0]);
+            }
+        }
+    }
+
+    @Test public void nativeOutputProcessesTheFullLinkedMixOnce() throws Exception {
+        Object key = construct(SmafStreamingPlayer.class.getName() + "$OutputFormatKey", 48000, 2, true);
+        Object engine = construct(SmafStreamingPlayer.class.getName() + "$SharedEngine", key);
+        engines.add(engine);
+        float[] mix = (float[]) get(engine, "mixBuffer");
+        // Two linked voices, each contributing +/-10000, are summed before master attenuation.
+        mix[0] = 20000 / 32768f;
+        mix[1] = -20000 / 32768f;
+        assertEquals(4, call(engine, "encodePcm", 1));
+        byte[] pcm = (byte[]) get(engine, "pcmBuffer");
+        assertEquals(19999, (short) ((pcm[0] & 255) | (pcm[1] << 8)));
+        assertEquals(-20000, (short) ((pcm[2] & 255) | (pcm[3] << 8)));
+        mix[0] = 70000 / 32768f;
+        mix[1] = -70000 / 32768f;
+        call(engine, "encodePcm", 1);
+        assertEquals(32766, (short) ((pcm[0] & 255) | (pcm[1] << 8)));
+        assertEquals(-32767, (short) ((pcm[2] & 255) | (pcm[3] << 8)));
+    }
+
     @Test public void switchingAppsCreatesFreshTracksAndInvalidatesOldReferences() throws Exception {
         ClassLoader a = owner("A"), b = owner("B");
         enter(a);

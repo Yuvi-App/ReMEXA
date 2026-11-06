@@ -114,7 +114,7 @@ public final class HostUiSettings {
     public static int ma5PcmMixPercent() {
         return pcmMixPercent(
                 RemexaPreferences.MA5_PCM_MIX_PERCENT_KEY,
-                Integer.toString(pcmMixPercent())
+                Integer.toString(LaunchConfig.DEFAULT_MA5_PCM_MIX_PERCENT)
         );
     }
 

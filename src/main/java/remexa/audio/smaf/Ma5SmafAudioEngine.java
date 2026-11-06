@@ -6,6 +6,9 @@ import remexa.audio.smaf.ma3.Sampler;
 import remexa.audio.smaf.ma5.MA5PacketInventory;
 import remexa.audio.smaf.ma5.MA5PcmVoiceProgram;
 import remexa.audio.smaf.ma5.MA5PcmVoice;
+import remexa.audio.smaf.ma5.MA5MixChannel;
+import remexa.audio.smaf.ma5.MA5MixTables;
+import remexa.audio.smaf.ma5.MA5PcmPitch;
 import remexa.audio.smaf.ma5.MA5FmVoice;
 import remexa.audio.smaf.ma5.MA5VoiceProgram;
 import remexa.audio.smaf.ma5.MA5SoftbankBridge;
@@ -39,7 +42,7 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
         renderer = new SmafSequencedRenderer("MA5", sampleRate -> {
             Sampler sampler = provider.instance(sampleRate);
             return new Ma5Adapter(sampler, sampleRate);
-        }, MA5_OUTPUT_SAMPLE_RATE);
+        }, MA5_OUTPUT_SAMPLE_RATE, false, true);
         phraseRenderer = new SmafSequencedRenderer("MA5 phrase", sampleRate ->
                 new Ma5Adapter(provider.instance(sampleRate), sampleRate, true), MA5_OUTPUT_SAMPLE_RATE, true);
     }
@@ -135,10 +138,6 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
          */
         private static final float PCM_FREQ_SCALE =
                 Float.parseFloat(System.getProperty("remexa.ma5PcmFreqScale", "1.0"));
-        private static final int[] PCM_SEMITONE_Q15 = {
-                0x8000, 0x78D7, 0x7215, 0x6BB3, 0x65AD, 0x5FFD,
-                0x5A9E, 0x558C, 0x50C3, 0x4C3F, 0x47FB, 0x43F4, 0x4027
-        };
         /**
          * MIDI key at which a melodic PCM voice's frequencySetting represents
          * unity (natural-rate) playback. Above this key the voice plays
@@ -173,6 +172,10 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
         private final List<PcmNote> pcmNotes = new ArrayList<>();
         private final List<FmNote> fmNotes = new ArrayList<>();
         private final int[] channelModulation = new int[CHANNEL_COUNT];
+        private final MA5MixChannel[] mixChannels = new MA5MixChannel[CHANNEL_COUNT];
+        private int phraseVolume = 127, phrasePanpot = 64;
+        private long mixFrame, mixServiceTick, mixServiceEnd, nextMixControlFrame;
+
 
         private Ma5Adapter(Sampler sampler, float sampleRate) {
             this(sampler, sampleRate, false);
@@ -182,7 +185,8 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
             this.sampler = sampler;
             this.phraseChannels = phraseChannels;
             this.sampleRate = sampleRate;
-            this.softbankBridge = new MA5SoftbankBridge(sampler, this);
+            for (int i=0;i<CHANNEL_COUNT;i++) mixChannels[i]=new MA5MixChannel(Math.round(sampleRate));
+            this.softbankBridge = new MA5SoftbankBridge(sampler, this, phraseChannels ? 1 : 0);
         }
 
         @Override
@@ -198,7 +202,8 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
             pcmNotes.clear();
             fmNotes.clear();
             Arrays.fill(phraseVoiceTypes, 0);
-            resetChannels();
+            mixFrame=mixServiceTick=mixServiceEnd=nextMixControlFrame=0;
+            resetChannels(true);
         }
 
         @Override public void repeat() {
@@ -209,29 +214,33 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
             for (PcmNote note : pcmNotes) note.core.stop();
             if (sampler instanceof remexa.audio.smaf.ma3.MA3Sampler ma3)
                 for (int channel = 0; channel < CHANNEL_COUNT; channel++) ma3.stopChannel(channel);
-            resetChannels();
+            resetChannels(false);
         }
 
-        private void resetChannels() {
+        private void resetChannels(boolean initial) {
             Arrays.fill(phraseKeysDown, false);
             for (FmNote note : fmNotes) note.core.setModulation(0);
             for (PcmNote note : pcmNotes) { note.core.setModulation(0); note.core.hold(false); }
             Arrays.fill(channelModulation, 0);
-            Arrays.fill(channelBanks, 0);
+            Arrays.fill(channelBanks, phraseChannels ? 1 : 0);
             Arrays.fill(channelPrograms, 0);
             Arrays.fill(channelDrumBanks, false);
             Arrays.fill(channelVolumes, 1.0f);
-            Arrays.fill(internalChannelVolumes, 1.0f);
+            Arrays.fill(internalChannelVolumes, phraseChannels ? 100/127f : 1f);
             Arrays.fill(internalChannelExpressions, 1.0f);
-            Arrays.fill(channelPans, 0.0f);
+            Arrays.fill(channelPans, midiPanToFloat(phrasePanpot));
             for (int channel = 0; channel < CHANNEL_COUNT; channel++) {
                 pitchBendSemitones[channel] = 0.0f;
                 pitchBendRanges[channel] = DEFAULT_PITCH_BEND_RANGE_SEMITONES;
                 sampler.drumEnable(channel, false);
-                sampler.bankChange(channel, 0);
+                sampler.bankChange(channel, channelBanks[channel]);
                 sampler.programChange(channel, 0);
-                sampler.volume(channel, 1);
-                sampler.panpot(channel, 0);
+                int value=phraseChannels ? 100 : 127;
+                mixChannels[channel].reset(value,initial && phraseChannels ? 100 : phraseVolume,64);
+                mixChannels[channel].volume(value,phraseVolume);
+                mixChannels[channel].pan(phrasePanpot);
+                sampler.volume(channel,MA5MixTables.channelLevel(value,phraseVolume)/32768f);
+                sampler.panpot(channel,channelPans[channel]);
                 sampler.modulation(channel, 0);
                 sampler.pitchBendRange(channel, normalizePitchBendRange(DEFAULT_PITCH_BEND_RANGE_SEMITONES));
                 sampler.pitchBend(channel, 0.0f);
@@ -405,11 +414,23 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
         }
 
         @Override
-        public void volume(int channel, float volume) {
-            if (channel >= 0 && channel < CHANNEL_COUNT) {
-                channelVolumes[channel] = Math.max(0.0f, volume);
-            }
-            sampler.volume(channel, volume);
+        public void volume(int channel, float volume) { channelLevels(channel,volume,1); }
+
+        @Override public void channelLevels(int channel, float volume, float expression) {
+            if (channel < 0 || channel >= CHANNEL_COUNT) return;
+            internalChannelVolumes[channel]=clampUnit(volume);
+            internalChannelExpressions[channel]=clampUnit(expression);
+            applyInternalEffectiveVolume(channel);
+        }
+
+        @Override public void phraseVolume(int value) {
+            phraseVolume=Math.clamp(value,0,127);
+            for (int ch=0;ch<CHANNEL_COUNT;ch++) applyInternalEffectiveVolume(ch);
+        }
+
+        @Override public void phrasePanpot(int value) {
+            phrasePanpot=Math.clamp(value,0,127);
+            for (int ch=0;ch<CHANNEL_COUNT;ch++) panpot(ch,midiPanToFloat(phrasePanpot));
         }
 
         @Override
@@ -426,15 +447,28 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
         public void panpot(int channel, float panpot) {
             if (channel >= 0 && channel < CHANNEL_COUNT) {
                 channelPans[channel] = Math.max(-1.0f, Math.min(1.0f, panpot));
+                mixChannels[channel].pan(Math.clamp(Math.round(64+panpot*63),0,127));
             }
             sampler.panpot(channel, panpot);
         }
 
         @Override
         public void render(float[] samples, int offset, int frames, float left, float right, boolean erase, boolean clamp) {
-            sampler.render(samples, offset, frames, left, right, erase, false);
-            renderFmVoices(samples, offset, frames, left, right);
-            renderPcmOverlay(samples, offset, frames, left, right, false);
+            int remaining=frames, target=offset;
+            while (remaining > 0) {
+                boolean latch=mixFrame >= nextMixControlFrame;
+                if (latch) {
+                    if (mixFrame >= mixServiceEnd) mixServiceEnd=++mixServiceTick*Math.round(sampleRate)/1000;
+                    nextMixControlFrame=Math.min(mixServiceEnd,mixFrame+32);
+                    for (MA5MixChannel channel : mixChannels) channel.latch();
+                }
+                int count=(int)Math.min(remaining,nextMixControlFrame-mixFrame);
+                sampler.render(samples,target,count,left,right,erase,false);
+                renderFmVoices(samples,target,count,left,right);
+                renderPcmOverlay(samples,target,count,left,right,false);
+                for (MA5MixChannel channel : mixChannels) channel.advance(count-(latch?1:0));
+                mixFrame+=count; remaining-=count; target+=count*2;
+            }
             if (clamp) for (int i = offset, end = offset + frames * 2; i < end; i++) {
                 samples[i] = Math.clamp(samples[i], -1.0f, 1.0f);
             }
@@ -558,7 +592,11 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
         }
 
         private void applyInternalEffectiveVolume(int channel) {
-            volume(channel, internalChannelVolumes[channel] * internalChannelExpressions[channel]);
+            int volume=Math.clamp(Math.round(internalChannelVolumes[channel]*127),0,127);
+            int expression=MA5MixTables.combinedLevel(Math.round(internalChannelExpressions[channel]*127),phraseVolume);
+            mixChannels[channel].volume(volume,expression);
+            channelVolumes[channel]=MA5MixTables.channelLevel(volume,expression)/32768f;
+            sampler.volume(channel,channelVolumes[channel]);
         }
 
         private static float clampUnit(float value) {
@@ -608,17 +646,16 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
         private void renderFmVoices(float[] samples, int offset, int frames, float left, float right) {
             for (Iterator<FmNote> it = fmNotes.iterator(); it.hasNext();) {
                 FmNote note = it.next();
-                // Retain the existing host FM pan/gain staging. Native output
-                // filtering and final mixed gain are calibrated separately.
-                float voiceRight = note.program.panpot() / (note.program.panpot() <= 15 ? 30.0f : 31.0f);
-                float channelRight = (channelPans[note.channel] + 1) * .5f;
-                float gain = channelVolumes[note.channel] * note.velocity / 65536.0f;
-                float gainLeft = left * (1 - voiceRight) * (1 - channelRight) * gain;
-                float gainRight = right * voiceRight * channelRight * gain;
+                MA5MixChannel channel=mixChannels[note.channel];
+                int level=MA5MixTables.noteLevel(Math.round(note.velocity*127),false);
+                int gainLeft=MA5MixTables.gain(level,channel.volumeLevel(),channel.panLevel(false),
+                        note.program.panpot(),note.program.panpotEnable(),false,false);
+                int gainRight=MA5MixTables.gain(level,channel.volumeLevel(),channel.panLevel(true),
+                        note.program.panpot(),note.program.panpotEnable(),false,true);
                 for (int i = 0; i < frames; i++) {
                     int value = note.core.nextSample();
-                    samples[offset + i * 2] += value * gainLeft;
-                    samples[offset + i * 2 + 1] += value * gainRight;
+                    samples[offset + i * 2] += ((long)value*gainLeft >> 15)*(left/32768f);
+                    samples[offset + i * 2 + 1] += ((long)value*gainRight >> 15)*(right/32768f);
                     if (!phraseChannels && note.core.isFinished()) break;
                 }
                 if (!phraseChannels && note.core.isFinished()) it.remove();
@@ -716,14 +753,17 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
                                       float left, float right, boolean clamp) {
             for (Iterator<PcmNote> it = pcmNotes.iterator(); it.hasNext();) {
                 PcmNote note = it.next();
-                double angle = (note.pan(channelPans[note.channel]) + 1) * Math.PI * .25;
-                float gain = channelVolumes[note.channel] * note.velocity * pcmGain() / 32768.0f;
-                float gainLeft = left * (float)Math.cos(angle) * gain;
-                float gainRight = right * (float)Math.sin(angle) * gain;
+                MA5MixChannel channel=mixChannels[note.channel];
+                int level=MA5MixTables.noteLevel(Math.round(note.velocity*127),false);
+                int gainLeft=MA5MixTables.gain(level,channel.volumeLevel(),channel.panLevel(false),
+                        note.voice.panpot(),note.voice.panpotEnable(),false,false);
+                int gainRight=MA5MixTables.gain(level,channel.volumeLevel(),channel.panLevel(true),
+                        note.voice.panpot(),note.voice.panpotEnable(),false,true);
+                float trim=pcmGain();
                 for (int i = 0; i < frames; i++) {
                     int value = note.core.nextSample();
-                    samples[offset + i * 2] += value * gainLeft;
-                    samples[offset + i * 2 + 1] += value * gainRight;
+                    samples[offset + i * 2] += (((value*gainLeft) >> 15)<<2)*(left*trim/32768f);
+                    samples[offset + i * 2 + 1] += (((value*gainRight) >> 15)<<2)*(right*trim/32768f);
                     if (!phraseChannels && note.core.isFinished()) break;
                 }
                 if (!phraseChannels && note.core.isFinished()) it.remove();
@@ -879,42 +919,11 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
             }
 
             private void frequency(float bend) {
-                float semitones = voice.drumVoice() ? 0 : key + 69 - PCM_REFERENCE_KEY + bend;
-                core.setFrequencyRegister((int)nativePcmRegister(sourceFrequency * hardwarePitchRatio(semitones)));
-            }
-
-            private float pan(float channelPan) {
-                return voice.panpotEnable() ? Math.clamp((voice.panpot() - 15.0f) / 15.0f, -1f, 1f) : channelPan;
+                if (voice.drumVoice()) core.setFrequencyRegister((int)nativePcmRegister(sourceFrequency));
+                else core.setFrequencyRegister(MA5PcmPitch.register(Math.round(sourceFrequency),voice.program(),key+69+60-PCM_REFERENCE_KEY+bend));
             }
 
             private void beginRelease() { core.keyOff(); }
-
-            private static float hardwarePitchRatio(float semitones) {
-                int lower = (int) Math.floor(semitones);
-                int upper = lower + 1;
-                float fraction = semitones - lower;
-                float lowerRatio = hardwarePitchRatioWhole(lower);
-                float upperRatio = hardwarePitchRatioWhole(upper);
-                return lowerRatio + (upperRatio - lowerRatio) * fraction;
-            }
-
-            private static float hardwarePitchRatioWhole(int semitones) {
-                if (semitones == 0) {
-                    return 1.0f;
-                }
-                int magnitude = Math.abs(semitones);
-                int octaves = magnitude / 12;
-                int withinOctave = magnitude % 12;
-                float downwardRatio = PCM_SEMITONE_Q15[withinOctave] / 32768.0f;
-                if (withinOctave == 0) {
-                    downwardRatio = 1.0f;
-                }
-                float octaveRatio = (float) Math.scalb(1.0f, octaves);
-                if (semitones > 0) {
-                    return octaveRatio / downwardRatio;
-                }
-                return downwardRatio / octaveRatio;
-            }
 
         }
     }

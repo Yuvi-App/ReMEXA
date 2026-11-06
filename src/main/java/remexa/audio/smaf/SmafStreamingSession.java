@@ -4,6 +4,10 @@ interface SmafStreamingSession extends AutoCloseable {
     int sampleRate();
 
     int channelCount();
+    default boolean nativeMa5Output() { return false; }
+    default boolean handlesPhraseMix() { return false; }
+    default void phraseVolume(int value) { }
+    default void phrasePanpot(int value) { }
 
     int render(float[] output, int maxFrames) throws Exception;
 

@@ -30,6 +30,7 @@ final class LinkedSmafStreamingSession implements SmafStreamingSession {
 
     @Override public int sampleRate() { return sampleRate; }
     @Override public int channelCount() { return 2; }
+    @Override public boolean nativeMa5Output() { return layers.stream().allMatch(l -> l.source.nativeMa5Output()); }
 
     @Override public int render(float[] output, int maxFrames) throws Exception {
         Arrays.fill(output, 0, maxFrames * 2, 0f);

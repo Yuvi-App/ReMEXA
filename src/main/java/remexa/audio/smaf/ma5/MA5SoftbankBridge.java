@@ -25,6 +25,7 @@ public final class MA5SoftbankBridge {
 
     private final Sampler sampler;
     private final PcmVoiceSink pcmVoiceSink;
+    private final int implicitCompactVoiceBank;
     private final Set<String> loggedPackets = new HashSet<>();
     private int implicitCompactVoiceSlot;
 
@@ -33,8 +34,13 @@ public final class MA5SoftbankBridge {
     }
 
     public MA5SoftbankBridge(Sampler sampler, PcmVoiceSink pcmVoiceSink) {
+        this(sampler, pcmVoiceSink, 0);
+    }
+
+    public MA5SoftbankBridge(Sampler sampler, PcmVoiceSink pcmVoiceSink, int implicitCompactVoiceBank) {
         this.sampler = sampler;
         this.pcmVoiceSink = pcmVoiceSink == null ? PcmVoiceSink.NOOP : pcmVoiceSink;
+        this.implicitCompactVoiceBank = implicitCompactVoiceBank & 0x7f;
     }
 
     public void reset() {
@@ -56,7 +62,9 @@ public final class MA5SoftbankBridge {
                 return true;
             }
             int slot = implicitCompactVoiceSlot++ & 0x3f;
-            voice = voice.withBankProgram(0, slot);
+            // MMMG compact EXVO slots belong to authored bank 1 (100df0a0).
+            // They carry no bank byte of their own; generic MIDI retains bank 0.
+            voice = voice.withBankProgram(implicitCompactVoiceBank, slot);
             sampler.sysEx(voice.toMa3FmAlgorithmMessage());
             pcmVoiceSink.onFmVoice(voice);
             if (SmafDebug.isEnabled("ma5", SmafDebug.Level.DEBUG)) {

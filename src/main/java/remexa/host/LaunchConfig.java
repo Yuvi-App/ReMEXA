@@ -39,6 +39,7 @@ public final class LaunchConfig {
     public static final int MIN_MOTION_SENSITIVITY_PERCENT = 25;
     public static final int MAX_MOTION_SENSITIVITY_PERCENT = 300;
     public static final int DEFAULT_PCM_MIX_PERCENT = 35;
+    public static final int DEFAULT_MA5_PCM_MIX_PERCENT = 100;
     public static final int MIN_PCM_MIX_PERCENT = 0;
     public static final int MAX_PCM_MIX_PERCENT = 100;
     public static final int DEFAULT_BLUETOOTH_PORT = 23024;
@@ -408,6 +409,10 @@ public final class LaunchConfig {
     }
 
     public static float resolveConfiguredPcmMixGain(String legacyProperty) {
+        if (MA5_PCM_GAIN_PROPERTY.equals(legacyProperty)) {
+            Float value=parsePcmMixGain(System.getProperty(legacyProperty));
+            return value == null ? pcmMixGainFromPercent(DEFAULT_MA5_PCM_MIX_PERCENT) : value;
+        }
         var legacyValue = legacyProperty == null ? null : System.getProperty(legacyProperty);
         if (legacyValue != null && !legacyValue.isBlank()) {
             return normalizePcmMixGain(legacyValue);
@@ -451,7 +456,7 @@ public final class LaunchConfig {
     }
 
     private static void applyPcmMixPercent(String property, Integer percent) {
-        var resolved = percent == null ? DEFAULT_PCM_MIX_PERCENT : clampPcmMixPercent(percent);
+        var resolved = percent == null ? (MA5_PCM_GAIN_PROPERTY.equals(property) ? DEFAULT_MA5_PCM_MIX_PERCENT : DEFAULT_PCM_MIX_PERCENT) : clampPcmMixPercent(percent);
         System.setProperty(property, Float.toString(pcmMixGainFromPercent(resolved)));
     }
 

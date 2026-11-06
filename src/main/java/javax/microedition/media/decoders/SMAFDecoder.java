@@ -1522,17 +1522,16 @@ public final class SMAFDecoder
                         midiEvent = new MidiEvent(event, totalDuration);
                         track.add(midiEvent);
                     }
-                    else if (eventType >= (byte) 0x01 && eventType <= (byte) 0x0E) // Short Expression event
+                    else if (eventType >= (byte) 0x01 && eventType <= (byte) 0x0E) // Native short channel volume
                     {
-                        smafLog(SMAF_LOG_DEBUG, SMAFDecoder.class.getPackage().getName() + "." + SMAFDecoder.class.getSimpleName() + ": " + "(short) Adding expression value 0x" + String.format("%02X", shortExpressionValues[eventType]) + "(" + shortExpressionValues[eventType] + ") to channel " + channel);
-                        setChannelMessage(event, ShortMessage.CONTROL_CHANGE, channel, 11, shortExpressionValues[eventType]);
+                        setChannelMessage(event, ShortMessage.CONTROL_CHANGE, channel, 7, shortExpressionValues[eventType]);
                         midiEvent = new MidiEvent(event, totalDuration);
                         track.add(midiEvent);
                         recordInternalLegacyYamahaStateEvent(
                                 totalDuration,
                                 handyChannelIdx >> 2,
                                 (controlEvent >> 6) & 0x03,
-                                INTERNAL_LEGACY_YAMAHA_EXPRESSION,
+                                INTERNAL_LEGACY_YAMAHA_VOLUME,
                                 shortExpressionValues[eventType] & 0x7f);
                     }
                     else if (eventType >= (byte) 0x11 && eventType <= (byte) 0x1E) // Short Pitch Bend event
@@ -1668,37 +1667,15 @@ public final class SMAFDecoder
                         smafLog(SMAF_LOG_DEBUG, SMAFDecoder.class.getPackage().getName() + "." + SMAFDecoder.class.getSimpleName() + ": " + "Ignoring reserved control event 0x35 with value 0x" + String.format("%02X", eventValue) + "(" + eventValue + ") on channel " + channel);
                     }
                     // TODO: Maybe something's missing? This gap doesn't seem normal
-                    else if (eventType == (byte) 0x36) // Expression event
+                    else if (eventType == (byte)0x36) // Native 100dcaa0: subsequent note velocity
                     {
-                        byte eventValue = (byte) (data[offset++] & 0xFF);
-
-                        smafLog(SMAF_LOG_DEBUG, SMAFDecoder.class.getPackage().getName() + "." + SMAFDecoder.class.getSimpleName() + ": " + "Adding expression value 0x" + String.format("%02X", eventValue) + "(" + eventValue + ") to channel " + channel);
-                        setChannelMessage(event, ShortMessage.CONTROL_CHANGE, channel, 11, eventValue);
-                        midiEvent = new MidiEvent(event, totalDuration);
-                        track.add(midiEvent);
-                        recordInternalLegacyYamahaStateEvent(
-                                totalDuration,
-                                handyChannelIdx >> 2,
-                                (controlEvent >> 6) & 0x03,
-                                INTERNAL_LEGACY_YAMAHA_EXPRESSION,
-                                eventValue & 0x7f);
+                        int value=data[offset++] & 0xff;
+                        if (value < 128) channelData[channel].velocity=(byte)value;
                     }
-                    else if (eventType == (byte) 0x37) // Volume event
+                    else if (eventType == (byte)0x37) // Reserved in the native MMMG interpreter
                     {
-                        byte eventValue = (byte) (data[offset++] & 0xFF);
-
-                        smafLog(SMAF_LOG_DEBUG, SMAFDecoder.class.getPackage().getName() + "." + SMAFDecoder.class.getSimpleName() + ": " + "Adding volume value 0x" + String.format("%02X", eventValue) + "(" + eventValue + ") to channel " + channel);
-                        setChannelMessage(event, ShortMessage.CONTROL_CHANGE, channel, 7, eventValue);
-                        midiEvent = new MidiEvent(event, totalDuration);
-                        track.add(midiEvent);
-                        recordInternalLegacyYamahaStateEvent(
-                                totalDuration,
-                                handyChannelIdx >> 2,
-                                (controlEvent >> 6) & 0x03,
-                                INTERNAL_LEGACY_YAMAHA_PHRASE_VOLUME,
-                                eventValue & 0x7f);
+                        offset++;
                     }
-                    // TODO: Same as above, and this gap is even bigger
                     else if (eventType == (byte) 0x3A) // Panpot event
                     {
                         byte eventValue = (byte) (data[offset++] & 0xFF);

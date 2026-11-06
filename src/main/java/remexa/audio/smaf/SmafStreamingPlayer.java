@@ -49,7 +49,8 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
 
     SmafStreamingPlayer(SmafStreamingSession session, List<SMAFDecoder.SequenceUserEvent> userEvents,
                         ClassLoader ownerClassLoader, Audio3DSource spatialSource) {
-        SharedEngine engine = sharedEngine(new OutputFormatKey(session.sampleRate(), spatialSource == null ? session.channelCount() : 2));
+        SharedEngine engine = sharedEngine(new OutputFormatKey(session.sampleRate(), spatialSource == null ? session.channelCount() : 2,
+                spatialSource == null && session.nativeMa5Output()));
         handle = engine.open(session, userEvents, ownerClassLoader, spatialSource);
         engine.prewarm();
     }
@@ -254,6 +255,7 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
 
             @Override public int sampleRate() { return member.session.sampleRate(); }
             @Override public int channelCount() { return 2; }
+            @Override public boolean nativeMa5Output() { return member.session.nativeMa5Output(); }
 
             @Override public int render(float[] data, int maxFrames) throws Exception {
                 synchronized (member.stateLock) {
@@ -332,7 +334,8 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
         }
     }
 
-    private record OutputFormatKey(int sampleRate, int channelCount) {
+    private record OutputFormatKey(int sampleRate, int channelCount, boolean nativeMa5Output) {
+        private OutputFormatKey(int sampleRate,int channelCount) { this(sampleRate,channelCount,false); }
     }
 
     private static final class SharedEngine {
@@ -346,6 +349,7 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
         private final float[] mixBuffer;
         private final float[] sessionBuffer;
         private final byte[] pcmBuffer;
+        private final remexa.audio.smaf.ma5.MA5OutputStage nativeOutput;
 
         private Thread worker;
         private SourceDataLine line;
@@ -355,6 +359,7 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
 
         private SharedEngine(OutputFormatKey formatKey) {
             this.formatKey = formatKey;
+            nativeOutput=formatKey.nativeMa5Output() ? new remexa.audio.smaf.ma5.MA5OutputStage(formatKey.sampleRate()) : null;
             this.chunkFrames = Math.max(MIN_CHUNK_FRAMES, framesForMillis(formatKey.sampleRate(), TARGET_CHUNK_MILLIS));
             this.lineBufferFrames = Math.max(
                     chunkFrames * MIN_BUFFER_CHUNKS,
@@ -642,6 +647,17 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
         }
 
         private int encodePcm(int frames) {
+            if (nativeOutput != null) {
+                for (int frame=0;frame<frames;frame++) {
+                    int i=frame*2;
+                    nativeOutput.process(Math.round(mixBuffer[i]*32768f),Math.round(mixBuffer[i+1]*32768f));
+                    int left=nativeOutput.left(),right=nativeOutput.right();
+                    pcmBuffer[i*2]=(byte)left; pcmBuffer[i*2+1]=(byte)(left>>8);
+                    pcmBuffer[i*2+2]=(byte)right; pcmBuffer[i*2+3]=(byte)(right>>8);
+                    mixBuffer[i]=mixBuffer[i+1]=0;
+                }
+                return frames*4;
+            }
             int output = 0;
             int samples = frames * formatKey.channelCount();
             for (int i = 0; i < samples; i++) {
@@ -748,12 +764,14 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
         void setVolume(int value) {
             synchronized (stateLock) {
                 volume = Math.max(0, Math.min(127, value));
+                if (session.handlesPhraseMix()) session.phraseVolume(volume);
             }
         }
 
         void setPanpot(int value) {
             synchronized (stateLock) {
                 panpot = Math.max(0, Math.min(127, value));
+                if (session.handlesPhraseMix()) session.phrasePanpot(panpot);
             }
         }
 
@@ -1095,6 +1113,7 @@ final class SmafStreamingPlayer implements SmafAudioPlayer {
         }
 
         private float[] channelGainsLocked(int channelCount) {
+            if (session.handlesPhraseMix()) { Arrays.fill(reusableChannelGains,1f); return reusableChannelGains; }
             float gain = volume / 127.0f;
             int gainCount = Math.max(1, channelCount);
             if (reusableChannelGains.length < gainCount) {
