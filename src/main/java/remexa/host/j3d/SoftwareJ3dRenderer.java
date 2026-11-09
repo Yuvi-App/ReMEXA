@@ -337,8 +337,10 @@ public final class SoftwareJ3dRenderer {
                 state.perspective = false;
                 int width = commandList[cursor++];
                 int height = commandList[cursor++];
-                state.projectionScaleX = width > 0 ? (float) surfaceWidth / width : 0.0f;
-                state.projectionScaleY = height > 0 ? (float) surfaceHeight / height : 0.0f;
+                // Parallel-size commands project into the submitted Graphics viewport,
+                // COMMAND_CLIP only crops this projection;
+                state.projectionScaleX = width > 0 ? (float) Math.max(0, clipWidth) / width : 0.0f;
+                state.projectionScaleY = height > 0 ? (float) Math.max(0, clipHeight) / height : 0.0f;
                 continue;
             }
             if (command == COMMAND_PERSPECTIVE_FOV) {

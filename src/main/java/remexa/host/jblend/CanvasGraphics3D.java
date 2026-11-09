@@ -118,8 +118,8 @@ public final class CanvasGraphics3D extends Graphics implements Graphics3D {
         int translateY = getTranslateY();
         pendingDraws.add(new CommandListDraw(
                 textures == null ? null : textures.clone(),
-                x + translateX,
-                y + translateY,
+                x,
+                y,
                 snapshotLayout(layout),
                 snapshotEffect(effect),
                 getClipX() + translateX,
