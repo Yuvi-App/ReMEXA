@@ -4,6 +4,7 @@ import remexa.audio.spatial.Audio3DSource;
 import remexa.host.runtime.MidletRuntime;
 import java.io.ByteArrayInputStream;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
@@ -57,7 +58,8 @@ public final class YamahaMidiPlayback implements AutoCloseable {
     public static YamahaMidiPlayback create(byte[] source, String synthType,
                                            Audio3DSource spatialSource) throws Exception {
         var sourceSequence = MidiSystem.getSequence(new ByteArrayInputStream(source));
-        var timedEvents = collectTimedEvents(sourceSequence);
+        var timing = collectMidiTiming(sourceSequence);
+        var timedEvents = timing.events();
         var renderSequence = normalizeMidiTiming(timedEvents);
         var sequenceSysExEvents = extractSequencerSpecificYamahaEvents(timedEvents);
         var engine = resolveEngine(synthType, timedEvents, sequenceSysExEvents);
@@ -70,7 +72,7 @@ public final class YamahaMidiPlayback implements AutoCloseable {
                 Collections.emptyList(),
                 Collections.emptyList()
         ));
-        return new YamahaMidiPlayback(session, sourceSequence.getMicrosecondLength(), spatialSource);
+        return new YamahaMidiPlayback(session, timing.durationMicros(), spatialSource);
     }
 
     private static List<byte[]> drumStartupPackets() {
@@ -242,6 +244,10 @@ public final class YamahaMidiPlayback implements AutoCloseable {
     }
 
     private static List<TimedMidiEvent> collectTimedEvents(Sequence source) {
+        return collectMidiTiming(source).events();
+    }
+
+    private static MidiTiming collectMidiTiming(Sequence source) {
         var rawEvents = new ArrayList<RawMidiEvent>();
         for (var track : source.getTracks()) {
             for (int index = 0; index < track.size(); index++) {
@@ -253,6 +259,7 @@ public final class YamahaMidiPlayback implements AutoCloseable {
                 .comparingLong(RawMidiEvent::tick)
                 .thenComparingInt(RawMidiEvent::order));
 
+        long setupMicros = hasLegacySetupBar(source, rawEvents) ? 250_000L : 0L;
         var events = new ArrayList<TimedMidiEvent>(rawEvents.size());
         long previousTick = 0L;
         double currentMillis = 0.0;
@@ -261,13 +268,57 @@ public final class YamahaMidiPlayback implements AutoCloseable {
             long deltaTicks = Math.max(0L, event.tick() - previousTick);
             currentMillis += ticksToMillis(source, deltaTicks, tempoMicrosPerQuarter);
             previousTick = event.tick();
-            events.add(new TimedMidiEvent(Math.max(0L, Math.round(currentMillis)), event.message()));
+            events.add(new TimedMidiEvent(
+                    Math.max(0L, Math.round(currentMillis - setupMicros / 1_000.0)), event.message()));
             Integer tempo = tempoFrom(event.message());
             if (tempo != null) {
                 tempoMicrosPerQuarter = tempo;
             }
         }
-        return events;
+        return new MidiTiming(events, Math.max(0L, source.getMicrosecondLength() - setupMicros));
+    }
+
+    /**
+     * The SoftBank SMF loader (M7_EmuSmw7 10049550) recognizes a setup bar
+     * using GM reset, 1/4 meter and 250000 us/qn at tick zero, followed by a
+     * tempo event at one quarter note. It processes that bar without charging
+     * its 250 ms to playback. Keep setup events in order at time zero, rather
+     * than trimming to the first note, so authored rests remain intact.
+     */
+    private static boolean hasLegacySetupBar(Sequence source, List<RawMidiEvent> events) {
+        if (source.getDivisionType() != Sequence.PPQ) return false;
+        boolean reset = false, meter = false, tempo = false, legacy = false, boundary = false;
+        for (var event : events) {
+            if (event.tick() > source.getResolution()) break;
+            MidiMessage message = event.message();
+            if (event.tick() < source.getResolution()) {
+                // Do not consume authored audio or a tempo-changing intro.
+                if (message instanceof ShortMessage shortMessage
+                        && shortMessage.getCommand() == ShortMessage.NOTE_ON
+                        && shortMessage.getData2() > 0) return false;
+                Integer value = tempoFrom(message);
+                if (value != null && value != 250_000) return false;
+            }
+            if (event.tick() == source.getResolution() && tempoFrom(message) != null) {
+                boundary = true;
+            }
+            if (event.tick() != 0L) continue;
+            if (message instanceof SysexMessage sysex) {
+                reset |= Arrays.equals(sysex.getData(), new byte[]{0x7e, 0x7f, 9, 1, (byte) 0xf7});
+            } else if (message instanceof MetaMessage meta) {
+                byte[] data = meta.getData();
+                if (meta.getType() == 0x58 && data.length >= 2) {
+                    meter |= data[0] == 1 && data[1] == 2;
+                } else if (meta.getType() == TEMPO_META_TYPE) {
+                    tempo |= Integer.valueOf(250_000).equals(tempoFrom(meta));
+                } else if (meta.getType() == SEQUENCER_SPECIFIC_META_TYPE && data.length >= 4) {
+                    legacy |= (data[0] & 0xff) == MANUFACTURER_YAMAHA
+                            && data[1] == FAMILY_LEGACY_SOFTBANK
+                            && data[2] == LEGACY_SOFTBANK_SUBFAMILY;
+                }
+            }
+        }
+        return reset && meter && tempo && legacy && boundary;
     }
 
     private static double ticksToMillis(Sequence sequence, long ticks, int tempoMicrosPerQuarter) {
@@ -306,5 +357,8 @@ public final class YamahaMidiPlayback implements AutoCloseable {
     }
 
     private record TimedMidiEvent(long tickMillis, MidiMessage message) {
+    }
+
+    private record MidiTiming(List<TimedMidiEvent> events, long durationMicros) {
     }
 }

@@ -424,7 +424,7 @@ final class SmafSequencedRenderer {
         switch (controller) {
             case 0 -> {
                 channelState.bankMsb = value;
-                sampler.bankChange(channel, value);
+                sampler.bankSelect(channel, channelState.bankMsb, channelState.bankLsb);
             }
             case 1 -> sampler.modulation(channel, value);
             case 7 -> {
@@ -436,7 +436,10 @@ final class SmafSequencedRenderer {
                 channelState.expression = value / 127.0f;
                 sampler.channelLevels(channel, channelState.channelVolume, channelState.expression);
             }
-            case 32 -> channelState.bankLsb = value;
+            case 32 -> {
+                channelState.bankLsb = value;
+                sampler.bankSelect(channel, channelState.bankMsb, channelState.bankLsb);
+            }
             case 100 -> channelState.rpnLsb = value;
             case 101 -> channelState.rpnMsb = value;
             case 6 -> {
@@ -456,7 +459,7 @@ final class SmafSequencedRenderer {
             }
             case 121 -> {
                 channelState.reset();
-                sampler.bankChange(channel, 0);
+                sampler.bankSelect(channel, 0, 0);
                 sampler.volume(channel, 1.0f);
                 sampler.panpot(channel, 0.0f);
                 sampler.modulation(channel, 0);

@@ -13,6 +13,11 @@ import java.util.Arrays;
  * two VM35 global bytes ({@code pan/basic-octave}, {@code lfo/pan-enable/alg})
  * followed by four 7-byte FM operator records. Those packets do not carry an
  * explicit bank/program; the bridge assigns them to slots in EXVO order.</p>
+ *
+ * <p>Legacy SoftBank SMF metadata ({@code 43 02 02 08}) has a complete
+ * bank/program header and ten bytes per operator. Its VM5 register bytes
+ * feed the existing FM core; {@code legacyPayload} preserves the additional
+ * operator and envelope data for subsequent MA7 calibration.</p>
  */
 public record MA5VoiceProgram(int bankLsb,
                               int program,
@@ -24,7 +29,8 @@ public record MA5VoiceProgram(int bankLsb,
                               boolean panpotEnable,
                               int algorithm,
                               Operator[] operators,
-                              byte[] payload) {
+                              byte[] payload,
+                              byte[] legacyPayload) {
     private static final int MANUFACTURER_YAMAHA = 0x43;
     private static final int FAMILY_VM5 = 0x05;
     private static final int FAMILY_VM5_COMPACT_4OP = 0x04;
@@ -38,6 +44,14 @@ public record MA5VoiceProgram(int bankLsb,
     public MA5VoiceProgram {
         operators = operators.clone();
         payload = payload.clone();
+        legacyPayload = legacyPayload.clone();
+    }
+
+    public MA5VoiceProgram(int bankLsb, int program, boolean drumVoice, int drumKey,
+                           int panpot, int basicOctave, int lfo, boolean panpotEnable,
+                           int algorithm, Operator[] operators, byte[] payload) {
+        this(bankLsb, program, drumVoice, drumKey, panpot, basicOctave, lfo,
+                panpotEnable, algorithm, operators, payload, new byte[0]);
     }
 
     public static MA5VoiceProgram decode(byte[] packet) {
@@ -45,6 +59,7 @@ public record MA5VoiceProgram(int bankLsb,
         if (body.length < 3 || (body[0] & 0xff) != MANUFACTURER_YAMAHA) {
             return null;
         }
+        if (body[1] == 2 && body[2] == 2) return decodeLegacy(body);
         if ((body[1] & 0xff) == FAMILY_VM5_COMPACT_4OP
                 && (body[2] & 0xff) == VM5_FM_PROGRAM) {
             return decodeCompact4Op(body);
@@ -80,6 +95,32 @@ public record MA5VoiceProgram(int bankLsb,
                 lfo, panpotEnable, algorithm, operators, payload);
     }
 
+    private static MA5VoiceProgram decodeLegacy(byte[] body) {
+        if (body.length < 13 || body[3] != 8) return null;
+        MA5VoiceAddress address = MA5VoiceAddress.decodeLegacy(body);
+        int type = body[9] & 7;
+        if (address == null || (type != 0 && type != 2)) return null;
+        int algorithm = body[12] & 7;
+        int count = operatorCount(algorithm);
+        int expected = 13 + count * 10 + (type == 2 ? 16 : 0);
+        if (body.length != expected) return null;
+
+        byte[] payload = new byte[GLOBAL_BYTES + count * OPERATOR_BYTES];
+        System.arraycopy(body, 10, payload, 0, GLOBAL_BYTES);
+        payload[2] &= (byte) 0xef;
+        for (int i = 0; i < count; i++)
+            System.arraycopy(body, 13 + i * 10, payload, GLOBAL_BYTES + i * OPERATOR_BYTES, OPERATOR_BYTES);
+        Operator[] operators = new Operator[count];
+        for (int i = 0; i < count; i++) operators[i] = Operator.decode(i, payload, GLOBAL_BYTES + i * OPERATOR_BYTES);
+        boolean drum = address.bankMsb() == 0x7d;
+        int bank = (drum ? address.program() : address.bankLsb()) + 1;
+        int program = drum ? address.keyLow() - 36 : address.program();
+        return new MA5VoiceProgram(bank, program, drum, payload[0] & 0xff,
+                (payload[1] >> 3) & 31, payload[1] & 3, (payload[2] >> 6) & 3,
+                (payload[2] & 0x20) != 0, algorithm, operators, payload,
+                Arrays.copyOfRange(body, 11, body.length));
+    }
+
     private static MA5VoiceProgram decodeCompact4Op(byte[] body) {
         int expectedLength = COMPACT_4OP_HEADER_BYTES + COMPACT_4OP_GLOBAL_BYTES + 4 * OPERATOR_BYTES;
         if (body.length != expectedLength) {
@@ -110,7 +151,7 @@ public record MA5VoiceProgram(int bankLsb,
 
     public MA5VoiceProgram withBankProgram(int bankLsb, int program) {
         return new MA5VoiceProgram(bankLsb & 0x7f, program & 0x7f, drumVoice, drumKey, panpot,
-                basicOctave, lfo, panpotEnable, algorithm, operators, payload);
+                basicOctave, lfo, panpotEnable, algorithm, operators, payload, legacyPayload);
     }
 
     public int operatorCount() {

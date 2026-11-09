@@ -14,6 +14,10 @@ interface SmafSynthAdapter {
 
     void bankChange(int channel, int bank);
 
+    default void bankSelect(int channel, int msb, int lsb) {
+        bankChange(channel, msb);
+    }
+
     void programChange(int channel, int program);
 
     void pitchBend(int channel, float semitones);

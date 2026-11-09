@@ -200,19 +200,18 @@ public record MA5PcmVoiceProgram(int bankLsb,
             return null;
         }
 
-        int bankMsb = body[4] & 0xff;
+        MA5VoiceAddress address = MA5VoiceAddress.decodeLegacy(body);
+        if (address == null) return null;
+        int bankMsb = address.bankMsb();
         int pcmType = body[9] & 0xff;
         if (pcmType != LEGACY_PCM_TYPE_COMPACT && pcmType != LEGACY_PCM_TYPE_EXTENDED) {
             return null;
         }
         if (bankMsb == LEGACY_MELODIC_BANK_MSB) {
             int program = body[6] & 0x7f;
-            int keyLow = body[7] & 0x7f;
-            int keyHigh = body[8] & 0x7f;
+            int keyLow = address.keyLow();
+            int keyHigh = address.keyHigh();
             byte[] payload = legacyPayload(body);
-            if (u16(payload, 13) <= 0) {
-                return null;
-            }
             return fromPayload(
                     LEGACY_MELODIC_BANK_MSB,
                     program,
@@ -225,9 +224,6 @@ public record MA5PcmVoiceProgram(int bankLsb,
             int midiNote = body[7] & 0x7f;
             int drumKey = Math.max(0, midiNote - LEGACY_MIDI_DRUM_BASE);
             byte[] payload = legacyPayload(body);
-            if (u16(payload, 13) <= 0) {
-                return null;
-            }
             return fromPayload(
                     LEGACY_DRUM_BANK_MSB,
                     drumKey,

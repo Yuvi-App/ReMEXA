@@ -7,7 +7,7 @@ import java.util.HashSet;
 import java.util.Set;
 
 /**
- * Loads MA-5/VM5 voice packets into the current temporary FM renderer.
+ * Loads VM5 and legacy SoftBank SMF instruments into the synthesizer.
  */
 public final class MA5SoftbankBridge {
     private static final int MANUFACTURER_YAMAHA = 0x43;
@@ -17,8 +17,6 @@ public final class MA5SoftbankBridge {
     private static final int LEGACY_SOFTBANK_SUBFAMILY = 0x02;
     private static final int LEGACY_SOFTBANK_VOICE = 0x08;
     private static final int LEGACY_SOFTBANK_WAVE_DATA = 0x0a;
-    private static final int LEGACY_MELODIC_BANK_MSB = 0x7c;
-    private static final int LEGACY_DRUM_BANK_MSB = 0x7d;
     private static final int VM5_WAVE_DATA = 0x00;
     private static final int VM5_FM_PROGRAM = 0x01;
     private static final int VM5_PCM_PROGRAM = 0x02;
@@ -132,12 +130,18 @@ public final class MA5SoftbankBridge {
             return true;
         }
         if (packetType == LEGACY_SOFTBANK_VOICE && body.length >= 5) {
-            int bankMsb = body[4] & 0xff;
-            if (bankMsb == LEGACY_MELODIC_BANK_MSB || bankMsb == LEGACY_DRUM_BANK_MSB) {
+            MA5VoiceAddress address = MA5VoiceAddress.decodeLegacy(body);
+            if (address != null) {
+                MA5VoiceProgram fmVoice = MA5VoiceProgram.decode(message);
+                if (fmVoice != null) {
+                    pcmVoiceSink.onLegacyFmVoice(address, fmVoice);
+                    debugOnce("legacy-fm " + address + " " + fmVoice.summary(), message);
+                    return true;
+                }
                 MA5PcmVoiceProgram pcmVoice = MA5PcmVoiceProgram.decode(message);
                 if (pcmVoice != null) {
-                    pcmVoiceSink.onPcmVoice(pcmVoice);
-                    debugOnce("legacy-pcm " + pcmVoice.summary(), message);
+                    pcmVoiceSink.onLegacyPcmVoice(address, pcmVoice);
+                    debugOnce("legacy-pcm " + address + " " + pcmVoice.summary(), message);
                     return true;
                 }
                 debugOnce("legacy-fm-or-unsupported", message);
@@ -225,5 +229,13 @@ public final class MA5SoftbankBridge {
         void onPcmVoice(MA5PcmVoiceProgram voice);
 
         default void onFmVoice(MA5VoiceProgram voice) { }
+
+        default void onLegacyFmVoice(MA5VoiceAddress address, MA5VoiceProgram voice) {
+            onFmVoice(voice);
+        }
+
+        default void onLegacyPcmVoice(MA5VoiceAddress address, MA5PcmVoiceProgram voice) {
+            onPcmVoice(voice);
+        }
     }
 }

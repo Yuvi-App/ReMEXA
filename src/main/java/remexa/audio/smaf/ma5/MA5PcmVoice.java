@@ -26,12 +26,12 @@ public final class MA5PcmVoice {
     private boolean controlsChanged = true;
 
     public MA5PcmVoice(MA5PcmVoiceProgram program, int[] wave, int sampleRate) {
-        if (wave.length == 0 || program.endPoint() <= 0 || sampleRate < 1000)
+        if (wave.length == 0 || program.endPoint() < 0 || sampleRate < 1000)
             throw new IllegalArgumentException("Invalid MA5 PCM wave/rate");
         this.program = program;
         this.wave = wave;
         this.sampleRate = sampleRate;
-        end = Math.min(program.endPoint(), wave.length);
+        end = Math.max(1, Math.min(program.endPoint(), wave.length));
         loop = Math.clamp(program.loopPoint(), 0, end);
         lfoStep = MA5FmTables.lfoStep(sampleRate, program.lfo());
         totalLevel = MA5FmTables.totalLevel(program.totalLevel());
