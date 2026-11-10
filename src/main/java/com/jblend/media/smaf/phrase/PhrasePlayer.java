@@ -94,6 +94,15 @@ public final class PhrasePlayer {
         }
     }
 
+    public synchronized void releaseTrack(PhraseTrack track) {
+        ensureActive();
+        java.util.Objects.requireNonNull(track, "track");
+        if (tracks.contains(track)) {
+            track.resetPlayback();
+            reservedTracks.remove(track);
+        }
+    }
+
     public synchronized void disposeAudioTrack(AudioPhraseTrack track) {
         int index = audioTracks.indexOf(track);
         if (index >= 0) {

@@ -48,12 +48,7 @@ public class PhrasePlayer {
 
     public void disposeTrack (com.j_phone.amuse.PhraseTrack t) {
         remexa.probes.SdkStubSupport.log("com.j_phone.amuse.PhrasePlayer", "disposeTrack", t);
-        delegate.disposeTrack(t == null ? null : t.delegate());
-        synchronized (tracks) {
-            if (t != null) {
-                tracks.remove(t.delegate());
-            }
-        }
+        delegate.releaseTrack(java.util.Objects.requireNonNull(t, "track").delegate());
     }
 
     public void kill () {
