@@ -322,9 +322,11 @@ public final class LaunchConfig {
     }
 
     public enum MidiSynthType {
-        HOST("host", "Host MIDI"),
-        MA3("ma3", "Yamaha MA3"),
-        MA5("ma5", "Yamaha MA5");
+        AUTO("auto", "Auto"),
+        MA3("ma3", "MA3"),
+        MA5("ma5", "MA5"),
+        MA7("ma7", "MA7"),
+        HOST("host", "Host MIDI");
 
         private final String id;
         private final String label;
@@ -348,6 +350,12 @@ public final class LaunchConfig {
                 return null;
             }
             var normalized = candidate.trim().toLowerCase(Locale.ROOT);
+            if ("yamaha ma3".equals(normalized)) {
+                return MA3;
+            }
+            if ("yamaha ma5".equals(normalized)) {
+                return MA5;
+            }
             for (var type : values()) {
                 if (type.id.equals(normalized) || type.label.toLowerCase(Locale.ROOT).equals(normalized)) {
                     return type;
@@ -358,16 +366,16 @@ public final class LaunchConfig {
 
         public static MidiSynthType normalize(String candidate) {
             var type = fromId(candidate);
-            return type == null ? MA3 : type;
+            return type == null ? AUTO : type;
         }
 
         public static MidiSynthType resolveConfigured() {
-            return normalize(System.getProperty(MIDI_SYNTH_PROPERTY, MA3.id));
+            return normalize(System.getProperty(MIDI_SYNTH_PROPERTY, AUTO.id));
         }
     }
 
     public static void applyMidiSynthType(MidiSynthType synthType) {
-        var resolved = synthType == null ? MidiSynthType.MA3 : synthType;
+        var resolved = synthType == null ? MidiSynthType.AUTO : synthType;
         System.setProperty(MIDI_SYNTH_PROPERTY, resolved.id());
     }
 

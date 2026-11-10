@@ -278,7 +278,7 @@ public final class ReMEXA {
             }
             if ("--midi-synth".equals(argument)) {
                 if (index + 1 >= arguments.size()) {
-                    System.err.println("ReMEXA launch failed: --midi-synth requires 'host', 'ma3', or 'ma5'.");
+                    System.err.println("ReMEXA launch failed: --midi-synth requires 'auto', 'ma3', 'ma5', 'ma7', or 'host'.");
                     return new LaunchRequest(null, showHostDetails, true, null, 0, false, null, null, null, null, hostScale, frameRateOption, null, null, null, null, null);
                 }
                 index++;
@@ -512,12 +512,12 @@ public final class ReMEXA {
                 continue;
             }
             if (index + 1 >= arguments.size()) {
-                System.err.println("ReMEXA launch failed: --midi-synth requires 'host', 'ma3', or 'ma5'.");
+                System.err.println("ReMEXA launch failed: --midi-synth requires 'auto', 'ma3', 'ma5', 'ma7', or 'host'.");
                 return override;
             }
             var candidate = LaunchConfig.MidiSynthType.fromId(arguments.get(++index));
             if (candidate == null) {
-                System.err.println("ReMEXA launch failed: unsupported MIDI synth. Use 'host', 'ma3', or 'ma5'.");
+                System.err.println("ReMEXA launch failed: unsupported MIDI synth. Use 'auto', 'ma3', 'ma5', 'ma7', or 'host'.");
                 return override;
             }
             override = candidate;

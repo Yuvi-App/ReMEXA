@@ -734,7 +734,8 @@ public final class Manager {
                     .toLowerCase(Locale.ROOT);
             if (YamahaMidiPlayback.SYNTH_AUTO.equals(midiSynth)
                     || YamahaMidiPlayback.SYNTH_MA3.equals(midiSynth)
-                    || YamahaMidiPlayback.SYNTH_MA5.equals(midiSynth)) {
+                    || YamahaMidiPlayback.SYNTH_MA5.equals(midiSynth)
+                    || YamahaMidiPlayback.SYNTH_MA7.equals(midiSynth)) {
                 try {
                     yamahaPlayback = YamahaMidiPlayback.create(source, midiSynth, spatialSource);
                     yamahaPlayback.setCompletionListener(this::notifyEndOfMedia);

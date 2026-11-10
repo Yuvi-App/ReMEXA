@@ -25,6 +25,7 @@ public final class YamahaMidiPlayback implements AutoCloseable {
     public static final String SYNTH_AUTO = "auto";
     public static final String SYNTH_MA3 = "ma3";
     public static final String SYNTH_MA5 = "ma5";
+    public static final String SYNTH_MA7 = "ma7";
     public static final int READY = SmafPlayback.READY;
     public static final int PLAYING = SmafPlayback.PLAYING;
     public static final int PAUSED = SmafPlayback.PAUSED;
@@ -43,6 +44,7 @@ public final class YamahaMidiPlayback implements AutoCloseable {
     private static final int MIDI_PERCUSSION_CHANNEL = 9;
     private static final Ma3SmafAudioEngine MA3_ENGINE = new Ma3SmafAudioEngine();
     private static final Ma5SmafAudioEngine MA5_ENGINE = new Ma5SmafAudioEngine();
+    private static final Ma7PlaceholderAudioEngine MA7_ENGINE = new Ma7PlaceholderAudioEngine();
 
     private final SmafStreamingPlayer player;
     private final long durationMicros;
@@ -66,6 +68,9 @@ public final class YamahaMidiPlayback implements AutoCloseable {
         var renderSequence = normalizeMidiTiming(timedEvents);
         var sequenceSysExEvents = extractSequencerSpecificYamahaEvents(timedEvents);
         var engine = resolveEngine(synthType, timedEvents, sequenceSysExEvents);
+        if (SmafDebug.isEnabled("midi", SmafDebug.Level.INFO)) {
+            SmafDebug.info("midi", "MIDI synth mode=" + synthType + " backend=" + engine.id());
+        }
         var session = engine.openStream(new SmafRenderContext(
                 source.clone(),
                 renderSequence,
@@ -137,6 +142,9 @@ public final class YamahaMidiPlayback implements AutoCloseable {
     private static YamahaAudioEngine resolveEngine(String synthType,
                                                   List<TimedMidiEvent> timedEvents,
                                                   List<SMAFDecoder.SequenceSysExEvent> sequenceSysExEvents) {
+        if (SYNTH_MA7.equalsIgnoreCase(synthType)) {
+            return MA7_ENGINE;
+        }
         if (SYNTH_MA5.equalsIgnoreCase(synthType)) {
             return MA5_ENGINE;
         }

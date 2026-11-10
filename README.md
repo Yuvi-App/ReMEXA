@@ -80,7 +80,7 @@ Useful launch options:
 --frame-rate uncapped|5|10|15|20|30|60
 --rotate-widescreen-keys
 --no-rotate-widescreen-keys
---midi-synth host|ma3|ma5
+--midi-synth auto|ma3|ma5|ma7|host
 --bluetooth-backend off|virtual-ip
 --bluetooth-role host|client
 --bluetooth-local-name <name>

@@ -85,13 +85,13 @@ public final class HostUiSettings {
         return LaunchConfig.MidiSynthType.normalize(
                 RemexaPreferences.ui().get(
                         RemexaPreferences.MIDI_SYNTH_TYPE_KEY,
-                        LaunchConfig.MidiSynthType.MA3.id()
+                        LaunchConfig.MidiSynthType.AUTO.id()
                 )
         );
     }
 
     public static void setMidiSynthType(LaunchConfig.MidiSynthType synthType) {
-        var resolved = synthType == null ? LaunchConfig.MidiSynthType.MA3 : synthType;
+        var resolved = synthType == null ? LaunchConfig.MidiSynthType.AUTO : synthType;
         RemexaPreferences.ui().put(RemexaPreferences.MIDI_SYNTH_TYPE_KEY, resolved.id());
     }
 

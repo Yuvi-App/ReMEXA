@@ -453,6 +453,9 @@ public final class LauncherFrame extends JFrame {
         for (var synthType : LaunchConfig.SmafSynthType.values()) {
             var audioItem = new JRadioButtonMenuItem(synthType.toString(), HostUiSettings.smafSynthType() == synthType);
             styleMenuItem(audioItem);
+            if (synthType == LaunchConfig.SmafSynthType.MA7) {
+                audioItem.setToolTipText("MA7 is not implemented yet; uses Host MIDI.");
+            }
             audioGroup.add(audioItem);
             audioItem.addActionListener(event -> {
                 HostUiSettings.setSmafSynthType(synthType);
@@ -475,6 +478,9 @@ public final class LauncherFrame extends JFrame {
                     HostUiSettings.midiSynthType() == midiSynthType
             );
             styleMenuItem(midiItem);
+            if (midiSynthType == LaunchConfig.MidiSynthType.MA7) {
+                midiItem.setToolTipText("MA7 is not implemented yet; uses Host MIDI.");
+            }
             midiGroup.add(midiItem);
             midiItem.addActionListener(event -> {
                 HostUiSettings.setMidiSynthType(midiSynthType);
