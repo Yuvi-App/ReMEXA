@@ -15,6 +15,7 @@ public final class PhraseTrack {
     public static final int READY = 2;
     public static final int PLAYING = 3;
     public static final int PAUSED = 5;
+    public static final int DEFAULT_VOLUME = 100;
 
     private final int id;
     private final List<PhraseTrack> slaveTracks = new java.util.concurrent.CopyOnWriteArrayList<>();
@@ -26,13 +27,13 @@ public final class PhraseTrack {
     private volatile GroupLoopCoordinator loopCoordinator;
     private final ClassLoader ownerClassLoader;
     private volatile boolean disposed;
-    private volatile int volume = 127;
+    private volatile int volume = DEFAULT_VOLUME;
     private volatile int panpot = 64;
     private volatile boolean muted;
     private volatile boolean terminalEventDispatched;
 
     PhraseTrack(int id, ClassLoader ownerClassLoader) {
-        this(id, ownerClassLoader, 127);
+        this(id, ownerClassLoader, DEFAULT_VOLUME);
     }
 
     PhraseTrack(int id, ClassLoader ownerClassLoader, int volume) {

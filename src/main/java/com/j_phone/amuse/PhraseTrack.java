@@ -1,7 +1,7 @@
 package com.j_phone.amuse;
 
 public class PhraseTrack {
-    public static final int DEFAULT_VOLUME = 127;
+    public static final int DEFAULT_VOLUME = com.jblend.media.smaf.phrase.PhraseTrack.DEFAULT_VOLUME;
     private final com.jblend.media.smaf.phrase.PhraseTrack delegate;
     private com.j_phone.amuse.Phrase currentPhrase;
     private com.j_phone.amuse.PhraseTrack syncMaster;
