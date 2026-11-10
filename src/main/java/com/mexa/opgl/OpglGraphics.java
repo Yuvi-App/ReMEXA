@@ -719,6 +719,22 @@ public class OpglGraphics {
     public void glBlendFunc (int sfactor, int dfactor) {
         remexa.probes.SdkStubSupport.log("com.mexa.opgl.OpglGraphics", "glBlendFunc", sfactor, dfactor);
         ensureBound();
+        boolean validSource = switch (sfactor) {
+            case GL_ZERO, GL_ONE, GL_DST_COLOR, GL_ONE_MINUS_DST_COLOR,
+                    GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_DST_ALPHA,
+                    GL_ONE_MINUS_DST_ALPHA, GL_SRC_ALPHA_SATURATE -> true;
+            default -> false;
+        };
+        boolean validDestination = switch (dfactor) {
+            case GL_ZERO, GL_ONE, GL_SRC_COLOR, GL_ONE_MINUS_SRC_COLOR,
+                    GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_DST_ALPHA,
+                    GL_ONE_MINUS_DST_ALPHA -> true;
+            default -> false;
+        };
+        if (!validSource || !validDestination) {
+            setError(GL_INVALID_ENUM);
+            return;
+        }
         blendSrcFactor = sfactor;
         blendDstFactor = dfactor;
     }
