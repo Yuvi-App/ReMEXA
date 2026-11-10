@@ -44,6 +44,7 @@ final class SmafSequencedRenderer {
     private final int tailRenderLimitFrames;
     private final boolean phraseClock;
     private final boolean nativeMa5Output;
+    private final float defaultChannelVolume;
 
     SmafSequencedRenderer(String rendererName, SmafSynthProvider synthProvider) {
         this(rendererName, synthProvider, DEFAULT_OUTPUT_SAMPLE_RATE);
@@ -59,12 +60,18 @@ final class SmafSequencedRenderer {
 
     SmafSequencedRenderer(String rendererName,SmafSynthProvider synthProvider,int outputSampleRate,
                           boolean phraseClock,boolean nativeMa5Output) {
+        this(rendererName,synthProvider,outputSampleRate,phraseClock,nativeMa5Output,1.0f);
+    }
+
+    SmafSequencedRenderer(String rendererName,SmafSynthProvider synthProvider,int outputSampleRate,
+                          boolean phraseClock,boolean nativeMa5Output,float defaultChannelVolume) {
         this.rendererName = rendererName;
         this.synthProvider = synthProvider;
         this.outputSampleRate = outputSampleRate;
         this.tailRenderLimitFrames = outputSampleRate * 10;
         this.phraseClock = phraseClock;
         this.nativeMa5Output = nativeMa5Output;
+        this.defaultChannelVolume = defaultChannelVolume;
     }
 
     SmafRenderedAudio render(Sequence sequence,
@@ -136,10 +143,10 @@ final class SmafSequencedRenderer {
         return new StreamingSession(sequence, sysExEvents, startupPackets, pcmClipData, pcmTriggers);
     }
 
-    private static MidiChannelState[] createChannelStates() {
+    private MidiChannelState[] createChannelStates() {
         MidiChannelState[] states = new MidiChannelState[16];
         for (int i = 0; i < states.length; i++) {
-            states[i] = new MidiChannelState();
+            states[i] = new MidiChannelState(defaultChannelVolume);
         }
         return states;
     }
@@ -460,7 +467,7 @@ final class SmafSequencedRenderer {
             case 121 -> {
                 channelState.reset();
                 sampler.bankSelect(channel, 0, 0);
-                sampler.volume(channel, 1.0f);
+                sampler.volume(channel, channelState.channelVolume);
                 sampler.panpot(channel, 0.0f);
                 sampler.modulation(channel, 0);
                 sampler.pitchBendRange(channel, channelState.pitchBendRangeSemitones);
@@ -813,19 +820,25 @@ final class SmafSequencedRenderer {
     }
 
     private static final class MidiChannelState {
+        private final float defaultVolume;
         private int bankMsb;
         private int bankLsb;
-        private float channelVolume = 1.0f;
+        private float channelVolume;
         private float expression = 1.0f;
         private float pitchBendRangeSemitones = 2.0f;
         private int pitchBendRaw = 8192;
         private int rpnMsb = 127;
         private int rpnLsb = 127;
 
+        private MidiChannelState(float defaultVolume) {
+            this.defaultVolume = defaultVolume;
+            channelVolume = defaultVolume;
+        }
+
         private void reset() {
             bankMsb = 0;
             bankLsb = 0;
-            channelVolume = 1.0f;
+            channelVolume = defaultVolume;
             expression = 1.0f;
             pitchBendRangeSemitones = 2.0f;
             pitchBendRaw = 8192;

@@ -73,6 +73,9 @@ public final class MA5SoftbankBridge {
         if (family == FAMILY_LEGACY_SOFTBANK && type == LEGACY_SOFTBANK_SUBFAMILY) {
             return legacySoftbankSysEx(message, body);
         }
+        if (family == FAMILY_LEGACY_SOFTBANK && type == 0) {
+            return namedSoftbankSysEx(message, body);
+        }
         if (family != FAMILY_VM5) {
             return false;
         }
@@ -110,6 +113,28 @@ public final class MA5SoftbankBridge {
             return true;
         }
         debugOnce("vm5-unsupported", message);
+        return true;
+    }
+
+    private boolean namedSoftbankSysEx(byte[] message, byte[] body) {
+        if (body.length < 4) return true;
+        if (body[3] == 1) {
+            MA5WaveDataPacket wave = MA5WaveDataPacket.decode(message);
+            if (wave != null) {
+                pcmVoiceSink.onWaveData(wave);
+                pcmVoiceSink.onLegacyPresetFallback();
+            }
+            else debugOnce("named-wave-invalid", message);
+        } else if (body[3] == 0) {
+            MA5VoiceAddress address = MA5VoiceAddress.decodeLegacy(body);
+            if (address == null) { debugOnce("named-address-invalid", message); return true; }
+            MA5VoiceProgram fm = MA5VoiceProgram.decode(message);
+            MA5PcmVoiceProgram pcm = MA5PcmVoiceProgram.decode(message);
+            if (fm != null) pcmVoiceSink.onLegacyFmVoice(address, fm);
+            else if (pcm != null) pcmVoiceSink.onLegacyPcmVoice(address, pcm);
+            else { debugOnce("named-voice-invalid", message); return true; }
+            pcmVoiceSink.onLegacyPresetFallback();
+        } else debugOnce("named-control-pending", message);
         return true;
     }
 
@@ -214,6 +239,8 @@ public final class MA5SoftbankBridge {
     }
 
     public interface PcmVoiceSink {
+        /** The older named dialect permits native ROM fallback for missing melodic voices. */
+        default void onLegacyPresetFallback() { }
         PcmVoiceSink NOOP = new PcmVoiceSink() {
             @Override
             public void onWaveData(MA5WaveDataPacket waveData) {

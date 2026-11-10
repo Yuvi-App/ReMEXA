@@ -139,9 +139,24 @@ public final class MA5MixTables {
         return COMBINED_VOLUME[Math.min(192, LOG_VOLUME[Math.clamp(first, 0, 127)] + LOG_VOLUME[Math.clamp(second, 0, 127)])];
     }
 
-    public static int channelIndex(int volume, int expression) {
-        return VOLUME_INDEX[combinedLevel(volume, expression) >> 2];
+    public static int combinedLevel(int volume, int expression, int hostVolume, int yamahaMaster, int midiMaster) {
+        int attenuation = LOG_VOLUME[Math.clamp(volume, 0, 127)]
+                + LOG_VOLUME[Math.clamp(expression, 0, 127)]
+                + LOG_VOLUME[Math.clamp(hostVolume, 0, 127)]
+                + LOG_VOLUME[Math.clamp(yamahaMaster, 0, 127)]
+                + LOG_VOLUME[Math.clamp(midiMaster, 0, 127)];
+        return COMBINED_VOLUME[Math.min(192, attenuation)];
     }
+
+    public static int channelIndex(int combinedLevel) {
+        return VOLUME_INDEX[Math.clamp(combinedLevel, 0, 127) >> 2];
+    }
+
+    public static int channelIndex(int volume, int expression) {
+        return channelIndex(combinedLevel(volume, expression));
+    }
+
+    public static int channelLevel(int combinedLevel) { return LEVEL[channelIndex(combinedLevel) >>> 16]; }
 
     public static int channelLevel(int volume, int expression) { return LEVEL[channelIndex(volume,expression) >>> 16]; }
 

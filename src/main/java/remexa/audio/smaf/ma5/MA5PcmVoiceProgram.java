@@ -119,7 +119,16 @@ public record MA5PcmVoiceProgram(int bankLsb,
     }
 
     public static MA5PcmVoiceProgram decode(byte[] packet) {
-        byte[] body = normalize(packet);
+        byte[] body = MA5VoiceAddress.isNamedMetadata(packet) ? packet.clone() : normalize(packet);
+        if (MA5VoiceAddress.isNamedVoice(body)) {
+            if (body.length != 41 || body[24] != 1) return null;
+            MA5VoiceAddress address = MA5VoiceAddress.decodeLegacy(body);
+            if (address == null) return null;
+            boolean drum = address.bankMsb() == LEGACY_DRUM_BANK_MSB;
+            return fromPayload((drum ? address.program() : address.bankLsb()) + 1,
+                    drum ? Math.max(0, address.keyLow() - 36) : address.program(),
+                    drum, 0, 127, Arrays.copyOfRange(body, 25, 41));
+        }
         MA5PcmVoiceProgram legacyVoice = decodeLegacySoftbankVoice(body);
         if (legacyVoice != null) {
             return legacyVoice;
@@ -167,6 +176,14 @@ public record MA5PcmVoiceProgram(int bankLsb,
     /** Looping follows LP/EP */
     public boolean repeatMode() {
         return loopPoint < endPoint;
+    }
+
+    MA5PcmVoiceProgram withRomWave(int id) {
+        return new MA5PcmVoiceProgram(bankLsb, program, drumVoice, frequencySetting,
+                panpot, panpotEnable, lfo, attackRate, decayRate, sustainRate, releaseRate,
+                sustainLevel, totalLevel, amplitudeModDepth, vibratoDepth, ignoreKeyOff,
+                sustain, amplitudeModEnabled, vibratoEnabled, loopPoint, endPoint,
+                true, id, keyLow, keyHigh, payload);
     }
 
     /** SoftBank phrase note convention. */

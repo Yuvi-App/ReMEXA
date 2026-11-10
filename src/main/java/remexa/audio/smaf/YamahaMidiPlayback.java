@@ -1,6 +1,9 @@
 package remexa.audio.smaf;
 
 import remexa.audio.spatial.Audio3DSource;
+import remexa.audio.smaf.ma5.MA5VoiceProgram;
+import remexa.audio.smaf.ma5.MA5PcmVoiceProgram;
+import remexa.audio.smaf.ma5.MA5WaveDataPacket;
 import remexa.host.runtime.MidletRuntime;
 import java.io.ByteArrayInputStream;
 import java.util.ArrayList;
@@ -193,7 +196,9 @@ public final class YamahaMidiPlayback implements AutoCloseable {
     }
 
     private static boolean looksLikeMa5Packet(byte[] packet) {
-        byte[] body = normalizeVendorBody(packet);
+        boolean namedMetadata = packet != null && packet.length >= 4
+                && packet[0] == 0x43 && packet[1] == 2 && packet[2] == 0;
+        byte[] body = namedMetadata ? packet : normalizeVendorBody(packet);
         if (body.length < 3 || (body[0] & 0xff) != MANUFACTURER_YAMAHA) {
             return false;
         }
@@ -206,6 +211,11 @@ public final class YamahaMidiPlayback implements AutoCloseable {
         }
         int subfamily = body[2] & 0xff;
         int packetType = body[3] & 0xff;
+        if (subfamily == 0) {
+            return MA5VoiceProgram.decode(body) != null
+                    || MA5PcmVoiceProgram.decode(body) != null
+                    || MA5WaveDataPacket.decode(body) != null;
+        }
         return subfamily == LEGACY_SOFTBANK_SUBFAMILY
                 && (packetType == LEGACY_SOFTBANK_VOICE || packetType == LEGACY_SOFTBANK_WAVE);
     }

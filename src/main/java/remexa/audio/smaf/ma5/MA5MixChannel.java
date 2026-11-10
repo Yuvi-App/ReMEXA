@@ -13,12 +13,17 @@ public final class MA5MixChannel {
     }
 
     public void reset(int value, int expression, int pan) {
-        volume.set(MA5MixTables.channelIndex(value, expression), false);
+        reset(MA5MixTables.combinedLevel(value, expression), pan);
+    }
+
+    public void reset(int combinedLevel, int pan) {
+        volume.set(MA5MixTables.channelIndex(combinedLevel), false);
         left.set(MA5MixTables.panIndex(pan, false), false);
         right.set(MA5MixTables.panIndex(pan, true), false);
     }
 
     public void volume(int value, int expression) { volume.set(MA5MixTables.channelIndex(value, expression), true); }
+    public void volume(int combinedLevel) { volume.set(MA5MixTables.channelIndex(combinedLevel), true); }
     public void pan(int value) { left.set(MA5MixTables.panIndex(value, false), true); right.set(MA5MixTables.panIndex(value, true), true); }
 
     /** The hardware samples these buffers at each 32-sample/1-ms subdivision. */

@@ -7,6 +7,7 @@ import remexa.audio.smaf.ma5.MA5PcmVoiceProgram;
 import remexa.audio.smaf.ma5.MA5PcmVoice;
 import remexa.audio.smaf.ma5.MA5MixChannel;
 import remexa.audio.smaf.ma5.MA5MixTables;
+import remexa.audio.smaf.ma5.MA5MidiVolume;
 import remexa.audio.smaf.ma5.MA5PcmPitch;
 import remexa.audio.smaf.ma5.MA5FmVoice;
 import remexa.audio.smaf.ma5.MA5VoiceProgram;
@@ -14,6 +15,7 @@ import remexa.audio.smaf.ma5.MA5VoiceAddress;
 import remexa.audio.smaf.ma5.MA5SoftbankBridge;
 import remexa.audio.smaf.ma5.MA5WaveDataPacket;
 import remexa.audio.smaf.ma5.MA5WaveRom;
+import remexa.audio.smaf.ma5.MA5PresetBank;
 import remexa.host.LaunchConfig;
 
 import java.util.ArrayList;
@@ -33,6 +35,7 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
     private static final int MA5_OUTPUT_SAMPLE_RATE =
             Integer.getInteger("remexa.ma5SampleRate", 48_000);
     private final SmafSequencedRenderer renderer;
+    private final SmafSequencedRenderer midiRenderer;
     private final SmafSequencedRenderer phraseRenderer;
 
     Ma5SmafAudioEngine() {
@@ -44,6 +47,9 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
             Sampler sampler = provider.instance(sampleRate);
             return new Ma5Adapter(sampler, sampleRate);
         }, MA5_OUTPUT_SAMPLE_RATE, false, true);
+        midiRenderer = new SmafSequencedRenderer("MA5 MIDI", sampleRate ->
+                new Ma5Adapter(provider.instance(sampleRate), sampleRate, false, true),
+                MA5_OUTPUT_SAMPLE_RATE, false, true, 100/127f);
         phraseRenderer = new SmafSequencedRenderer("MA5 phrase", sampleRate ->
                 new Ma5Adapter(provider.instance(sampleRate), sampleRate, true), MA5_OUTPUT_SAMPLE_RATE, true);
     }
@@ -92,6 +98,8 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
 
     private SmafSequencedRenderer renderer(SmafRenderContext context) {
         byte[] source = context.source();
+        if (source != null && source.length >= 4 && source[0] == 'M' && source[1] == 'T'
+                && source[2] == 'h' && source[3] == 'd') return midiRenderer;
         if (source != null) for (int offset = 8; offset + 8 <= source.length;) {
             if (source[offset] == 'M' && source[offset + 1] == 'M'
                     && source[offset + 2] == 'M' && source[offset + 3] == 'G') return phraseRenderer;
@@ -151,10 +159,12 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
 
         private final Sampler sampler;
         private final boolean phraseChannels;
+        private final MA5MidiVolume midiVolume;
         private final boolean[] phraseKeysDown = new boolean[CHANNEL_COUNT];
         private final int[] phraseVoiceTypes = new int[CHANNEL_COUNT];
         private final float sampleRate;
         private final MA5SoftbankBridge softbankBridge;
+        private boolean legacyPresetFallback;
         private final float[] pitchBendSemitones = new float[CHANNEL_COUNT];
         private final float[] pitchBendRanges = new float[CHANNEL_COUNT];
         private final int[] channelBanks = new int[CHANNEL_COUNT];
@@ -188,8 +198,13 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
         }
 
         private Ma5Adapter(Sampler sampler, float sampleRate, boolean phraseChannels) {
+            this(sampler, sampleRate, phraseChannels, false);
+        }
+
+        private Ma5Adapter(Sampler sampler, float sampleRate, boolean phraseChannels, boolean midiControls) {
             this.sampler = sampler;
             this.phraseChannels = phraseChannels;
+            this.midiVolume = midiControls ? new MA5MidiVolume() : null;
             this.sampleRate = sampleRate;
             for (int i=0;i<CHANNEL_COUNT;i++) mixChannels[i]=new MA5MixChannel(Math.round(sampleRate));
             this.softbankBridge = new MA5SoftbankBridge(sampler, this, phraseChannels ? 1 : 0);
@@ -197,6 +212,8 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
 
         @Override
         public void reset() {
+            legacyPresetFallback = false;
+            if (midiVolume != null) midiVolume.reset();
             sampler.reset();
             softbankBridge.reset();
             pcmPrograms.clear();
@@ -235,7 +252,7 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
             Arrays.fill(channelPrograms, 0);
             Arrays.fill(channelDrumBanks, false);
             Arrays.fill(channelVolumes, 1.0f);
-            Arrays.fill(internalChannelVolumes, phraseChannels ? 100/127f : 1f);
+            Arrays.fill(internalChannelVolumes, phraseChannels || midiVolume != null ? 100/127f : 1f);
             Arrays.fill(internalChannelExpressions, 1.0f);
             Arrays.fill(channelPans, midiPanToFloat(phrasePanpot));
             for (int channel = 0; channel < CHANNEL_COUNT; channel++) {
@@ -244,11 +261,16 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
                 sampler.drumEnable(channel, false);
                 sampler.bankChange(channel, channelBanks[channel]);
                 sampler.programChange(channel, 0);
-                int value=phraseChannels ? 100 : 127;
-                mixChannels[channel].reset(value,initial && phraseChannels ? 100 : phraseVolume,64);
-                mixChannels[channel].volume(value,phraseVolume);
+                int value=phraseChannels || midiVolume != null ? 100 : 127;
+                if (midiVolume != null) {
+                    mixChannels[channel].reset(midiVolume.combinedLevel(value,127,phraseVolume),64);
+                } else {
+                    mixChannels[channel].reset(value,initial && phraseChannels ? 100 : phraseVolume,64);
+                    mixChannels[channel].volume(value,phraseVolume);
+                }
                 mixChannels[channel].pan(phrasePanpot);
-                sampler.volume(channel,MA5MixTables.channelLevel(value,phraseVolume)/32768f);
+                sampler.volume(channel,(midiVolume == null ? MA5MixTables.channelLevel(value,phraseVolume)
+                        : MA5MixTables.channelLevel(midiVolume.combinedLevel(value,127,phraseVolume)))/32768f);
                 sampler.panpot(channel,channelPans[channel]);
                 sampler.modulation(channel, 0);
                 sampler.pitchBendRange(channel, normalizePitchBendRange(DEFAULT_PITCH_BEND_RANGE_SEMITONES));
@@ -508,6 +530,10 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
 
         @Override
         public void sysEx(int sourceBank, byte[] message) {
+            if (midiVolume != null && midiVolume.sysEx(message)) {
+                for (int channel=0;channel<CHANNEL_COUNT;channel++) applyInternalEffectiveVolume(channel);
+                return;
+            }
             if (applyInternalSoftbankControl(sourceBank, message)) {
                 return;
             }
@@ -620,6 +646,13 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
 
         private void applyInternalEffectiveVolume(int channel) {
             int volume=Math.clamp(Math.round(internalChannelVolumes[channel]*127),0,127);
+            if (midiVolume != null) {
+                int level=midiVolume.combinedLevel(volume,Math.round(internalChannelExpressions[channel]*127),phraseVolume);
+                mixChannels[channel].volume(level);
+                channelVolumes[channel]=MA5MixTables.channelLevel(level)/32768f;
+                sampler.volume(channel,channelVolumes[channel]);
+                return;
+            }
             int expression=MA5MixTables.combinedLevel(Math.round(internalChannelExpressions[channel]*127),phraseVolume);
             mixChannels[channel].volume(volume,expression);
             channelVolumes[channel]=MA5MixTables.channelLevel(volume,expression)/32768f;
@@ -673,6 +706,11 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
             registerLegacy(new LegacyVoice(address, null, voice));
         }
 
+        @Override
+        public void onLegacyPresetFallback() {
+            legacyPresetFallback = true;
+        }
+
         private void registerLegacy(LegacyVoice voice) {
             List<LegacyVoice> programs = legacyPrograms.computeIfAbsent(
                     voice.address.programKey(), ignored -> new ArrayList<>());
@@ -701,7 +739,9 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
             if (channel < 0 || channel >= CHANNEL_COUNT) return null;
             if (isLegacyBank(channelBanks[channel])) {
                 LegacyVoice voice = legacyProgram(channel, key);
-                return voice == null ? null : voice.fm;
+                if (voice != null) return voice.fm;
+                return legacyPresetFallback && channelBanks[channel] == LEGACY_MELODIC_BANK_MSB
+                        ? MA5PresetBank.fm(channelPrograms[channel], key + 69) : null;
             }
             return channelDrumBanks[channel] || (!phraseChannels && channel == MIDI_PERCUSSION_CHANNEL)
                     ? fmDrumVoices.get(programKey(channelBanks[channel], key + 69 - MA5_DRUM_KEY_MIDI_BASE))
@@ -754,7 +794,9 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
             }
             if (isLegacyBank(channelBanks[channel])) {
                 LegacyVoice voice = legacyProgram(channel, key);
-                return voice == null ? null : voice.pcm;
+                if (voice != null) return voice.pcm;
+                return legacyPresetFallback && channelBanks[channel] == LEGACY_MELODIC_BANK_MSB
+                        ? MA5PresetBank.pcm(channelPrograms[channel], key + 69) : null;
             }
             int midiNote = key + 69;
             if (channelDrumBanks[channel] || (!phraseChannels && channel == MIDI_PERCUSSION_CHANNEL)) {
@@ -792,6 +834,8 @@ final class Ma5SmafAudioEngine implements YamahaAudioEngine {
                 return null;
             }
             if (!voice.romWave()) return pcmWaves.get(voice.waveId());
+            int[] special = MA5PresetBank.specialWave(voice);
+            if (special != null) return special;
             return voice.waveId() < PcmRom.WAVES.length ? PcmRom.WAVES[voice.waveId()] : null;
         }
 

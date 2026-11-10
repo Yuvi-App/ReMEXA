@@ -55,11 +55,12 @@ public record MA5VoiceProgram(int bankLsb,
     }
 
     public static MA5VoiceProgram decode(byte[] packet) {
-        byte[] body = normalize(packet);
+        byte[] body = MA5VoiceAddress.isNamedMetadata(packet) ? packet.clone() : normalize(packet);
         if (body.length < 3 || (body[0] & 0xff) != MANUFACTURER_YAMAHA) {
             return null;
         }
         if (body[1] == 2 && body[2] == 2) return decodeLegacy(body);
+        if (MA5VoiceAddress.isNamedVoice(body)) return decodeNamed(body);
         if ((body[1] & 0xff) == FAMILY_VM5_COMPACT_4OP
                 && (body[2] & 0xff) == VM5_FM_PROGRAM) {
             return decodeCompact4Op(body);
@@ -119,6 +120,26 @@ public record MA5VoiceProgram(int bankLsb,
                 (payload[1] >> 3) & 31, payload[1] & 3, (payload[2] >> 6) & 3,
                 (payload[2] & 0x20) != 0, algorithm, operators, payload,
                 Arrays.copyOfRange(body, 11, body.length));
+    }
+
+    private static MA5VoiceProgram decodeNamed(byte[] body) {
+        if (body.length < 28 || body[24] != 0) return null;
+        MA5VoiceAddress address = MA5VoiceAddress.decodeLegacy(body);
+        if (address == null) return null;
+        int algorithm = body[27] & 7;
+        int count = operatorCount(algorithm);
+        if (body.length != 28 + count * OPERATOR_BYTES) return null;
+        byte[] payload = Arrays.copyOfRange(body, 25, body.length);
+        payload[2] &= (byte) 0xef;
+        Operator[] operators = new Operator[count];
+        for (int i = 0; i < count; i++)
+            operators[i] = Operator.decode(i, payload, GLOBAL_BYTES + i * OPERATOR_BYTES);
+        boolean drum = address.bankMsb() == 0x7d;
+        return new MA5VoiceProgram((drum ? address.program() : address.bankLsb()) + 1,
+                drum ? Math.max(0, address.keyLow() - 36) : address.program(), drum,
+                payload[0] & 0xff, (payload[1] >> 3) & 31, payload[1] & 3,
+                (payload[2] >> 6) & 3, (payload[2] & 0x20) != 0,
+                algorithm, operators, payload);
     }
 
     private static MA5VoiceProgram decodeCompact4Op(byte[] body) {

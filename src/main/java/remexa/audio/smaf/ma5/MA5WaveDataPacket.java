@@ -23,7 +23,12 @@ public record MA5WaveDataPacket(int waveId,
     }
 
     public static MA5WaveDataPacket decode(byte[] packet) {
-        byte[] body = normalize(packet);
+        byte[] body = MA5VoiceAddress.isNamedMetadata(packet) ? packet.clone() : normalize(packet);
+        if (MA5VoiceAddress.isNamedMetadata(body) && body[3] == 1) {
+            if (body.length <= 22 || (body[20] & 0xff) > 127 || body[21] != 0) return null;
+            byte[] data = Arrays.copyOfRange(body, 22, body.length);
+            return new MA5WaveDataPacket(body[20] & 0xff, data.length, data);
+        }
         if (body.length > LEGACY_WAVE_HEADER_BYTES
                 && (body[0] & 0xff) == MANUFACTURER_YAMAHA
                 && (body[1] & 0xff) == FAMILY_LEGACY_SOFTBANK
