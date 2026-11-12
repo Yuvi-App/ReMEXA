@@ -1,17 +1,23 @@
 package remexa.audio.smaf;
 
+import remexa.audio.smaf.ma3.MA3Sampler;
 import remexa.audio.smaf.ma3.MA3SamplerProvider;
 import remexa.audio.smaf.ma3.MA3SoftbankBridge;
 import remexa.audio.smaf.ma3.Sampler;
 
 final class Ma3SmafAudioEngine implements YamahaAudioEngine {
     private final SmafSequencedRenderer renderer;
+    private final SmafSequencedRenderer phraseRenderer;
 
     Ma3SmafAudioEngine() {
         MA3SamplerProvider provider = new MA3SamplerProvider();
         renderer = new SmafSequencedRenderer("MA3", sampleRate -> {
             Sampler sampler = provider.instance(sampleRate);
-            return new Ma3Adapter(sampler, new MA3SoftbankBridge(sampler));
+            return new Ma3Adapter(sampler, new MA3SoftbankBridge(sampler), false);
+        });
+        phraseRenderer = new SmafSequencedRenderer("MA3 phrase", sampleRate -> {
+            Sampler sampler = provider.instance(sampleRate);
+            return new Ma3Adapter(sampler, new MA3SoftbankBridge(sampler), true);
         });
     }
 
@@ -27,7 +33,7 @@ final class Ma3SmafAudioEngine implements YamahaAudioEngine {
 
     @Override
     public SmafRenderedAudio render(SmafRenderContext context) throws Exception {
-        return renderer.render(
+        return renderer(context).render(
                 context.sequence(),
                 context.sequenceSysExEvents(),
                 YamahaAudioEngine.startupAndExclusivePackets(context),
@@ -37,12 +43,28 @@ final class Ma3SmafAudioEngine implements YamahaAudioEngine {
 
     @Override
     public SmafStreamingSession openStream(SmafRenderContext context) throws Exception {
-        return renderer.openStream(
+        return renderer(context).openStream(
                 context.sequence(),
                 context.sequenceSysExEvents(),
                 YamahaAudioEngine.startupAndExclusivePackets(context),
                 context.pcmClipData(),
                 context.pcmTriggers());
+    }
+
+    private SmafSequencedRenderer renderer(SmafRenderContext context) {
+        byte[] source = context.source();
+        if (source != null && source.length >= 8 && source[0] == 'M' && source[1] == 'M'
+                && source[2] == 'M' && source[3] == 'D') {
+            for (int offset = 8; offset + 8L <= source.length;) {
+                long length = Integer.toUnsignedLong(java.nio.ByteBuffer.wrap(source, offset + 4, 4).getInt());
+                long next = offset + 8L + length;
+                if (next > source.length) break;
+                if (source[offset] == 'M' && source[offset + 1] == 'M'
+                        && source[offset + 2] == 'M' && source[offset + 3] == 'G') return phraseRenderer;
+                offset = (int) next;
+            }
+        }
+        return renderer;
     }
 
     private static final class Ma3Adapter implements SmafSynthAdapter {
@@ -56,18 +78,22 @@ final class Ma3SmafAudioEngine implements YamahaAudioEngine {
         private static final int INTERNAL_LEGACY_YAMAHA_PROGRAM = 0x0b;
         private static final int INTERNAL_LEGACY_YAMAHA_BANK = 0x0c;
         private static final int INTERNAL_LEGACY_YAMAHA_EXPRESSION = 0x0d;
+        private static final int INTERNAL_LEGACY_YAMAHA_RELEASE = 0x0e;
         private static final int INTERNAL_LEGACY_YAMAHA_PITCH = 0x11;
         private static final float DEFAULT_PITCH_BEND_RANGE_SEMITONES = 2.0f;
         private static final float SEMITONES_PER_OCTAVE = 12.0f;
 
         private final Sampler sampler;
         private final MA3SoftbankBridge softbankBridge;
+        private final boolean phraseChannels;
+        private final boolean[] phraseKeysDown = new boolean[CHANNEL_COUNT];
         private final float[] pitchBendSemitones = new float[CHANNEL_COUNT];
         private final float[] pitchBendRanges = new float[CHANNEL_COUNT];
 
-        private Ma3Adapter(Sampler sampler, MA3SoftbankBridge softbankBridge) {
+        private Ma3Adapter(Sampler sampler, MA3SoftbankBridge softbankBridge, boolean phraseChannels) {
             this.sampler = sampler;
             this.softbankBridge = softbankBridge;
+            this.phraseChannels = phraseChannels;
         }
 
         @Override
@@ -75,6 +101,7 @@ final class Ma3SmafAudioEngine implements YamahaAudioEngine {
             sampler.reset();
             softbankBridge.reset();
             for (int channel = 0; channel < CHANNEL_COUNT; channel++) {
+                phraseKeysDown[channel] = false;
                 pitchBendSemitones[channel] = 0.0f;
                 pitchBendRanges[channel] = DEFAULT_PITCH_BEND_RANGE_SEMITONES;
                 sampler.drumEnable(channel, false);
@@ -95,11 +122,24 @@ final class Ma3SmafAudioEngine implements YamahaAudioEngine {
 
         @Override
         public void keyOff(int channel, int key) {
+            if (phraseChannels && sampler instanceof MA3Sampler ma3) {
+                if (channel < 0 || channel >= CHANNEL_COUNT) return;
+                phraseKeysDown[channel] = false;
+                ma3.keyOffPhrase(channel);
+                return;
+            }
             sampler.keyOff(channel, key);
         }
 
         @Override
         public void keyOn(int channel, int key, float velocity) {
+            if (phraseChannels && sampler instanceof MA3Sampler ma3) {
+                if (channel < 0 || channel >= CHANNEL_COUNT) return;
+                // A replacement gate retunes the active voice without restarting its envelope.
+                ma3.keyOnPhrase(channel, key, velocity, phraseKeysDown[channel]);
+                phraseKeysDown[channel] = true;
+                return;
+            }
             sampler.keyOn(channel, key, velocity);
         }
 
@@ -178,6 +218,13 @@ final class Ma3SmafAudioEngine implements YamahaAudioEngine {
             int rawValue = message[3] & 0xff;
             int value = rawValue & 0x7f;
             switch (command) {
+                case INTERNAL_LEGACY_YAMAHA_RELEASE -> {
+                    if (phraseChannels) {
+                        // Release keys before keyOffPhrase clears the channels key map.
+                        for (int key = -69; key < 59; key++) sampler.keyOff(logicalChannel, key);
+                        keyOff(logicalChannel, 0);
+                    }
+                }
                 case INTERNAL_LEGACY_YAMAHA_SELECTOR, INTERNAL_LEGACY_YAMAHA_PROGRAM ->
                         sampler.programChange(logicalChannel, value);
                 case INTERNAL_LEGACY_YAMAHA_BANK -> {
