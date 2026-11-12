@@ -64,7 +64,7 @@ import remexa.ui.AppIcons;
 import remexa.ui.RemexaTheme;
 
 public final class LauncherFrame extends JFrame {
-    private static final String DEFAULT_VERSION = "0.2.0";
+    private static final String DEFAULT_VERSION = "0.2.1";
     private static final Color APP_BACKGROUND = RemexaTheme.APP_BACKGROUND;
     private static final Color MENU_BACKGROUND = RemexaTheme.MENU_BACKGROUND;
     private static final Color MENU_BORDER = RemexaTheme.MENU_BORDER;
