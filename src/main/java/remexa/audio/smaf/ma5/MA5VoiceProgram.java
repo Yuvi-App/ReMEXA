@@ -18,6 +18,9 @@ import java.util.Arrays;
  * bank/program header and ten bytes per operator. Its VM5 register bytes
  * feed the existing FM core; {@code legacyPayload} preserves the additional
  * operator and envelope data for subsequent MA7 calibration.</p>
+ *
+ * <p>VMA {@code 43 03 00} records contain five-byte operators and implicit
+ * EXVO slots. Their conversion follows M5_EmuSmw5 {@code 100a4330}.</p>
  */
 public record MA5VoiceProgram(int bankLsb,
                               int program,
@@ -32,6 +35,7 @@ public record MA5VoiceProgram(int bankLsb,
                               byte[] payload,
                               byte[] legacyPayload) {
     private static final int MANUFACTURER_YAMAHA = 0x43;
+    private static final int FAMILY_VMA = 0x03;
     private static final int FAMILY_VM5 = 0x05;
     private static final int FAMILY_VM5_COMPACT_4OP = 0x04;
     private static final int VM5_FM_PROGRAM = 0x01;
@@ -55,12 +59,14 @@ public record MA5VoiceProgram(int bankLsb,
     }
 
     public static MA5VoiceProgram decode(byte[] packet) {
-        byte[] body = MA5VoiceAddress.isNamedMetadata(packet) ? packet.clone() : normalize(packet);
+        byte[] body = MA5VoiceAddress.isNamedMetadata(packet) || isRawVmaVoice(packet)
+                ? packet.clone() : normalize(packet);
         if (body.length < 3 || (body[0] & 0xff) != MANUFACTURER_YAMAHA) {
             return null;
         }
         if (body[1] == 2 && body[2] == 2) return decodeLegacy(body);
         if (MA5VoiceAddress.isNamedVoice(body)) return decodeNamed(body);
+        if ((body[1] & 0xff) == FAMILY_VMA && body[2] == 0) return decodeVma(body);
         if ((body[1] & 0xff) == FAMILY_VM5_COMPACT_4OP
                 && (body[2] & 0xff) == VM5_FM_PROGRAM) {
             return decodeCompact4Op(body);
@@ -94,6 +100,42 @@ public record MA5VoiceProgram(int bankLsb,
         }
         return new MA5VoiceProgram(bankLsb, program, (body[3] & 0x80) != 0, drumKey, panpot, basicOctave,
                 lfo, panpotEnable, algorithm, operators, payload);
+    }
+
+    private static boolean isRawVmaVoice(byte[] packet) {
+        // Only framed packets have a terminator.
+        return packet != null && (packet.length == 17 || packet.length == 27)
+                && packet[0] == MANUFACTURER_YAMAHA && packet[1] == FAMILY_VMA && packet[2] == 0;
+    }
+
+    private static MA5VoiceProgram decodeVma(byte[] body) {
+        if (body.length != 17 && body.length != 27) return null;
+        int header = body[5] & 0xff;
+        int algorithm = header & 7;
+        int count = operatorCount(algorithm);
+        if (body.length < 7 + count * 5) return null;
+        byte[] payload = new byte[GLOBAL_BYTES + count * OPERATOR_BYTES];
+        payload[1] = (byte) ((body[6] & 3) | 0x80);
+        payload[2] = (byte) (header & 0xc7);
+        Operator[] operators = new Operator[count];
+        for (int i = 0; i < count; i++) {
+            int source = 7 + i * 5, target = GLOBAL_BYTES + i * OPERATOR_BYTES;
+            int flags = body[source] & 0xff, rates = body[source + 1] & 0xff;
+            int modulation = body[source + 4] & 0xff;
+            // EGT holds sustain
+            payload[target] = (byte) ((flags & 1) | 4 | ((flags & 4) == 0 ? rates & 0xf0 : 0));
+            payload[target + 1] = (byte) ((rates & 15) | ((flags & 2) == 0 ? rates & 0xf0 : 0x40));
+            payload[target + 2] = body[source + 2];
+            payload[target + 3] = body[source + 3];
+            payload[target + 4] = (byte) (((modulation >> 4 & 3) << 5)
+                    | ((modulation & 8) << 1) | ((modulation >> 6) << 1) | (flags >> 3 & 1));
+            payload[target + 5] = (byte) (flags & 0xf0);
+            payload[target + 6] = (byte) (((modulation & 7) << 3) | (i == 0 ? header >> 3 & 7 : 0));
+            operators[i] = Operator.decode(i, payload, target);
+        }
+        // 0x80 is a SDK's marker
+        return new MA5VoiceProgram(0, 0, false, 0, 16, body[6] & 3,
+                header >> 6, false, algorithm, operators, payload);
     }
 
     private static MA5VoiceProgram decodeLegacy(byte[] body) {

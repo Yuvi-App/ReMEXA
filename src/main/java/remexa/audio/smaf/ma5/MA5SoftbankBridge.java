@@ -7,11 +7,12 @@ import java.util.HashSet;
 import java.util.Set;
 
 /**
- * Loads VM5 and legacy SoftBank SMF instruments into the synthesizer.
+ * Loads VM5, VMA, and legacy SoftBank SMF instruments into the synthesizer.
  */
 public final class MA5SoftbankBridge {
     private static final int MANUFACTURER_YAMAHA = 0x43;
     private static final int FAMILY_LEGACY_SOFTBANK = 0x02;
+    private static final int FAMILY_VMA = 0x03;
     private static final int FAMILY_VM5 = 0x05;
     private static final int FAMILY_VM5_COMPACT_4OP = 0x04;
     private static final int LEGACY_SOFTBANK_SUBFAMILY = 0x02;
@@ -53,20 +54,22 @@ public final class MA5SoftbankBridge {
         }
         int family = body[1] & 0xff;
         int type = body[2] & 0xff;
-        if (family == FAMILY_VM5_COMPACT_4OP && type == VM5_FM_PROGRAM) {
+        if ((family == FAMILY_VM5_COMPACT_4OP && type == VM5_FM_PROGRAM)
+                || (family == FAMILY_VMA && type == 0)) {
             MA5VoiceProgram voice = MA5VoiceProgram.decode(message);
             if (voice == null) {
-                debugOnce("vm5-compact-fm-invalid", message);
+                debugOnce("implicit-fm-invalid", message);
                 return true;
             }
             int slot = implicitCompactVoiceSlot++ & 0x3f;
-            // MMMG compact EXVO slots belong to authored bank 1 (100df0a0).
+            // VMA and compact voices share EXVO-order slots (10033e00/10033c90).
+            // MMMG EXVO slots belong to authored bank 1 (100df0a0).
             // They carry no bank byte of their own; generic MIDI retains bank 0.
             voice = voice.withBankProgram(implicitCompactVoiceBank, slot);
             sampler.sysEx(voice.toMa3FmAlgorithmMessage());
             pcmVoiceSink.onFmVoice(voice);
             if (SmafDebug.isEnabled("ma5", SmafDebug.Level.DEBUG)) {
-                SmafDebug.debug("ma5", "[MA5] loaded compact 4op FM voice slot=" + slot + " " + voice.summary());
+                SmafDebug.debug("ma5", "[MA5] loaded implicit FM voice slot=" + slot + " " + voice.summary());
             }
             return true;
         }

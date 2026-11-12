@@ -1,6 +1,8 @@
 package remexa.audio.smaf;
 
 import javax.microedition.media.decoders.SMAFDecoder;
+import remexa.audio.smaf.ma5.MA5VoiceProgram;
+import java.util.ArrayList;
 import java.util.List;
 
 final class SmafAudioDetector {
@@ -24,7 +26,8 @@ final class SmafAudioDetector {
                 || containsYamahaFamilyEvents(sequenceSysExEvents, 0x05)
                 || containsLegacySoftbankMa5Packet(startupPackets)
                 || containsLegacySoftbankMa5Packet(exclusiveVoices)
-                || containsLegacySoftbankMa5Events(sequenceSysExEvents)) {
+                || containsLegacySoftbankMa5Events(sequenceSysExEvents)
+                || supportsVmaPhrase(startupPackets, exclusiveVoices, sequenceSysExEvents)) {
             return SmafAudioFamily.MA5;
         }
         if (containsYamahaFamily(startupPackets, 0x03)
@@ -36,6 +39,30 @@ final class SmafAudioDetector {
             return SmafAudioFamily.MA3;
         }
         return SmafAudioFamily.UNKNOWN;
+    }
+
+    private static boolean supportsVmaPhrase(List<byte[]> startupPackets,
+                                             List<byte[]> exclusiveVoices,
+                                             List<SMAFDecoder.SequenceSysExEvent> events) {
+        boolean phrase = false, voice = false;
+        var packets = new ArrayList<byte[]>();
+        if (startupPackets != null) packets.addAll(startupPackets);
+        if (exclusiveVoices != null) packets.addAll(exclusiveVoices);
+        if (events != null) for (var event : events) {
+            byte[] data = event.data();
+            if (data.length >= 2 && data[0] == 0x72 && data[1] == 0x0e) phrase = true;
+            packets.add(data);
+        }
+        for (byte[] packet : packets) {
+            if (packet == null || packet.length == 0) continue;
+            byte[] body = normalizeVendorBody(packet);
+            if (body.length == 0 || body[0] != 0x43) continue;
+            // MA5 supports the voice records, but not MA3's 43 03 90 pitch-register events.
+            if (body.length < 3 || body[1] != 3 || body[2] != 0
+                    || MA5VoiceProgram.decode(packet) == null) return false;
+            voice = true;
+        }
+        return phrase && voice;
     }
 
     private static boolean containsYamahaFamily(List<byte[]> packets, int family) {

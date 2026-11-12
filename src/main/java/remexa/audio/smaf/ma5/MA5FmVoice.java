@@ -31,7 +31,7 @@ public final class MA5FmVoice {
     }
 
     public void setFrequency(double frequency) {
-        double register = Math.max(0, frequency) * 1048576.0 / 48000.0;
+        double register = Math.round(Math.max(0, frequency) * 1048576.0 / 48000.0);
         int block = Math.clamp(Math.getExponent(register) - 9, 0, 7);
         int fnum = Math.clamp((int)(register / (1 << block)), 0, 1023);
         setFrequencyRegister(Math.clamp(block + 1 - program.basicOctave(), 0, 7), fnum);
