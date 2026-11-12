@@ -532,10 +532,10 @@ public class Graphics {
             case 1 -> new AffineTransform(1, 0, 0, -1, 0, height);
             case 2 -> new AffineTransform(-1, 0, 0, 1, width, 0);
             case 3 -> new AffineTransform(-1, 0, 0, -1, width, height);
-            case 4 -> new AffineTransform(0, -1, -1, 0, height, width);
+            case 4 -> new AffineTransform(0, 1, 1, 0, 0, 0);
             case 5 -> new AffineTransform(0, 1, -1, 0, height, 0);
             case 6 -> new AffineTransform(0, -1, 1, 0, 0, width);
-            case 7 -> new AffineTransform(0, 1, 1, 0, 0, 0);
+            case 7 -> new AffineTransform(0, -1, -1, 0, height, width);
             default -> new AffineTransform();
         };
     }
