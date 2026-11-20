@@ -12,7 +12,6 @@ import javax.microedition.lcdui.Graphics;
 
 public final class SoftwareJ3dRenderer {
     private static final float DEPTH_EPSILON = 0.000001f;
-    private static final float TRANSLUCENT_DEPTH_BIAS = 32.0f;
     private static final int RASTER_SUBPIXEL_SHIFT = 4;
     private static final int RASTER_SUBPIXEL_SCALE = 1 << RASTER_SUBPIXEL_SHIFT;
     private static final int COMMAND_LIST_VERSION_1_0 = 0xFE000001;
@@ -295,10 +294,11 @@ public final class SoftwareJ3dRenderer {
                 if (cursor + 3 >= commandList.length) {
                     break;
                 }
-                int left = originX + commandList[cursor++];
-                int top = originY + commandList[cursor++];
-                int right = originX + commandList[cursor++];
-                int bottom = originY + commandList[cursor++];
+                // drawCommandList passes these screen coordinates directly to Render_setClipRect, without the initial origin.
+                int left = commandList[cursor++];
+                int top = commandList[cursor++];
+                int right = commandList[cursor++];
+                int bottom = commandList[cursor++];
                 state.setCommandClip(left, top, right, bottom);
                 continue;
             }
@@ -317,8 +317,9 @@ public final class SoftwareJ3dRenderer {
                 if (cursor + 1 >= commandList.length) {
                     break;
                 }
-                state.centerX = originX + commandList[cursor++];
-                state.centerY = originY + commandList[cursor++];
+                // This replaces the initial layout center, including its origin.
+                state.centerX = commandList[cursor++];
+                state.centerY = commandList[cursor++];
                 continue;
             }
             if (command == COMMAND_PARALLEL_SCALE) {
@@ -337,10 +338,8 @@ public final class SoftwareJ3dRenderer {
                 state.perspective = false;
                 int width = commandList[cursor++];
                 int height = commandList[cursor++];
-                // Parallel-size commands project into the submitted Graphics viewport,
-                // COMMAND_CLIP only crops this projection;
-                state.projectionScaleX = width > 0 ? (float) Math.max(0, clipWidth) / width : 0.0f;
-                state.projectionScaleY = height > 0 ? (float) Math.max(0, clipHeight) / height : 0.0f;
+                state.projectionScaleX = parallelProjectionScale(surfaceWidth, width);
+                state.projectionScaleY = parallelProjectionScale(surfaceHeight, height);
                 continue;
             }
             if (command == COMMAND_PERSPECTIVE_FOV) {
@@ -509,6 +508,16 @@ public final class SoftwareJ3dRenderer {
             System.arraycopy(source, 0, copy, 0, Math.min(source.length, length));
         }
         return copy;
+    }
+
+    public static float parallelProjectionScale(int surfaceExtent, int parallelExtent) {
+        if (parallelExtent <= 0) {
+            return 0.0f;
+        }
+        // SDK Render_setOrthographicWH divides integers before projecting vertices.
+        // Preserve that Q12 quantization, and use the render target rather than its clip.
+        long fixedScale = ((long) surfaceExtent << 12) / parallelExtent;
+        return fixedScale / 4096.0f;
     }
 
     public static void drawFigure(
@@ -2526,8 +2535,7 @@ public final class SoftwareJ3dRenderer {
                 float pixelDepth = (w0 * z0) + (w1 * z1) + (w2 * z2);
                 float pixelShade = clamp01((w0 * v0.shade()) + (w1 * v1.shade()) + (w2 * v2.shade()));
                 int index = y * surfaceWidth + x;
-                float depthTest = blendMode == 0 ? pixelDepth : pixelDepth + TRANSLUCENT_DEPTH_BIAS;
-                if (depthTest < depthBuffer[index] - DEPTH_EPSILON) {
+                if (pixelDepth < depthBuffer[index] - DEPTH_EPSILON) {
                     continue;
                 }
                 int argb;
@@ -2748,8 +2756,10 @@ public final class SoftwareJ3dRenderer {
                     projectionScaleY = focal;
                 }
             } else if (layout.getParallelWidth() > 0 || layout.getParallelHeight() > 0) {
-                projectionScaleX = layout.getParallelWidth() > 0 ? (float) surfaceWidth / layout.getParallelWidth() : 1.0f;
-                projectionScaleY = layout.getParallelHeight() > 0 ? (float) surfaceHeight / layout.getParallelHeight() : 1.0f;
+                projectionScaleX = layout.getParallelWidth() > 0
+                        ? parallelProjectionScale(surfaceWidth, layout.getParallelWidth()) : 1.0f;
+                projectionScaleY = layout.getParallelHeight() > 0
+                        ? parallelProjectionScale(surfaceHeight, layout.getParallelHeight()) : 1.0f;
             } else {
                 int scaleX = layout.getScaleX();
                 int scaleY = layout.getScaleY();

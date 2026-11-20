@@ -118,8 +118,8 @@ public final class CanvasGraphics3D extends Graphics implements Graphics3D {
         int translateY = getTranslateY();
         pendingDraws.add(new CommandListDraw(
                 textures == null ? null : textures.clone(),
-                x,
-                y,
+                x + translateX,
+                y + translateY,
                 snapshotLayout(layout),
                 snapshotEffect(effect),
                 getClipX() + translateX,
@@ -480,10 +480,10 @@ public final class CanvasGraphics3D extends Graphics implements Graphics3D {
                 }
             } else if (layout.getParallelWidth() > 0 || layout.getParallelHeight() > 0) {
                 projectionScaleX = layout.getParallelWidth() > 0
-                        ? (float) surfaceWidth / layout.getParallelWidth()
+                        ? SoftwareJ3dRenderer.parallelProjectionScale(surfaceWidth, layout.getParallelWidth())
                         : 512.0f / 4096.0f;
                 projectionScaleY = layout.getParallelHeight() > 0
-                        ? (float) surfaceHeight / layout.getParallelHeight()
+                        ? SoftwareJ3dRenderer.parallelProjectionScale(surfaceHeight, layout.getParallelHeight())
                         : 512.0f / 4096.0f;
             } else {
                 int scaleX = layout.getScaleX();
